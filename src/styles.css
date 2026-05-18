@@ -41,6 +41,13 @@ body,
   justify-content: space-between;
   padding: 10px 14px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.panel-header:active {
+  cursor: grabbing;
 }
 
 @media (prefers-color-scheme: dark) {

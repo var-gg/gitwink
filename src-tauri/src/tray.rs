@@ -4,12 +4,19 @@ use tauri::{
     App,
 };
 
-use crate::window;
+use crate::{settings, window};
 
 pub fn setup(app: &App) -> tauri::Result<()> {
+    let reset = MenuItem::with_id(
+        app,
+        "reset_position",
+        "Reset panel position",
+        true,
+        None::<&str>,
+    )?;
     let quit = MenuItem::with_id(app, "quit", "Quit gitwink", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&separator, &quit])?;
+    let menu = Menu::with_items(app, &[&reset, &separator, &quit])?;
 
     let icon = app
         .default_window_icon()
@@ -21,10 +28,10 @@ pub fn setup(app: &App) -> tauri::Result<()> {
         .tooltip("gitwink")
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| {
-            if event.id().as_ref() == "quit" {
-                app.exit(0);
-            }
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "quit" => app.exit(0),
+            "reset_position" => settings::clear_panel_position(app),
+            _ => {}
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
