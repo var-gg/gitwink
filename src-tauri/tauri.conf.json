@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "gitwink",
+  "version": "0.1.0",
+  "identifier": "gg.var.gitwink",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "panel",
+        "title": "gitwink",
+        "width": 520,
+        "height": 600,
+        "resizable": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "shadow": true,
+        "focus": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "var-gg",
+    "shortDescription": "Tray-resident, read-only git glance for the AI-agent era.",
+    "longDescription": "gitwink is a tray-resident, read-only tool that lets you wink at recent commit activity across all your local git repositories without opening a heavyweight editor. Built for the AI-agent era.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

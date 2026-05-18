@@ -1,0 +1,30 @@
+[package]
+name = "gitwink"
+version = "0.1.0"
+description = "Tray-resident, read-only git glance for the AI-agent era."
+authors = ["var-gg"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/var-gg/gitwink"
+
+[lib]
+name = "gitwink_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-opener = "2"
+tauri-plugin-global-shortcut = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+
+git2 = { version = "0.19", default-features = false }
+ignore = "0.4"
+walkdir = "2"
+notify = "6"
+rusqlite = { version = "0.31", features = ["bundled"] }
