@@ -294,17 +294,34 @@ pub fn commit_file_blobs(
     /// Look up the actual LFS object bytes in the local cache
     /// (`<gitdir>/lfs/objects/<2>/<2>/<oid>`). `git clone` of an LFS repo
     /// usually pulls these automatically; if missing, we hand back None
-    /// and let the UI explain. Worktrees pointing at a separate common dir
-    /// are not handled here; v0.1 limitation.
+    /// and let the UI explain.
+    ///
+    /// For linked worktrees, `repo.path()` is the worktree-specific gitdir
+    /// (`<main>/.git/worktrees/<name>/`) and LFS objects live under the
+    /// main common dir. We resolve that via the `commondir` file git itself
+    /// writes next to the worktree gitdir — this works on every git2
+    /// version without needing a method that came and went in the API.
     fn load_lfs_object(repo: &Repository, oid_hex: &str) -> Option<Vec<u8>> {
-        let gitdir = repo.path();
-        let path = gitdir
-            .join("lfs")
+        let rel: std::path::PathBuf = std::path::Path::new("lfs")
             .join("objects")
             .join(&oid_hex[0..2])
             .join(&oid_hex[2..4])
             .join(oid_hex);
-        std::fs::read(&path).ok()
+
+        let gitdir = repo.path();
+        if let Ok(bytes) = std::fs::read(gitdir.join(&rel)) {
+            return Some(bytes);
+        }
+
+        let commondir_file = gitdir.join("commondir");
+        if let Ok(text) = std::fs::read_to_string(&commondir_file) {
+            let common = gitdir.join(text.trim());
+            if let Ok(bytes) = std::fs::read(common.join(&rel)) {
+                return Some(bytes);
+            }
+        }
+
+        None
     }
 
     fn load(
@@ -487,6 +504,133 @@ pub fn list_branches(repo_path: &Path) -> Result<Vec<BranchInfo>> {
     Ok(out)
 }
 
+/// Branch label sketch: how far back into a single branch's history we look
+/// when answering "is this commit on this branch?". 5k commits comfortably
+/// covers any normally-active branch; older commits get no label, which is
+/// fine — the timeline is for recent work, and label is a hint, not truth.
+const BRANCH_LABEL_SCAN_CAP: usize = 5_000;
+
+/// Walk `tip` and report which of `targets` it reaches, bounded by
+/// `scan_cap` so a branch with deep history can't pin first-paint.
+fn limited_reachable_membership(
+    repo: &Repository,
+    tip: Oid,
+    targets: &HashSet<Oid>,
+    scan_cap: usize,
+) -> HashSet<Oid> {
+    let mut found: HashSet<Oid> = HashSet::new();
+    if targets.is_empty() {
+        return found;
+    }
+    let Ok(mut rw) = repo.revwalk() else {
+        return found;
+    };
+    if rw.push(tip).is_err() {
+        return found;
+    }
+    let _ = rw.set_sorting(Sort::TIME);
+
+    for (i, oid_res) in rw.enumerate() {
+        if i >= scan_cap || found.len() == targets.len() {
+            break;
+        }
+        let Ok(oid) = oid_res else {
+            continue;
+        };
+        if targets.contains(&oid) {
+            found.insert(oid);
+        }
+    }
+    found
+}
+
+/// Compute branch labels for a small set of target commits.
+///
+/// Return shape:
+///   - missing entry  → no branch within scan_cap contains this commit
+///   - Some(None)     → reachable from HEAD; label is suppressed (spec)
+///   - Some(Some(n))  → first non-current branch (in glob order) that contains it
+///
+/// This replaces the previous "build full HashSets of every commit on every
+/// branch" approach, which was O(branches × history) regardless of how many
+/// rows we were going to return.
+fn compute_branch_labels(
+    repo: &Repository,
+    head_branch_name: Option<&str>,
+    targets: &HashSet<Oid>,
+) -> HashMap<Oid, Option<String>> {
+    let mut labels: HashMap<Oid, Option<String>> = HashMap::new();
+    if targets.is_empty() {
+        return labels;
+    }
+
+    // Detached HEAD or no HEAD → suppress all labels (existing behaviour).
+    let Some(head_name) = head_branch_name else {
+        for &oid in targets {
+            labels.insert(oid, None);
+        }
+        return labels;
+    };
+
+    if let Some(tip) = repo
+        .head()
+        .ok()
+        .and_then(|h| h.peel_to_commit().ok())
+        .map(|c| c.id())
+    {
+        let hits = limited_reachable_membership(repo, tip, targets, BRANCH_LABEL_SCAN_CAP);
+        for oid in hits {
+            labels.insert(oid, None);
+        }
+    }
+
+    let mut remaining: HashSet<Oid> = targets
+        .iter()
+        .copied()
+        .filter(|oid| !labels.contains_key(oid))
+        .collect();
+
+    if remaining.is_empty() {
+        return labels;
+    }
+
+    if let Ok(refs) = repo.references_glob("refs/heads/*") {
+        for r in refs.flatten() {
+            if remaining.is_empty() {
+                break;
+            }
+            let Some(name) = r.shorthand().map(|s| s.to_string()) else {
+                continue;
+            };
+            if name.as_str() == head_name {
+                continue;
+            }
+            let Some(tip) = r.target() else {
+                continue;
+            };
+            let hits = limited_reachable_membership(repo, tip, &remaining, BRANCH_LABEL_SCAN_CAP);
+            for oid in hits {
+                labels.insert(oid, Some(name.clone()));
+                remaining.remove(&oid);
+            }
+        }
+    }
+
+    labels
+}
+
+fn collect_tagged_oids(repo: &Repository) -> HashSet<Oid> {
+    let mut set = HashSet::new();
+    if let Ok(refs) = repo.references_glob("refs/tags/*") {
+        for r in refs.flatten() {
+            if let Ok(obj) = r.peel(git2::ObjectType::Commit) {
+                set.insert(obj.id());
+            }
+        }
+    }
+    set
+}
+
 /// Walk the given branches (None = all local heads, like recent_commits) in
 /// a single repository, deduping by SHA, returning newest-first commits with
 /// parent SHAs populated.
@@ -514,61 +658,7 @@ pub fn repo_commits(
             .and_then(|h| h.shorthand().map(|s| s.to_string()))
     };
 
-    let head_reachable: HashSet<Oid> = if head_branch_name.is_some() {
-        match repo
-            .head()
-            .ok()
-            .and_then(|h| h.peel_to_commit().ok())
-            .and_then(|c| {
-                let mut rw = repo.revwalk().ok()?;
-                rw.push(c.id()).ok()?;
-                Some(rw.flatten().collect::<HashSet<_>>())
-            }) {
-            Some(set) => set,
-            None => HashSet::new(),
-        }
-    } else {
-        HashSet::new()
-    };
-
-    let tagged_oids: HashSet<Oid> = {
-        let mut set = HashSet::new();
-        if let Ok(refs) = repo.references_glob("refs/tags/*") {
-            for r in refs.flatten() {
-                if let Ok(obj) = r.peel(git2::ObjectType::Commit) {
-                    set.insert(obj.id());
-                }
-            }
-        }
-        set
-    };
-
-    let mut commit_to_branch: HashMap<Oid, String> = HashMap::new();
-    if let Ok(refs) = repo.references_glob("refs/heads/*") {
-        for r in refs.flatten() {
-            let Some(name) = r.shorthand().map(|s| s.to_string()) else {
-                continue;
-            };
-            if Some(&name) == head_branch_name.as_ref() {
-                continue;
-            }
-            let Some(tip) = r.target() else { continue };
-            let mut rw = match repo.revwalk() {
-                Ok(rw) => rw,
-                Err(_) => continue,
-            };
-            if rw.push(tip).is_err() {
-                continue;
-            }
-            for oid_res in rw {
-                let Ok(oid) = oid_res else { continue };
-                if head_reachable.contains(&oid) {
-                    continue;
-                }
-                commit_to_branch.entry(oid).or_insert_with(|| name.clone());
-            }
-        }
-    }
+    let tagged_oids = collect_tagged_oids(&repo);
 
     let mut revwalk = repo.revwalk().context("init revwalk")?;
     let mut pushed = 0usize;
@@ -613,9 +703,11 @@ pub fn repo_commits(
         .set_sorting(Sort::TIME)
         .context("set revwalk sort")?;
 
-    let mut out: Vec<CommitSummary> = Vec::with_capacity(max_count);
+    // Pass 1: collect just the rows we'll return. Cheap — bounded by
+    // max_count and the since cutoff.
+    let mut raw: Vec<(Oid, git2::Commit<'_>)> = Vec::with_capacity(max_count);
     for oid in revwalk {
-        if out.len() >= max_count {
+        if raw.len() >= max_count {
             break;
         }
         let oid = match oid {
@@ -626,21 +718,28 @@ pub fn repo_commits(
             Ok(c) => c,
             Err(_) => continue,
         };
-        let ts = commit.time().seconds();
-        if ts < since_unix_seconds {
+        if commit.time().seconds() < since_unix_seconds {
             break;
         }
+        raw.push((oid, commit));
+    }
+
+    // Pass 2: branch labels, computed only against the OIDs we'll actually
+    // return — bounded per-branch and short-circuits when all targets resolve.
+    let targets: HashSet<Oid> = raw.iter().map(|(oid, _)| *oid).collect();
+    let labels = compute_branch_labels(&repo, head_branch_name.as_deref(), &targets);
+
+    let mut out: Vec<CommitSummary> = Vec::with_capacity(raw.len());
+    for (oid, commit) in raw {
         let hash = oid.to_string();
         let short_hash: String = hash.chars().take(7).collect();
         let summary = commit.summary().unwrap_or("").to_string();
         let author = commit.author();
-        let branch_label = if head_branch_name.is_none() || head_reachable.contains(&oid) {
-            None
-        } else {
-            commit_to_branch.get(&oid).cloned()
-        };
         let parents: Vec<String> = commit.parent_ids().map(|p| p.to_string()).collect();
         let message = commit.message().unwrap_or("").to_string();
+        let ts = commit.time().seconds();
+        let branch_label = labels.get(&oid).cloned().flatten();
+
         out.push(CommitSummary {
             repo_path: repo_path_str.clone(),
             repo_name: repo_name.clone(),
@@ -661,9 +760,9 @@ pub fn repo_commits(
     Ok(out)
 }
 
-/// Walk HEAD and return up to `max_count` recent commits whose author time is
-/// at or after `since_unix_seconds`. Empty / detached repos return an empty
-/// vector rather than erroring.
+/// Walk every local head and return up to `max_count` recent commits whose
+/// author time is at or after `since_unix_seconds`. Empty / detached repos
+/// return an empty vector rather than erroring.
 pub fn recent_commits(
     repo_path: &Path,
     max_count: usize,
@@ -689,66 +788,7 @@ pub fn recent_commits(
             .and_then(|h| h.shorthand().map(|s| s.to_string()))
     };
 
-    // Set of OIDs reachable from HEAD — these get no label.
-    let head_reachable: HashSet<Oid> = if head_branch_name.is_some() {
-        match repo
-            .head()
-            .ok()
-            .and_then(|h| h.peel_to_commit().ok())
-            .and_then(|c| {
-                let mut rw = repo.revwalk().ok()?;
-                rw.push(c.id()).ok()?;
-                Some(rw.flatten().collect::<HashSet<_>>())
-            }) {
-            Some(set) => set,
-            None => HashSet::new(),
-        }
-    } else {
-        HashSet::new()
-    };
-
-    // Collect oids that any tag points to (peel annotated tags through to the
-    // referenced commit). Used to set is_tagged on the result rows.
-    let tagged_oids: HashSet<Oid> = {
-        let mut set = HashSet::new();
-        if let Ok(refs) = repo.references_glob("refs/tags/*") {
-            for r in refs.flatten() {
-                if let Ok(obj) = r.peel(git2::ObjectType::Commit) {
-                    set.insert(obj.id());
-                }
-            }
-        }
-        set
-    };
-
-    // For each NON-current branch, build oid -> branch_name (first encountered
-    // wins). Skips commits already on HEAD.
-    let mut commit_to_branch: HashMap<Oid, String> = HashMap::new();
-    if let Ok(refs) = repo.references_glob("refs/heads/*") {
-        for r in refs.flatten() {
-            let Some(name) = r.shorthand().map(|s| s.to_string()) else {
-                continue;
-            };
-            if Some(&name) == head_branch_name.as_ref() {
-                continue;
-            }
-            let Some(tip) = r.target() else { continue };
-            let mut rw = match repo.revwalk() {
-                Ok(rw) => rw,
-                Err(_) => continue,
-            };
-            if rw.push(tip).is_err() {
-                continue;
-            }
-            for oid_res in rw {
-                let Ok(oid) = oid_res else { continue };
-                if head_reachable.contains(&oid) {
-                    continue;
-                }
-                commit_to_branch.entry(oid).or_insert_with(|| name.clone());
-            }
-        }
-    }
+    let tagged_oids = collect_tagged_oids(&repo);
 
     let mut revwalk = repo.revwalk().context("init revwalk")?;
 
@@ -784,9 +824,12 @@ pub fn recent_commits(
         .set_sorting(Sort::TIME)
         .context("set revwalk sort")?;
 
-    let mut out: Vec<CommitSummary> = Vec::with_capacity(max_count);
+    // Pass 1: collect the output rows first. Bounded by max_count and the
+    // since cutoff (TIME sort is descending, so once we cross the cutoff
+    // older commits won't reappear later).
+    let mut raw: Vec<(Oid, git2::Commit<'_>)> = Vec::with_capacity(max_count);
     for oid in revwalk {
-        if out.len() >= max_count {
+        if raw.len() >= max_count {
             break;
         }
         let oid = match oid {
@@ -797,22 +840,29 @@ pub fn recent_commits(
             Ok(c) => c,
             Err(_) => continue,
         };
-        let ts = commit.time().seconds();
-        if ts < since_unix_seconds {
-            // TIME sort is descending, so older commits won't reappear later.
+        if commit.time().seconds() < since_unix_seconds {
             break;
         }
+        raw.push((oid, commit));
+    }
+
+    // Pass 2: branch labels for just the OIDs we'll return. Used to be a
+    // O(branches × history) prefetch — now bounded per-branch and exits
+    // early once every target is resolved.
+    let targets: HashSet<Oid> = raw.iter().map(|(oid, _)| *oid).collect();
+    let labels = compute_branch_labels(&repo, head_branch_name.as_deref(), &targets);
+
+    let mut out: Vec<CommitSummary> = Vec::with_capacity(raw.len());
+    for (oid, commit) in raw {
         let hash = oid.to_string();
         let short_hash: String = hash.chars().take(7).collect();
         let summary = commit.summary().unwrap_or("").to_string();
         let author = commit.author();
-        let branch_label = if head_branch_name.is_none() || head_reachable.contains(&oid) {
-            None
-        } else {
-            commit_to_branch.get(&oid).cloned()
-        };
         let parents: Vec<String> = commit.parent_ids().map(|p| p.to_string()).collect();
         let message = commit.message().unwrap_or("").to_string();
+        let ts = commit.time().seconds();
+        let branch_label = labels.get(&oid).cloned().flatten();
+
         out.push(CommitSummary {
             repo_path: repo_path_str.clone(),
             repo_name: repo_name.clone(),

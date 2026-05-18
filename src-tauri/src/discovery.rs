@@ -4,12 +4,30 @@ use std::sync::Mutex;
 use ignore::{WalkBuilder, WalkState};
 
 const HARD_EXCLUDE: &[&str] = &[
+    // Build/tool caches that never legitimately contain user repos and
+    // routinely contain thousands of files.
     "node_modules",
     "target",
     "dist",
     ".cache",
     "vendor",
     ".git",
+    // Privacy-sensitive: credentials, keys, kube/cloud configs. gitwink
+    // only looks for `.git` entries — but walking into these dirs at all
+    // is at odds with the "local-only, nothing leaves your machine" promise.
+    ".ssh",
+    ".aws",
+    ".azure",
+    ".gnupg",
+    ".gpg",
+    ".kube",
+    ".docker",
+    // OS-managed user/system data trees. Reachable on non-system drives
+    // (e.g. cloned profile under D:\Users\...) or if a user keeps repos
+    // under Documents/AppData/Library — never useful, often huge.
+    "AppData",
+    "ProgramData",
+    "Library",
 ];
 
 const MAX_DEPTH: usize = 8;
@@ -183,6 +201,22 @@ mod tests {
         make_repo(dir.path(), "vendor/x");
         make_repo(dir.path(), ".cache/y");
         make_repo(dir.path(), "real-repo");
+        let found = collect(dir.path());
+        assert_eq!(found.len(), 1, "got {:?}", found);
+        assert!(found[0].ends_with("real-repo"));
+    }
+
+    #[test]
+    fn skips_privacy_sensitive_dirs() {
+        let dir = TempDir::new().unwrap();
+        // A repo cloned into a sensitive dir must NOT be reported.
+        make_repo(dir.path(), ".ssh/repo-in-ssh");
+        make_repo(dir.path(), ".aws/repo-in-aws");
+        make_repo(dir.path(), "AppData/Local/repo-in-appdata");
+        make_repo(dir.path(), "Library/repo-in-library");
+        // Control case at the top level should still come through.
+        make_repo(dir.path(), "real-repo");
+
         let found = collect(dir.path());
         assert_eq!(found.len(), 1, "got {:?}", found);
         assert!(found[0].ends_with("real-repo"));

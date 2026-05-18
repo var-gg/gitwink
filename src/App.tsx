@@ -293,16 +293,10 @@ function App() {
 
   const filteredCommits = useMemo(() => {
     if (!commits) return null;
-    let f = commits;
-    if (!singleMode && selectedRepoPath) {
-      f = f.filter((c) => c.repoPath === selectedRepoPath);
-    }
-    if (selectedAuthors !== "all") {
-      const set = new Set(selectedAuthors);
-      f = f.filter((c) => set.has(c.author));
-    }
-    return f;
-  }, [commits, selectedRepoPath, selectedAuthors, singleMode]);
+    if (selectedAuthors === "all") return commits;
+    const set = new Set(selectedAuthors);
+    return commits.filter((c) => set.has(c.author));
+  }, [commits, selectedAuthors]);
 
   function togglePin(path: string) {
     setPinnedRepos((prev) => {

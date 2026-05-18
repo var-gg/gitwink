@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
@@ -26,6 +26,18 @@ struct RepoFillPayload {
     fresh: bool,
 }
 
+/// Per-repo trailing-edge debounce state. `generation` ticks on every
+/// event; the worker reads it after sleeping and only fires if no new
+/// event has arrived. `pending` makes sure we have at most one worker
+/// thread per repo, no matter how chatty the burst is.
+#[derive(Default)]
+struct DebounceEntry {
+    generation: u64,
+    pending: bool,
+}
+
+type DebounceMap = Arc<Mutex<HashMap<PathBuf, DebounceEntry>>>;
+
 pub struct RepoWatcher {
     inner: Arc<Mutex<RecommendedWatcher>>,
     /// canonical .git dir → repo_path as the rest of the app sees it
@@ -38,9 +50,7 @@ pub struct RepoWatcher {
 
 impl RepoWatcher {
     pub fn start(app: AppHandle) -> anyhow::Result<Self> {
-        let last_fired: Arc<Mutex<HashMap<PathBuf, Instant>>> =
-            Arc::new(Mutex::new(HashMap::new()));
-        let lf = Arc::clone(&last_fired);
+        let debounce: DebounceMap = Arc::new(Mutex::new(HashMap::new()));
         let app_for_event = app.clone();
 
         let git_to_repo: Arc<Mutex<HashMap<PathBuf, PathBuf>>> =
@@ -66,32 +76,15 @@ impl RepoWatcher {
             }) else {
                 return;
             };
-            let repo_path = {
-                let map = g2r.lock().unwrap();
-                match map.get(git_dir) {
-                    Some(p) => p.clone(),
-                    None => return,
-                }
+            let Ok(map) = g2r.lock() else {
+                return;
             };
+            let Some(repo_path) = map.get(git_dir).cloned() else {
+                return;
+            };
+            drop(map);
 
-            // Per-repo debounce — `git commit` fires several writes inside
-            // .git in quick succession.
-            {
-                let mut lf = lf.lock().unwrap();
-                let now = Instant::now();
-                if let Some(prev) = lf.get(&repo_path) {
-                    if now.duration_since(*prev) < Duration::from_millis(DEBOUNCE_MS) {
-                        return;
-                    }
-                }
-                lf.insert(repo_path.clone(), now);
-            }
-
-            let app2 = app_for_event.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_millis(DEBOUNCE_MS));
-                refresh_repo(&app2, &repo_path);
-            });
+            schedule_refresh(app_for_event.clone(), repo_path, debounce.clone());
         })?;
 
         Ok(Self {
@@ -101,22 +94,89 @@ impl RepoWatcher {
     }
 
     pub fn add(&self, repo_path: &Path) {
-        let git_dir = repo_path.join(".git");
-        if !git_dir.is_dir() {
-            // Worktrees keep .git as a file pointing at the common dir.
-            // Skip for v0.1 — main usecase is normal clones.
+        let Some(git_dir) = resolve_git_dir(repo_path) else {
             return;
-        }
+        };
         let canon = git_dir.canonicalize().unwrap_or_else(|_| git_dir.clone());
-        let mut map = self.git_to_repo.lock().unwrap();
+        let Ok(mut map) = self.git_to_repo.lock() else {
+            return;
+        };
         if map.contains_key(&canon) {
             return;
         }
-        let mut w = self.inner.lock().unwrap();
+        let Ok(mut w) = self.inner.lock() else {
+            return;
+        };
         if w.watch(&canon, RecursiveMode::Recursive).is_ok() {
             map.insert(canon, repo_path.to_path_buf());
         }
     }
+}
+
+/// Return the actual git directory for `repo_path`. For a normal clone this
+/// is `<repo>/.git`. For a linked worktree, `.git` is a small text file
+/// containing `gitdir: <path>` pointing at the worktree-specific git dir
+/// under the main repo's `.git/worktrees/<name>/`.
+fn resolve_git_dir(repo_path: &Path) -> Option<PathBuf> {
+    let dotgit = repo_path.join(".git");
+    if dotgit.is_dir() {
+        return Some(dotgit);
+    }
+    if dotgit.is_file() {
+        let text = std::fs::read_to_string(&dotgit).ok()?;
+        let raw = text.strip_prefix("gitdir:")?.trim();
+        let p = Path::new(raw);
+        let git_dir = if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            repo_path.join(p)
+        };
+        if git_dir.is_dir() {
+            return Some(git_dir);
+        }
+    }
+    None
+}
+
+/// Trailing-edge debounce: collapse a burst of events into a single refresh
+/// fired DEBOUNCE_MS after the *last* event. At most one worker thread runs
+/// per repo at a time — additional events during a quiet period just bump
+/// the generation and the existing worker sleeps another round.
+fn schedule_refresh(app: AppHandle, repo_path: PathBuf, debounce: DebounceMap) {
+    let initial_gen = {
+        let Ok(mut map) = debounce.lock() else {
+            return;
+        };
+        let entry = map.entry(repo_path.clone()).or_default();
+        entry.generation = entry.generation.wrapping_add(1);
+        if entry.pending {
+            return;
+        }
+        entry.pending = true;
+        entry.generation
+    };
+
+    let debounce2 = debounce.clone();
+    let repo_path2 = repo_path.clone();
+    std::thread::spawn(move || {
+        let mut tracked = initial_gen;
+        loop {
+            std::thread::sleep(Duration::from_millis(DEBOUNCE_MS));
+            let Ok(mut map) = debounce2.lock() else {
+                return;
+            };
+            let Some(entry) = map.get_mut(&repo_path2) else {
+                return;
+            };
+            if entry.generation == tracked {
+                entry.pending = false;
+                drop(map);
+                refresh_repo(&app, &repo_path2);
+                return;
+            }
+            tracked = entry.generation;
+        }
+    });
 }
 
 fn refresh_repo(app: &AppHandle, repo_path: &Path) {
