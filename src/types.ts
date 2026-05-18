@@ -6,6 +6,15 @@ export interface Repo {
   name: string;
 }
 
+export interface ScanProgress {
+  root: string;
+  found: number;
+}
+
+export interface ScanComplete {
+  count: number;
+}
+
 export interface CommitSummary {
   repoPath: string;
   repoName: string;

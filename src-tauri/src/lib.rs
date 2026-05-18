@@ -60,7 +60,11 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![commands::ping])
+        .invoke_handler(tauri::generate_handler![
+            commands::ping,
+            commands::list_repos,
+            commands::discover_repos,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
