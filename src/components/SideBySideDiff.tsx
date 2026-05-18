@@ -74,10 +74,14 @@ function Line({ side, kind }: { side: DiffSide; kind: "left" | "right" }) {
   const sign =
     side.type === "delete" ? "-" : side.type === "add" ? "+" : " ";
   return (
-    <div className={`sbs-line sbs-${kind} ${side.type ?? "blank"}`}>
+    <div
+      className={`sbs-line sbs-${kind} ${side.type ?? "blank"}`}
+      data-line-num={side.lineNum ?? ""}
+      data-side={kind}
+    >
       <span className="sbs-num">{side.lineNum ?? ""}</span>
       <span className="sbs-sign">{sign}</span>
-      <span className="sbs-text">{side.text || " "}</span>
+      <span className="sbs-text">{side.text || " "}</span>
     </div>
   );
 }

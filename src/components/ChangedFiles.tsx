@@ -62,6 +62,7 @@ export function ChangedFiles({ repoPath, hash, onOpenDiff }: Props) {
             className={
               "changed-file" + (onOpenDiff ? " changed-file-clickable" : "")
             }
+            data-file-path={f.path}
             onClick={() => onOpenDiff?.(f)}
             title={f.oldPath ? `Renamed from ${f.oldPath}` : f.path}
           >

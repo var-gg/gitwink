@@ -814,6 +814,71 @@ body,
   opacity: 0.7;
 }
 
+/* ============================================================
+   Context menu
+   ============================================================ */
+
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 200px;
+  padding: 4px 0;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  user-select: none;
+  font-size: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .context-menu {
+    background: #2a2a2c;
+    border-color: rgba(255, 255, 255, 0.16);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  }
+}
+
+.context-menu-item {
+  display: block;
+  width: 100%;
+  padding: 5px 12px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.context-menu-item:hover:not(.disabled) {
+  background: rgba(80, 130, 240, 0.18);
+}
+
+.context-menu-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@media (prefers-color-scheme: dark) {
+  .context-menu-item:hover:not(.disabled) {
+    background: rgba(140, 180, 255, 0.22);
+  }
+}
+
+.context-menu-divider {
+  height: 1px;
+  background: rgba(0, 0, 0, 0.08);
+  margin: 4px 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .context-menu-divider {
+    background: rgba(255, 255, 255, 0.10);
+  }
+}
+
 .changed-file-stat {
   font-variant-numeric: tabular-nums;
   font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;

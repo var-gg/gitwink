@@ -2,13 +2,17 @@ import { useEffect, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+
 import {
   changedFiles,
   fileDiff,
   takePendingDiffOpen,
   type DiffOpenPayload,
 } from "../lib/ipc";
+import { getDiffSelectionRange, refLineWithFile } from "../lib/smartcopy";
 import type { ChangedFile } from "../types";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ImageDiff } from "./ImageDiff";
 import { SideBySideDiff } from "./SideBySideDiff";
 
@@ -40,6 +44,11 @@ export function DiffApp() {
   const [files, setFiles] = useState<ChangedFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [diffText, setDiffText] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    items: MenuItem[];
+  } | null>(null);
 
   useEffect(() => {
     let un: UnlistenFn | undefined;
@@ -121,12 +130,63 @@ export function DiffApp() {
     };
   }, [ctx?.repoPath, ctx?.hash, selectedFile, isImage, isBinary]);
 
+  function onShellContextMenu(e: React.MouseEvent) {
+    const target = e.target as HTMLElement;
+    if (target.closest('input, textarea, [contenteditable="true"]')) return;
+    e.preventDefault();
+    if (!ctx) return;
+    const selection = window.getSelection()?.toString() ?? "";
+    const range = getDiffSelectionRange();
+    const items: MenuItem[] = [];
+
+    if (selection) {
+      items.push({
+        label: "Copy",
+        onClick: () => void writeText(selection),
+      });
+      if (selectedFile) {
+        items.push({
+          label: "Copy with reference",
+          onClick: () => {
+            const ref = refLineWithFile(
+              ctx.repoName,
+              ctx.shortHash,
+              selectedFile,
+              range?.start ?? null,
+              range?.end ?? null,
+            );
+            void writeText(`${ref}\n${selection}`);
+          },
+        });
+      }
+      items.push({ divider: true });
+    }
+
+    if (selectedFile) {
+      items.push({
+        label: "Copy file path",
+        onClick: () => void writeText(selectedFile),
+      });
+    }
+    items.push({
+      label: "Copy short hash",
+      onClick: () => void writeText(ctx.shortHash),
+    });
+    items.push({
+      label: "Copy full hash",
+      onClick: () => void writeText(ctx.hash),
+    });
+
+    if (items.length === 0) return;
+    setContextMenu({ x: e.clientX, y: e.clientY, items });
+  }
+
   if (!ctx) {
     return <div className="diff-loading">Waiting for a file…</div>;
   }
 
   return (
-    <div className="diff-shell">
+    <div className="diff-shell" onContextMenu={onShellContextMenu}>
       <header className="diff-header">
         <div className="diff-header-summary">{ctx.summary}</div>
         <div className="diff-header-meta">
@@ -213,6 +273,14 @@ export function DiffApp() {
           )}
         </main>
       </div>
+      {contextMenu && (
+        <ContextMenu
+          items={contextMenu.items}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }

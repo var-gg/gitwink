@@ -7,8 +7,10 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { buildAiContext } from "../lib/copy";
 import { changedFiles, fileDiff, openDiff, prefetchCommit } from "../lib/ipc";
+import { refLine, refLineWithFile } from "../lib/smartcopy";
 import { ChangedFiles } from "./ChangedFiles";
 import { CommitDetail } from "./CommitDetail";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { LaneGraph } from "./LaneGraph";
 
 interface Props {
@@ -45,6 +47,11 @@ export function Timeline({ commits, mode, onSelectRepo, branches }: Props) {
   const rowRefs = useRef<(HTMLLIElement | null)[]>([]);
   const [rowYs, setRowYs] = useState<number[]>([]);
   const hoverTimers = useRef(new Map<string, number>());
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    items: MenuItem[];
+  } | null>(null);
 
   rowRefs.current.length = commits.length;
 
@@ -156,6 +163,83 @@ export function Timeline({ commits, mode, onSelectRepo, branches }: Props) {
     }
   }
 
+  function onTimelineContextMenu(e: React.MouseEvent) {
+    const target = e.target as HTMLElement;
+    if (target.closest('input, textarea, [contenteditable="true"]')) return;
+    e.preventDefault();
+
+    // Identify the commit this click is on. Direct hit on a timeline row
+    // wins; otherwise inherit from the currently-expanded commit (the
+    // user is clicking inside its expansion: commit detail or file list).
+    const row = target.closest<HTMLLIElement>("[data-row]");
+    const idx = row ? parseInt(row.dataset.row ?? "-1", 10) : -1;
+    let commit: CommitSummary | null = idx >= 0 ? commits[idx] : null;
+    if (!commit && expandedHash) {
+      commit = commits.find((c) => c.hash === expandedHash) ?? null;
+    }
+
+    const fileEl = target.closest<HTMLElement>("[data-file-path]");
+    const filePath = fileEl?.dataset.filePath ?? null;
+
+    const selection = window.getSelection()?.toString() ?? "";
+    const items: MenuItem[] = [];
+
+    if (selection) {
+      items.push({
+        label: "Copy",
+        onClick: () => void writeText(selection),
+      });
+      if (commit) {
+        const ref = filePath
+          ? refLineWithFile(
+              commit.repoName,
+              commit.shortHash,
+              filePath,
+              null,
+              null,
+            )
+          : refLine(commit.repoName, commit.shortHash);
+        items.push({
+          label: "Copy with reference",
+          onClick: () => void writeText(`${ref}\n${selection}`),
+        });
+      }
+      items.push({ divider: true });
+    }
+
+    if (filePath) {
+      items.push({
+        label: "Copy file path",
+        onClick: () => void writeText(filePath),
+      });
+    }
+
+    if (commit) {
+      items.push({
+        label: "Copy as AI context",
+        onClick: () => void copyAiContext(commit),
+      });
+      const messageText = (commit.message || commit.summary).trim();
+      if (messageText) {
+        items.push({
+          label: "Copy commit message",
+          onClick: () => void writeText(messageText),
+        });
+      }
+      items.push({
+        label: "Copy short hash",
+        onClick: () => void writeText(commit.shortHash),
+      });
+      items.push({
+        label: "Copy full hash",
+        onClick: () => void writeText(commit.hash),
+      });
+    }
+
+    if (items.length === 0) return;
+    setContextMenu({ x: e.clientX, y: e.clientY, items });
+  }
+
   useEffect(() => {
     const row = listRef.current?.querySelector<HTMLLIElement>(
       `[data-row="${selected}"]`,
@@ -194,9 +278,21 @@ export function Timeline({ commits, mode, onSelectRepo, branches }: Props) {
   }
 
   return (
-    <ul className={"timeline timeline-" + mode} ref={listRef}>
+    <ul
+      className={"timeline timeline-" + mode}
+      ref={listRef}
+      onContextMenu={onTimelineContextMenu}
+    >
       {laneGraph && rowYs.length === commits.length && (
         <LaneGraph graph={laneGraph} rowYs={rowYs} />
+      )}
+      {contextMenu && (
+        <ContextMenu
+          items={contextMenu.items}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+        />
       )}
       {commits.map((c, i) => {
         const m = marker(c);
