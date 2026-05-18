@@ -33,6 +33,20 @@ struct ScanComplete {
 }
 
 #[tauri::command]
+pub async fn list_recent_commits_cached(
+    app: AppHandle,
+) -> Result<Vec<git::CommitSummary>, String> {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<git::CommitSummary>, String> {
+        let conn = cache::open(&app).map_err(|e| e.to_string())?;
+        let cutoff = unix_now() - TIMELINE_WINDOW_DAYS * 86_400;
+        cache::list_recent_commits(&conn, cutoff, TIMELINE_MAX_TOTAL).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn recent_commits(app: AppHandle) -> Result<Vec<git::CommitSummary>, String> {
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<git::CommitSummary>, String> {
@@ -55,6 +69,10 @@ pub async fn recent_commits(app: AppHandle) -> Result<Vec<git::CommitSummary>, S
         }
         all.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
         all.truncate(TIMELINE_MAX_TOTAL);
+
+        // Persist for the next cold start.
+        let mut conn = cache::open(&app).map_err(|e| e.to_string())?;
+        cache::upsert_commits(&mut conn, &all).map_err(|e| e.to_string())?;
         Ok(all)
     })
     .await

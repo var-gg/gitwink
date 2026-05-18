@@ -20,6 +20,10 @@ export async function discoverRepos(): Promise<number> {
   return invoke<number>("discover_repos");
 }
 
+export async function listRecentCommitsCached(): Promise<CommitSummary[]> {
+  return invoke<CommitSummary[]>("list_recent_commits_cached");
+}
+
 export async function recentCommits(): Promise<CommitSummary[]> {
   return invoke<CommitSummary[]>("recent_commits");
 }

@@ -5,6 +5,7 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import { Timeline } from "./components/Timeline";
 import {
   discoverRepos,
+  listRecentCommitsCached,
   listRepos,
   onScanComplete,
   onScanProgress,
@@ -33,23 +34,28 @@ function App() {
         const c = await recentCommits();
         if (mounted) setCommits(c);
       } catch {
-        // surface as empty for v0.1
-        if (mounted) setCommits([]);
+        if (mounted) setCommits((prev) => prev ?? []);
       }
     }
 
     (async () => {
+      // 1. Paint cached commits immediately — usually ~1ms.
       try {
-        const cached = await listRepos();
-        if (!mounted) return;
-        setRepoCount(cached.length);
-        if (cached.length > 0) {
-          void refreshCommits();
-        }
+        const cached = await listRecentCommitsCached();
+        if (mounted) setCommits(cached);
       } catch {
-        // First-run: cache file may not exist yet.
+        // First run: cache file may not exist yet. That's fine.
       }
 
+      // 2. In parallel, learn the cached repo count for the header.
+      try {
+        const repos = await listRepos();
+        if (mounted) setRepoCount(repos.length);
+      } catch {
+        // First run.
+      }
+
+      // 3. Subscribe to discovery events before kicking off scan.
       unP = await onScanProgress((p) => {
         if (mounted) setRepoCount(p.found);
       });
@@ -60,10 +66,16 @@ function App() {
         await refreshCommits();
       });
 
+      // 4. Kick off background discovery + refresh.
       setScanning(true);
       void discoverRepos().catch(() => {
         if (mounted) setScanning(false);
       });
+
+      // 5. Also refresh commits from disk in parallel, even before
+      //    discovery completes — covers the case where the repo set
+      //    didn't change but commits did since last open.
+      void refreshCommits();
     })();
 
     return () => {

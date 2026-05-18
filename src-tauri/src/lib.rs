@@ -28,6 +28,15 @@ pub fn run() {
 
             tray::setup(app)?;
 
+            // Best-effort LRU GC of the diff cache on startup. Off the main
+            // thread; ignore errors (cache may not exist yet on first run).
+            let gc_handle = app.handle().clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                if let Ok(mut conn) = cache::open(&gc_handle) {
+                    let _ = cache::gc_diffs(&mut conn, cache::DIFF_CACHE_MAX_BYTES);
+                }
+            });
+
             if let Some(panel) = app.get_webview_window("panel") {
                 let handle = app.handle().clone();
                 let focus_generation = Arc::new(AtomicU64::new(0));
@@ -64,6 +73,7 @@ pub fn run() {
             commands::ping,
             commands::list_repos,
             commands::discover_repos,
+            commands::list_recent_commits_cached,
             commands::recent_commits,
         ])
         .run(tauri::generate_context!())
