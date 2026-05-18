@@ -2,12 +2,15 @@ import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
+import { Timeline } from "./components/Timeline";
 import {
   discoverRepos,
   listRepos,
   onScanComplete,
   onScanProgress,
+  recentCommits,
 } from "./lib/ipc";
+import type { CommitSummary } from "./types";
 import "./styles.css";
 
 function startDrag(e: React.MouseEvent) {
@@ -16,30 +19,45 @@ function startDrag(e: React.MouseEvent) {
 }
 
 function App() {
-  const [count, setCount] = useState<number | null>(null);
+  const [repoCount, setRepoCount] = useState<number | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [commits, setCommits] = useState<CommitSummary[] | null>(null);
 
   useEffect(() => {
     let mounted = true;
     let unP: UnlistenFn | undefined;
     let unC: UnlistenFn | undefined;
 
+    async function refreshCommits() {
+      try {
+        const c = await recentCommits();
+        if (mounted) setCommits(c);
+      } catch {
+        // surface as empty for v0.1
+        if (mounted) setCommits([]);
+      }
+    }
+
     (async () => {
       try {
         const cached = await listRepos();
         if (!mounted) return;
-        setCount(cached.length);
+        setRepoCount(cached.length);
+        if (cached.length > 0) {
+          void refreshCommits();
+        }
       } catch {
-        // First-run: cache file may not exist yet. Fine.
+        // First-run: cache file may not exist yet.
       }
 
       unP = await onScanProgress((p) => {
-        if (mounted) setCount(p.found);
+        if (mounted) setRepoCount(p.found);
       });
-      unC = await onScanComplete((p) => {
+      unC = await onScanComplete(async (p) => {
         if (!mounted) return;
-        setCount(p.count);
+        setRepoCount(p.count);
         setScanning(false);
+        await refreshCommits();
       });
 
       setScanning(true);
@@ -56,22 +74,26 @@ function App() {
   }, []);
 
   let status: string;
-  if (count == null) {
+  if (repoCount == null) {
     status = "Loading…";
   } else if (scanning) {
-    status = `Scanning… ${count} ${count === 1 ? "repo" : "repos"} found`;
+    status = `Scanning… ${repoCount} ${repoCount === 1 ? "repo" : "repos"}`;
   } else {
-    status = `Found ${count} ${count === 1 ? "repository" : "repositories"}`;
+    status = `${repoCount} ${repoCount === 1 ? "repository" : "repositories"}`;
   }
 
   return (
     <main className="panel">
       <header className="panel-header" onMouseDown={startDrag}>
         <h1>gitwink</h1>
-        <span className="panel-status">v0.1 — bootstrapping</span>
+        <span className="panel-status">{status}</span>
       </header>
       <section className="panel-body">
-        <p className="panel-empty">{status}</p>
+        {commits == null ? (
+          <p className="panel-empty">Loading commits…</p>
+        ) : (
+          <Timeline commits={commits} />
+        )}
       </section>
     </main>
   );

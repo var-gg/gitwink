@@ -1,7 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-import type { Repo, ScanComplete, ScanProgress } from "../types";
+import type {
+  CommitSummary,
+  Repo,
+  ScanComplete,
+  ScanProgress,
+} from "../types";
 
 export async function ping(): Promise<string> {
   return invoke<string>("ping");
@@ -13,6 +18,10 @@ export async function listRepos(): Promise<Repo[]> {
 
 export async function discoverRepos(): Promise<number> {
   return invoke<number>("discover_repos");
+}
+
+export async function recentCommits(): Promise<CommitSummary[]> {
+  return invoke<CommitSummary[]>("recent_commits");
 }
 
 export async function onScanProgress(

@@ -64,6 +64,7 @@ pub fn run() {
             commands::ping,
             commands::list_repos,
             commands::discover_repos,
+            commands::recent_commits,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -79,3 +79,70 @@ body,
   text-align: center;
   margin-top: 40%;
 }
+
+.timeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: default;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+@media (prefers-color-scheme: dark) {
+  .timeline-row {
+    border-bottom-color: rgba(255, 255, 255, 0.04);
+  }
+}
+
+.timeline-row:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+@media (prefers-color-scheme: dark) {
+  .timeline-row:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+}
+
+.timeline-row.selected {
+  background: rgba(80, 130, 240, 0.18);
+}
+
+.timeline-time {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.55;
+  text-align: right;
+}
+
+.timeline-repo {
+  opacity: 0.7;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-summary {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-author {
+  opacity: 0.5;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

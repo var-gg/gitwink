@@ -1,7 +1,14 @@
+use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-use crate::{cache, discovery};
+use crate::{cache, discovery, git};
+
+const MAX_COMMITS_PER_REPO: usize = 10;
+const TIMELINE_WINDOW_DAYS: i64 = 7;
+const TIMELINE_MAX_TOTAL: usize = 50;
 
 #[tauri::command]
 pub fn ping() -> &'static str {
@@ -23,6 +30,42 @@ struct ScanProgress {
 #[derive(Clone, Serialize)]
 struct ScanComplete {
     count: usize,
+}
+
+#[tauri::command]
+pub async fn recent_commits(app: AppHandle) -> Result<Vec<git::CommitSummary>, String> {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<git::CommitSummary>, String> {
+        let conn = cache::open(&app).map_err(|e| e.to_string())?;
+        let repos = cache::list_repos(&conn).map_err(|e| e.to_string())?;
+        let cutoff = unix_now() - TIMELINE_WINDOW_DAYS * 86_400;
+
+        let mut all: Vec<git::CommitSummary> = Vec::new();
+        for repo in repos {
+            let commits = git::recent_commits(
+                Path::new(&repo.path),
+                MAX_COMMITS_PER_REPO,
+                cutoff,
+            )
+            .unwrap_or_default();
+            for mut c in commits {
+                c.repo_name = repo.name.clone();
+                all.push(c);
+            }
+        }
+        all.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        all.truncate(TIMELINE_MAX_TOTAL);
+        Ok(all)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn unix_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 #[tauri::command]
