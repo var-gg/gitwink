@@ -325,9 +325,11 @@ function App() {
           <p className="panel-empty">Loading commits…</p>
         ) : (
           <Timeline
+            key={singleMode ? `single:${selectedRepoPath}` : "all"}
             commits={filteredCommits}
             mode={singleMode ? "single" : "all"}
             onSelectRepo={singleMode ? undefined : setSelectedRepoPath}
+            branches={singleMode ? branches : undefined}
           />
         )}
       </section>

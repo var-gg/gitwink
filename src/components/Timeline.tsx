@@ -1,13 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { CommitSummary } from "../types";
+import { colorForBranch } from "../lib/colors";
+import { computeLanes } from "../lib/lanes";
+import type { BranchInfo, CommitSummary } from "../types";
+import { LaneGraph } from "./LaneGraph";
 
 interface Props {
   commits: CommitSummary[];
   mode: "all" | "single";
   /** In "all" mode, clicking the repo cell jumps to single-repo mode. */
   onSelectRepo?: (repoPath: string) => void;
+  /** Single-repo mode: list of branches so we can color by branch identity. */
+  branches?: BranchInfo[];
 }
+
+const ROW_HEIGHT_SINGLE = 31; // must match .timeline-single .timeline-row height
+const FIRST_ROW_CENTER = 15.5; // half of ROW_HEIGHT_SINGLE
 
 function timeAgo(unixSeconds: number): string {
   const now = Math.floor(Date.now() / 1000);
@@ -24,7 +32,7 @@ function marker(c: CommitSummary): { glyph: string; cls: string; title: string }
   return { glyph: "●", cls: "marker-dot", title: "Commit" };
 }
 
-export function Timeline({ commits, mode, onSelectRepo }: Props) {
+export function Timeline({ commits, mode, onSelectRepo, branches }: Props) {
   const [selected, setSelected] = useState(0);
   const listRef = useRef<HTMLUListElement | null>(null);
 
@@ -55,14 +63,29 @@ export function Timeline({ commits, mode, onSelectRepo }: Props) {
     row?.scrollIntoView({ block: "nearest" });
   }, [selected]);
 
+  const showRepo = mode === "all";
+  const headBranch = branches?.find((b) => b.isHead)?.name ?? null;
+
+  const laneGraph = useMemo(() => {
+    if (mode !== "single") return null;
+    return computeLanes(commits, (c) =>
+      colorForBranch(c.branchLabel ?? headBranch),
+    );
+  }, [commits, mode, headBranch]);
+
   if (commits.length === 0) {
     return <p className="panel-empty">No commits match.</p>;
   }
 
-  const showRepo = mode === "all";
-
   return (
     <ul className={"timeline timeline-" + mode} ref={listRef}>
+      {laneGraph && (
+        <LaneGraph
+          graph={laneGraph}
+          rowHeight={ROW_HEIGHT_SINGLE}
+          firstRowCenter={FIRST_ROW_CENTER}
+        />
+      )}
       {commits.map((c, i) => {
         const m = marker(c);
         return (
@@ -72,9 +95,13 @@ export function Timeline({ commits, mode, onSelectRepo }: Props) {
             className={"timeline-row" + (i === selected ? " selected" : "")}
             onClick={() => setSelected(i)}
           >
-            <span className={"timeline-marker " + m.cls} title={m.title}>
-              {m.glyph}
-            </span>
+            {mode === "single" ? (
+              <span className="timeline-lane-spacer" aria-hidden="true" />
+            ) : (
+              <span className={"timeline-marker " + m.cls} title={m.title}>
+                {m.glyph}
+              </span>
+            )}
             <span className="timeline-time">{timeAgo(c.timestamp)}</span>
             {showRepo && (
               <span

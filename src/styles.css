@@ -409,8 +409,13 @@ body,
   border-bottom: 1px solid rgba(0, 0, 0, 0.04);
 }
 
-/* Single-repo mode: lane area (DAG arrives in D.3) · time · summary · author.
-   Repo column is dropped because every row is the same repo. */
+/* Single-repo mode: lane area (SVG DAG) · time · summary · author.
+   Repo column dropped because every row is the same repo. */
+.timeline-single {
+  position: relative;
+  animation: lane-slidein 150ms ease-out;
+}
+
 .timeline-single .timeline-row {
   display: grid;
   grid-template-columns: 80px 36px minmax(0, 3fr) minmax(0, 1fr);
@@ -421,6 +426,31 @@ body,
   line-height: 1.5;
   cursor: default;
   border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  height: 31px;
+  box-sizing: border-box;
+}
+
+.timeline-lane-spacer {
+  /* placeholder so the grid keeps the lane column free for the absolute SVG */
+}
+
+.lane-graph {
+  position: absolute;
+  top: 0;
+  left: 12px; /* matches timeline-row padding-left */
+  pointer-events: none;
+  display: block;
+}
+
+@keyframes lane-slidein {
+  from {
+    opacity: 0.4;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @media (prefers-color-scheme: dark) {
