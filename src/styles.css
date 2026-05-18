@@ -1251,6 +1251,21 @@ body,
   white-space: pre;
 }
 
+/* Shiki output: inherit our row backgrounds + lift overall opacity slightly
+   so highlighted tokens stay readable on the delete/add row tints. */
+.sbs-text-shiki {
+  white-space: pre;
+}
+
+.sbs-text-shiki .line {
+  background: transparent !important;
+}
+
+.sbs-line.delete .sbs-text-shiki span,
+.sbs-line.add .sbs-text-shiki span {
+  background: transparent !important;
+}
+
 /* binary / image diff */
 
 .binary-info {

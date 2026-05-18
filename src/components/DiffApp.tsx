@@ -269,7 +269,7 @@ export function DiffApp() {
           ) : diffText == null ? (
             <div className="diff-loading">Loading diff…</div>
           ) : (
-            <SideBySideDiff text={diffText} />
+            <SideBySideDiff text={diffText} filePath={selectedFile} />
           )}
         </main>
       </div>
