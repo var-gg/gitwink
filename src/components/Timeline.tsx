@@ -62,6 +62,9 @@ export function Timeline({ commits }: Props) {
             {c.repoName}
           </span>
           <span className="timeline-summary" title={c.summary}>
+            {c.branchLabel && (
+              <span className="timeline-branch">[{c.branchLabel}]</span>
+            )}
             {c.summary}
           </span>
           <span className="timeline-author" title={c.email}>

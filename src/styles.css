@@ -139,6 +139,25 @@ body,
   white-space: nowrap;
 }
 
+.timeline-branch {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(80, 130, 240, 0.14);
+  color: rgba(80, 130, 240, 0.95);
+  vertical-align: 1px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .timeline-branch {
+    background: rgba(140, 180, 255, 0.16);
+    color: rgba(160, 190, 255, 0.95);
+  }
+}
+
 .timeline-author {
   opacity: 0.5;
   font-size: 11px;

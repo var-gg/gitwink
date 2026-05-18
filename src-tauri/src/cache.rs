@@ -50,6 +50,7 @@ pub fn open(app: &AppHandle) -> Result<Connection> {
             author TEXT NOT NULL,
             email TEXT NOT NULL,
             timestamp INTEGER NOT NULL,
+            branch_label TEXT,
             PRIMARY KEY (repo_path, hash)
         );
         CREATE INDEX IF NOT EXISTS idx_commits_ts ON commits(timestamp);
@@ -66,6 +67,10 @@ pub fn open(app: &AppHandle) -> Result<Connection> {
         CREATE INDEX IF NOT EXISTS idx_diffs_lru ON diffs(last_accessed_at);
         "#,
     )?;
+    // Migration: add branch_label to existing commits tables created before B.1.
+    // Silently ignore "duplicate column" errors on fresh DBs where the column
+    // is already present from the CREATE above.
+    let _ = conn.execute("ALTER TABLE commits ADD COLUMN branch_label TEXT", []);
     Ok(conn)
 }
 
@@ -115,14 +120,15 @@ pub fn upsert_commits(conn: &mut Connection, commits: &[CommitSummary]) -> Resul
     {
         let mut stmt = tx.prepare(
             r#"
-            INSERT INTO commits (repo_path, hash, repo_name, short_hash, summary, author, email, timestamp)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            INSERT INTO commits (repo_path, hash, repo_name, short_hash, summary, author, email, timestamp, branch_label)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
             ON CONFLICT(repo_path, hash) DO UPDATE SET
                 repo_name = excluded.repo_name,
                 summary = excluded.summary,
                 author = excluded.author,
                 email = excluded.email,
-                timestamp = excluded.timestamp
+                timestamp = excluded.timestamp,
+                branch_label = excluded.branch_label
             "#,
         )?;
         for c in commits {
@@ -134,7 +140,8 @@ pub fn upsert_commits(conn: &mut Connection, commits: &[CommitSummary]) -> Resul
                 c.summary,
                 c.author,
                 c.email,
-                c.timestamp
+                c.timestamp,
+                c.branch_label
             ])?;
         }
     }
@@ -149,7 +156,7 @@ pub fn list_recent_commits(
 ) -> Result<Vec<CommitSummary>> {
     let mut stmt = conn.prepare(
         r#"
-        SELECT repo_path, repo_name, hash, short_hash, summary, author, email, timestamp
+        SELECT repo_path, repo_name, hash, short_hash, summary, author, email, timestamp, branch_label
         FROM commits
         WHERE timestamp >= ?1
         ORDER BY timestamp DESC
@@ -167,6 +174,7 @@ pub fn list_recent_commits(
                 author: row.get(5)?,
                 email: row.get(6)?,
                 timestamp: row.get(7)?,
+                branch_label: row.get(8)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

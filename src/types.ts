@@ -28,6 +28,8 @@ export interface CommitSummary {
   author: string;
   email: string;
   timestamp: number;
+  /** Branch hint when the commit is NOT on the user's currently checked-out branch. */
+  branchLabel: string | null;
 }
 
 export interface ChangedFile {

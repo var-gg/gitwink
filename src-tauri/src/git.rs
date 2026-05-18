@@ -3,13 +3,14 @@
 // HARD RULE: every call here must be read-only. No commits, fetches, pushes,
 // merges, or any operation that mutates a repo's state on disk.
 
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use git2::{Repository, Sort};
-use serde::Serialize;
+use git2::{Oid, Repository, Sort};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitSummary {
     pub repo_path: String,
@@ -21,6 +22,10 @@ pub struct CommitSummary {
     pub email: String,
     /// Unix seconds.
     pub timestamp: i64,
+    /// Branch-name hint for commits NOT reachable from the currently checked-out
+    /// branch. None means "this commit is on the branch you're already on" (or
+    /// HEAD is detached, in which case we suppress all labels to avoid noise).
+    pub branch_label: Option<String>,
 }
 
 /// Walk HEAD and return up to `max_count` recent commits whose author time is
@@ -39,6 +44,64 @@ pub fn recent_commits(
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
+
+    // Identify what HEAD is on right now so we can suppress branch labels for
+    // the user's current branch (the spec rule: "체크아웃된 브랜치는 생략").
+    let detached = repo.head_detached().unwrap_or(true);
+    let head_branch_name: Option<String> = if detached {
+        None
+    } else {
+        repo.head()
+            .ok()
+            .and_then(|h| h.shorthand().map(|s| s.to_string()))
+    };
+
+    // Set of OIDs reachable from HEAD — these get no label.
+    let head_reachable: HashSet<Oid> = if head_branch_name.is_some() {
+        match repo
+            .head()
+            .ok()
+            .and_then(|h| h.peel_to_commit().ok())
+            .and_then(|c| {
+                let mut rw = repo.revwalk().ok()?;
+                rw.push(c.id()).ok()?;
+                Some(rw.flatten().collect::<HashSet<_>>())
+            }) {
+            Some(set) => set,
+            None => HashSet::new(),
+        }
+    } else {
+        HashSet::new()
+    };
+
+    // For each NON-current branch, build oid -> branch_name (first encountered
+    // wins). Skips commits already on HEAD.
+    let mut commit_to_branch: HashMap<Oid, String> = HashMap::new();
+    if let Ok(refs) = repo.references_glob("refs/heads/*") {
+        for r in refs.flatten() {
+            let Some(name) = r.shorthand().map(|s| s.to_string()) else {
+                continue;
+            };
+            if Some(&name) == head_branch_name.as_ref() {
+                continue;
+            }
+            let Some(tip) = r.target() else { continue };
+            let mut rw = match repo.revwalk() {
+                Ok(rw) => rw,
+                Err(_) => continue,
+            };
+            if rw.push(tip).is_err() {
+                continue;
+            }
+            for oid_res in rw {
+                let Ok(oid) = oid_res else { continue };
+                if head_reachable.contains(&oid) {
+                    continue;
+                }
+                commit_to_branch.entry(oid).or_insert_with(|| name.clone());
+            }
+        }
+    }
 
     let mut revwalk = repo.revwalk().context("init revwalk")?;
 
@@ -96,6 +159,11 @@ pub fn recent_commits(
         let short_hash: String = hash.chars().take(7).collect();
         let summary = commit.summary().unwrap_or("").to_string();
         let author = commit.author();
+        let branch_label = if head_branch_name.is_none() || head_reachable.contains(&oid) {
+            None
+        } else {
+            commit_to_branch.get(&oid).cloned()
+        };
         out.push(CommitSummary {
             repo_path: repo_path_str.clone(),
             repo_name: repo_name.clone(),
@@ -105,6 +173,7 @@ pub fn recent_commits(
             author: author.name().unwrap_or("").to_string(),
             email: author.email().unwrap_or("").to_string(),
             timestamp: ts,
+            branch_label,
         });
     }
 
@@ -186,6 +255,72 @@ mod tests {
         let commits = recent_commits(dir.path(), 10, 1_000).unwrap();
         assert_eq!(commits.len(), 1);
         assert_eq!(commits[0].summary, "new");
+    }
+
+    #[test]
+    fn current_branch_commits_have_no_label() {
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let _ = commit_with_time(&repo, "on current", 1_000, &[]);
+        let commits = recent_commits(dir.path(), 10, 0).unwrap();
+        assert_eq!(commits.len(), 1);
+        assert_eq!(commits[0].branch_label, None);
+    }
+
+    #[test]
+    fn other_branch_commits_get_label() {
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let main = commit_with_time(&repo, "shared", 1_000, &[]);
+        let mainc = repo.find_commit(main).unwrap();
+
+        repo.branch("dev", &mainc, false).unwrap();
+        let sig = Signature::new("t", "t@e", &Time::new(2_000, 0)).unwrap();
+        let tree = empty_tree(&repo);
+        repo.commit(
+            Some("refs/heads/dev"),
+            &sig,
+            &sig,
+            "dev-only",
+            &tree,
+            &[&mainc],
+        )
+        .unwrap();
+
+        let commits = recent_commits(dir.path(), 10, 0).unwrap();
+        let dev_commit = commits.iter().find(|c| c.summary == "dev-only").unwrap();
+        let shared_commit = commits.iter().find(|c| c.summary == "shared").unwrap();
+        assert_eq!(dev_commit.branch_label.as_deref(), Some("dev"));
+        assert_eq!(shared_commit.branch_label, None);
+    }
+
+    #[test]
+    fn detached_head_suppresses_all_labels() {
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let c1 = commit_with_time(&repo, "first", 1_000, &[]);
+        let c1c = repo.find_commit(c1).unwrap();
+        repo.branch("dev", &c1c, false).unwrap();
+        let sig = Signature::new("t", "t@e", &Time::new(2_000, 0)).unwrap();
+        let tree = empty_tree(&repo);
+        repo.commit(
+            Some("refs/heads/dev"),
+            &sig,
+            &sig,
+            "dev-only",
+            &tree,
+            &[&c1c],
+        )
+        .unwrap();
+
+        // Detach HEAD onto the first commit.
+        repo.set_head_detached(c1).unwrap();
+
+        let commits = recent_commits(dir.path(), 10, 0).unwrap();
+        assert!(
+            commits.iter().all(|c| c.branch_label.is_none()),
+            "detached HEAD must suppress all labels: {commits:?}"
+        );
     }
 
     #[test]
