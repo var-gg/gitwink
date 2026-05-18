@@ -30,6 +30,249 @@ pub struct CommitSummary {
     pub is_merge: bool,
     /// True if any tag points at this commit.
     pub is_tagged: bool,
+    /// Parent commit SHAs in order (first parent, then merge parents).
+    /// Needed by the DAG lane drawer in single-repo mode.
+    pub parents: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchInfo {
+    pub name: String,
+    pub tip_hash: String,
+    pub is_head: bool,
+    pub commit_count: usize,
+    /// Unix seconds of the tip commit, for "recent activity" sort.
+    pub last_activity: i64,
+}
+
+pub fn list_branches(repo_path: &Path) -> Result<Vec<BranchInfo>> {
+    let repo = Repository::open(repo_path)
+        .with_context(|| format!("open repo {}", repo_path.display()))?;
+
+    let head_branch: Option<String> = if repo.head_detached().unwrap_or(true) {
+        None
+    } else {
+        repo.head()
+            .ok()
+            .and_then(|h| h.shorthand().map(|s| s.to_string()))
+    };
+
+    let mut out: Vec<BranchInfo> = Vec::new();
+    let Ok(refs) = repo.references_glob("refs/heads/*") else {
+        return Ok(out);
+    };
+    for r in refs.flatten() {
+        let Some(name) = r.shorthand().map(|s| s.to_string()) else {
+            continue;
+        };
+        let Some(tip) = r.target() else { continue };
+
+        let mut count = 0usize;
+        let mut last_activity: i64 = 0;
+        if let Ok(mut rw) = repo.revwalk() {
+            if rw.push(tip).is_ok() {
+                let _ = rw.set_sorting(Sort::TIME);
+                for (i, oid_res) in rw.enumerate() {
+                    let Ok(oid) = oid_res else { continue };
+                    count = i + 1;
+                    if i == 0 {
+                        if let Ok(c) = repo.find_commit(oid) {
+                            last_activity = c.time().seconds();
+                        }
+                    }
+                    // Cap to avoid scanning huge histories purely for the
+                    // branch picker; the count is only a hint.
+                    if i >= 5_000 {
+                        count = 5_001;
+                        break;
+                    }
+                }
+            }
+        }
+
+        out.push(BranchInfo {
+            name: name.clone(),
+            tip_hash: tip.to_string(),
+            is_head: Some(&name) == head_branch.as_ref(),
+            commit_count: count,
+            last_activity,
+        });
+    }
+    out.sort_by(|a, b| b.last_activity.cmp(&a.last_activity));
+    Ok(out)
+}
+
+/// Walk the given branches (None = all local heads, like recent_commits) in
+/// a single repository, deduping by SHA, returning newest-first commits with
+/// parent SHAs populated.
+pub fn repo_commits(
+    repo_path: &Path,
+    branches: Option<&[String]>,
+    max_count: usize,
+    since_unix_seconds: i64,
+) -> Result<Vec<CommitSummary>> {
+    let repo = Repository::open(repo_path)
+        .with_context(|| format!("open repo {}", repo_path.display()))?;
+
+    let repo_path_str = repo_path.to_string_lossy().into_owned();
+    let repo_name = repo_path
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    let detached = repo.head_detached().unwrap_or(true);
+    let head_branch_name: Option<String> = if detached {
+        None
+    } else {
+        repo.head()
+            .ok()
+            .and_then(|h| h.shorthand().map(|s| s.to_string()))
+    };
+
+    let head_reachable: HashSet<Oid> = if head_branch_name.is_some() {
+        match repo
+            .head()
+            .ok()
+            .and_then(|h| h.peel_to_commit().ok())
+            .and_then(|c| {
+                let mut rw = repo.revwalk().ok()?;
+                rw.push(c.id()).ok()?;
+                Some(rw.flatten().collect::<HashSet<_>>())
+            }) {
+            Some(set) => set,
+            None => HashSet::new(),
+        }
+    } else {
+        HashSet::new()
+    };
+
+    let tagged_oids: HashSet<Oid> = {
+        let mut set = HashSet::new();
+        if let Ok(refs) = repo.references_glob("refs/tags/*") {
+            for r in refs.flatten() {
+                if let Ok(obj) = r.peel(git2::ObjectType::Commit) {
+                    set.insert(obj.id());
+                }
+            }
+        }
+        set
+    };
+
+    let mut commit_to_branch: HashMap<Oid, String> = HashMap::new();
+    if let Ok(refs) = repo.references_glob("refs/heads/*") {
+        for r in refs.flatten() {
+            let Some(name) = r.shorthand().map(|s| s.to_string()) else {
+                continue;
+            };
+            if Some(&name) == head_branch_name.as_ref() {
+                continue;
+            }
+            let Some(tip) = r.target() else { continue };
+            let mut rw = match repo.revwalk() {
+                Ok(rw) => rw,
+                Err(_) => continue,
+            };
+            if rw.push(tip).is_err() {
+                continue;
+            }
+            for oid_res in rw {
+                let Ok(oid) = oid_res else { continue };
+                if head_reachable.contains(&oid) {
+                    continue;
+                }
+                commit_to_branch.entry(oid).or_insert_with(|| name.clone());
+            }
+        }
+    }
+
+    let mut revwalk = repo.revwalk().context("init revwalk")?;
+    let mut pushed = 0usize;
+
+    match branches {
+        Some(names) if !names.is_empty() => {
+            for name in names {
+                let ref_name = format!("refs/heads/{name}");
+                if let Ok(reference) = repo.find_reference(&ref_name) {
+                    if let Some(oid) = reference.target() {
+                        if revwalk.push(oid).is_ok() {
+                            pushed += 1;
+                        }
+                    }
+                }
+            }
+        }
+        _ => {
+            if let Ok(refs) = repo.references_glob("refs/heads/*") {
+                for r in refs.flatten() {
+                    if let Some(oid) = r.target() {
+                        if revwalk.push(oid).is_ok() {
+                            pushed += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if pushed == 0 {
+        let Ok(head) = repo.head() else {
+            return Ok(Vec::new());
+        };
+        let Ok(head_commit) = head.peel_to_commit() else {
+            return Ok(Vec::new());
+        };
+        revwalk.push(head_commit.id()).context("push HEAD")?;
+    }
+
+    revwalk
+        .set_sorting(Sort::TIME)
+        .context("set revwalk sort")?;
+
+    let mut out: Vec<CommitSummary> = Vec::with_capacity(max_count);
+    for oid in revwalk {
+        if out.len() >= max_count {
+            break;
+        }
+        let oid = match oid {
+            Ok(o) => o,
+            Err(_) => continue,
+        };
+        let commit = match repo.find_commit(oid) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let ts = commit.time().seconds();
+        if ts < since_unix_seconds {
+            break;
+        }
+        let hash = oid.to_string();
+        let short_hash: String = hash.chars().take(7).collect();
+        let summary = commit.summary().unwrap_or("").to_string();
+        let author = commit.author();
+        let branch_label = if head_branch_name.is_none() || head_reachable.contains(&oid) {
+            None
+        } else {
+            commit_to_branch.get(&oid).cloned()
+        };
+        let parents: Vec<String> = commit.parent_ids().map(|p| p.to_string()).collect();
+        out.push(CommitSummary {
+            repo_path: repo_path_str.clone(),
+            repo_name: repo_name.clone(),
+            hash,
+            short_hash,
+            summary,
+            author: author.name().unwrap_or("").to_string(),
+            email: author.email().unwrap_or("").to_string(),
+            timestamp: ts,
+            branch_label,
+            is_merge: commit.parent_count() > 1,
+            is_tagged: tagged_oids.contains(&oid),
+            parents,
+        });
+    }
+
+    Ok(out)
 }
 
 /// Walk HEAD and return up to `max_count` recent commits whose author time is
@@ -182,6 +425,7 @@ pub fn recent_commits(
         } else {
             commit_to_branch.get(&oid).cloned()
         };
+        let parents: Vec<String> = commit.parent_ids().map(|p| p.to_string()).collect();
         out.push(CommitSummary {
             repo_path: repo_path_str.clone(),
             repo_name: repo_name.clone(),
@@ -194,6 +438,7 @@ pub fn recent_commits(
             branch_label,
             is_merge: commit.parent_count() > 1,
             is_tagged: tagged_oids.contains(&oid),
+            parents,
         });
     }
 

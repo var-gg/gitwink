@@ -3,22 +3,26 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
 import { AuthorsChip } from "./components/AuthorsChip";
+import { BranchChip } from "./components/BranchChip";
 import { RepoChip } from "./components/RepoChip";
 import { Timeline } from "./components/Timeline";
 import { TimeRangeChip } from "./components/TimeRangeChip";
 import {
   discoverRepos,
   getPinnedRepos,
+  listBranches,
   listRecentCommitsCached,
   listRepos,
   onScanComplete,
   onScanProgress,
   onTimelineRepoFill,
   recentCommits,
+  repoCommits,
   setPinnedRepos as savePinnedRepos,
 } from "./lib/ipc";
 import type {
   AuthorTally,
+  BranchInfo,
   CommitSummary,
   Repo,
   WindowDays,
@@ -30,7 +34,10 @@ const TIMELINE_MAX = 50;
 function startDrag(e: React.PointerEvent<HTMLElement>) {
   if (e.button !== 0) return;
   const target = e.target as HTMLElement | null;
-  if (target?.closest("button, input, [data-no-drag]")) return;
+  // Don't start a drag if the press landed on a clickable control or
+  // inside an open chip dropdown (incl. its scrollbars / inputs / pin
+  // buttons). The user is interacting with the dropdown, not the window.
+  if (target?.closest("button, input, .chip-dropdown, [data-no-drag]")) return;
   void getCurrentWindow().startDragging();
 }
 
@@ -62,10 +69,20 @@ function App() {
   const [selectedAuthors, setSelectedAuthors] = useState<string[] | "all">(
     "all",
   );
-  const [openChip, setOpenChip] = useState<"repo" | "time" | "authors" | null>(
-    null,
+
+  // Single-repo mode state.
+  const [branches, setBranches] = useState<BranchInfo[]>([]);
+  const [selectedBranches, setSelectedBranches] = useState<string[] | "all">(
+    "all",
   );
 
+  const [openChip, setOpenChip] = useState<
+    "repo" | "time" | "authors" | "branch" | null
+  >(null);
+
+  const singleMode = selectedRepoPath != null;
+
+  // ----- bootstrap (All-repos timeline) -----
   useEffect(() => {
     let mounted = true;
     let unP: UnlistenFn | undefined;
@@ -105,7 +122,10 @@ function App() {
       });
       unF = await onTimelineRepoFill((p) => {
         if (!mounted) return;
-        setCommits((prev) => mergeCommits(prev ?? [], p.commits));
+        // Only merge into the All-repos timeline; ignore while in single mode.
+        setCommits((prev) =>
+          selectedRepoPath ? prev : mergeCommits(prev ?? [], p.commits),
+        );
       });
 
       setScanning(true);
@@ -123,7 +143,9 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ----- refresh All-repos commits when time window changes -----
   useEffect(() => {
+    if (singleMode) return;
     let cancelled = false;
     (async () => {
       try {
@@ -138,7 +160,71 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [windowDays]);
+  }, [windowDays, singleMode]);
+
+  // ----- single-repo mode: load branches + commits -----
+  useEffect(() => {
+    if (!singleMode) {
+      setBranches([]);
+      setSelectedBranches("all");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const bs = await listBranches(selectedRepoPath!);
+        if (!cancelled) setBranches(bs);
+      } catch {}
+      try {
+        const cs = await repoCommits(
+          selectedRepoPath!,
+          null,
+          toWindowParam(windowDays),
+        );
+        if (!cancelled) setCommits(cs);
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRepoPath, windowDays]);
+
+  // ----- single-repo mode: refresh commits when branches selection changes -----
+  useEffect(() => {
+    if (!singleMode) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const branchParam =
+          selectedBranches === "all" ? null : selectedBranches;
+        const cs = await repoCommits(
+          selectedRepoPath!,
+          branchParam,
+          toWindowParam(windowDays),
+        );
+        if (!cancelled) setCommits(cs);
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBranches]);
+
+  // ----- ESC: exit single-repo mode (when no chip dropdown is open) -----
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      if (openChip != null) return; // chip handles its own Esc first
+      if (singleMode) {
+        setSelectedRepoPath(null);
+        e.preventDefault();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openChip, singleMode]);
 
   const authors: AuthorTally[] = useMemo(() => {
     const m = new Map<string, { count: number; lastActivity: number }>();
@@ -163,13 +249,15 @@ function App() {
   const filteredCommits = useMemo(() => {
     if (!commits) return null;
     let f = commits;
-    if (selectedRepoPath) f = f.filter((c) => c.repoPath === selectedRepoPath);
+    if (!singleMode && selectedRepoPath) {
+      f = f.filter((c) => c.repoPath === selectedRepoPath);
+    }
     if (selectedAuthors !== "all") {
       const set = new Set(selectedAuthors);
       f = f.filter((c) => set.has(c.author));
     }
     return f;
-  }, [commits, selectedRepoPath, selectedAuthors]);
+  }, [commits, selectedRepoPath, selectedAuthors, singleMode]);
 
   function togglePin(path: string) {
     setPinnedRepos((prev) => {
@@ -184,7 +272,7 @@ function App() {
   const repoCount = discoveredCount ?? allRepos.length;
 
   return (
-    <main className="panel">
+    <main className={"panel" + (singleMode ? " single-mode" : "")}>
       <header className="panel-header" onPointerDown={startDrag}>
         <h1>gitwink</h1>
         <div className="header-chips">
@@ -199,6 +287,18 @@ function App() {
             onTogglePin={togglePin}
             totalRepoCount={repoCount}
           />
+          {singleMode && (
+            <BranchChip
+              open={openChip === "branch"}
+              onToggle={() =>
+                setOpenChip(openChip === "branch" ? null : "branch")
+              }
+              onClose={() => setOpenChip(null)}
+              branches={branches}
+              selected={selectedBranches}
+              onChange={setSelectedBranches}
+            />
+          )}
           <TimeRangeChip
             open={openChip === "time"}
             onToggle={() => setOpenChip(openChip === "time" ? null : "time")}
@@ -224,7 +324,11 @@ function App() {
         {filteredCommits == null ? (
           <p className="panel-empty">Loading commits…</p>
         ) : (
-          <Timeline commits={filteredCommits} />
+          <Timeline
+            commits={filteredCommits}
+            mode={singleMode ? "single" : "all"}
+            onSelectRepo={singleMode ? undefined : setSelectedRepoPath}
+          />
         )}
       </section>
     </main>

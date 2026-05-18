@@ -111,6 +111,42 @@ pub async fn recent_commits(
 }
 
 #[tauri::command]
+pub async fn list_branches(repo_path: String) -> Result<Vec<git::BranchInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        git::list_branches(Path::new(&repo_path)).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn repo_commits(
+    app: AppHandle,
+    repo_path: String,
+    branches: Option<Vec<String>>,
+    window_days: Option<i64>,
+) -> Result<Vec<git::CommitSummary>, String> {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<git::CommitSummary>, String> {
+        let cutoff = cutoff_for(window_days);
+        let cap = per_repo_cap(window_days);
+        let branches_slice: Option<&[String]> = branches.as_deref();
+        let commits = git::repo_commits(Path::new(&repo_path), branches_slice, cap, cutoff)
+            .map_err(|e| e.to_string())?;
+        // Persist into the same commits cache so warm starts paint instantly
+        // for this repo too.
+        if !commits.is_empty() {
+            if let Ok(mut conn) = cache::open(&app) {
+                let _ = cache::upsert_commits(&mut conn, &commits);
+            }
+        }
+        Ok(commits)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub fn get_pinned_repos(app: AppHandle) -> Vec<String> {
     settings::load(&app).pinned_repos
 }

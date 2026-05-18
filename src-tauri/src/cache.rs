@@ -53,6 +53,7 @@ pub fn open(app: &AppHandle) -> Result<Connection> {
             branch_label TEXT,
             is_merge INTEGER NOT NULL DEFAULT 0,
             is_tagged INTEGER NOT NULL DEFAULT 0,
+            parents TEXT NOT NULL DEFAULT '[]',
             PRIMARY KEY (repo_path, hash)
         );
         CREATE INDEX IF NOT EXISTS idx_commits_ts ON commits(timestamp);
@@ -78,6 +79,10 @@ pub fn open(app: &AppHandle) -> Result<Connection> {
     );
     let _ = conn.execute(
         "ALTER TABLE commits ADD COLUMN is_tagged INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE commits ADD COLUMN parents TEXT NOT NULL DEFAULT '[]'",
         [],
     );
     Ok(conn)
@@ -129,8 +134,8 @@ pub fn upsert_commits(conn: &mut Connection, commits: &[CommitSummary]) -> Resul
     {
         let mut stmt = tx.prepare(
             r#"
-            INSERT INTO commits (repo_path, hash, repo_name, short_hash, summary, author, email, timestamp, branch_label, is_merge, is_tagged)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            INSERT INTO commits (repo_path, hash, repo_name, short_hash, summary, author, email, timestamp, branch_label, is_merge, is_tagged, parents)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
             ON CONFLICT(repo_path, hash) DO UPDATE SET
                 repo_name = excluded.repo_name,
                 summary = excluded.summary,
@@ -139,10 +144,12 @@ pub fn upsert_commits(conn: &mut Connection, commits: &[CommitSummary]) -> Resul
                 timestamp = excluded.timestamp,
                 branch_label = excluded.branch_label,
                 is_merge = excluded.is_merge,
-                is_tagged = excluded.is_tagged
+                is_tagged = excluded.is_tagged,
+                parents = excluded.parents
             "#,
         )?;
         for c in commits {
+            let parents_json = serde_json::to_string(&c.parents).unwrap_or_else(|_| "[]".into());
             stmt.execute(params![
                 c.repo_path,
                 c.hash,
@@ -154,7 +161,8 @@ pub fn upsert_commits(conn: &mut Connection, commits: &[CommitSummary]) -> Resul
                 c.timestamp,
                 c.branch_label,
                 c.is_merge as i32,
-                c.is_tagged as i32
+                c.is_tagged as i32,
+                parents_json
             ])?;
         }
     }
@@ -169,7 +177,7 @@ pub fn list_recent_commits(
 ) -> Result<Vec<CommitSummary>> {
     let mut stmt = conn.prepare(
         r#"
-        SELECT repo_path, repo_name, hash, short_hash, summary, author, email, timestamp, branch_label, is_merge, is_tagged
+        SELECT repo_path, repo_name, hash, short_hash, summary, author, email, timestamp, branch_label, is_merge, is_tagged, parents
         FROM commits
         WHERE timestamp >= ?1
         ORDER BY timestamp DESC
@@ -178,6 +186,8 @@ pub fn list_recent_commits(
     )?;
     let rows = stmt
         .query_map(params![since, limit as i64], |row| {
+            let parents_json: String = row.get(11)?;
+            let parents: Vec<String> = serde_json::from_str(&parents_json).unwrap_or_default();
             Ok(CommitSummary {
                 repo_path: row.get(0)?,
                 repo_name: row.get(1)?,
@@ -190,6 +200,7 @@ pub fn list_recent_commits(
                 branch_label: row.get(8)?,
                 is_merge: row.get::<_, i32>(9)? != 0,
                 is_tagged: row.get::<_, i32>(10)? != 0,
+                parents,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

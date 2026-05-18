@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type {
+  BranchInfo,
   CommitSummary,
   Repo,
   ScanComplete,
@@ -33,6 +34,22 @@ export async function recentCommits(
   windowDays: number | null,
 ): Promise<CommitSummary[]> {
   return invoke<CommitSummary[]>("recent_commits", { windowDays });
+}
+
+export async function listBranches(repoPath: string): Promise<BranchInfo[]> {
+  return invoke<BranchInfo[]>("list_branches", { repoPath });
+}
+
+export async function repoCommits(
+  repoPath: string,
+  branches: string[] | null,
+  windowDays: number | null,
+): Promise<CommitSummary[]> {
+  return invoke<CommitSummary[]>("repo_commits", {
+    repoPath,
+    branches,
+    windowDays,
+  });
 }
 
 export async function getPinnedRepos(): Promise<string[]> {

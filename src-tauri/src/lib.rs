@@ -91,6 +91,8 @@ pub fn run() {
             commands::discover_repos,
             commands::list_recent_commits_cached,
             commands::recent_commits,
+            commands::list_branches,
+            commands::repo_commits,
             commands::get_pinned_repos,
             commands::set_pinned_repos,
         ])

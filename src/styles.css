@@ -232,6 +232,7 @@ body,
 
 .chip-list {
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 4px 0;
 }
 
@@ -248,6 +249,8 @@ body,
   align-items: center;
   gap: 4px;
   padding-right: 6px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .chip-item-row.active {
@@ -256,6 +259,7 @@ body,
 
 .chip-item {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -290,6 +294,10 @@ body,
 
 .chip-item-name {
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .chip-item-path {
@@ -313,6 +321,12 @@ body,
   width: 12px;
   font-size: 11px;
   color: rgba(80, 130, 240, 0.95);
+}
+
+.chip-item-head {
+  font-size: 10px;
+  opacity: 0.6;
+  margin-left: 4px;
 }
 
 .chip-empty {
@@ -382,9 +396,24 @@ body,
   list-style: none;
 }
 
-.timeline-row {
+/* All-repos mode: marker · time · repo · summary · author */
+.timeline-all .timeline-row {
   display: grid;
   grid-template-columns: 28px 36px minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: default;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+/* Single-repo mode: lane area (DAG arrives in D.3) · time · summary · author.
+   Repo column is dropped because every row is the same repo. */
+.timeline-single .timeline-row {
+  display: grid;
+  grid-template-columns: 80px 36px minmax(0, 3fr) minmax(0, 1fr);
   gap: 10px;
   align-items: baseline;
   padding: 6px 12px;
@@ -443,6 +472,15 @@ body,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.timeline-repo-clickable {
+  cursor: pointer;
+}
+
+.timeline-repo-clickable:hover {
+  text-decoration: underline;
+  opacity: 1;
 }
 
 .timeline-summary {

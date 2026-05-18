@@ -32,6 +32,16 @@ export interface CommitSummary {
   branchLabel: string | null;
   isMerge: boolean;
   isTagged: boolean;
+  /** Parent commit SHAs in order. Used by the DAG lane drawer. */
+  parents: string[];
+}
+
+export interface BranchInfo {
+  name: string;
+  tipHash: string;
+  isHead: boolean;
+  commitCount: number;
+  lastActivity: number;
 }
 
 export type WindowDays = 1 | 3 | 7 | 30 | "all";
