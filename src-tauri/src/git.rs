@@ -26,6 +26,10 @@ pub struct CommitSummary {
     /// branch. None means "this commit is on the branch you're already on" (or
     /// HEAD is detached, in which case we suppress all labels to avoid noise).
     pub branch_label: Option<String>,
+    /// True if this commit has more than one parent (merge commit).
+    pub is_merge: bool,
+    /// True if any tag points at this commit.
+    pub is_tagged: bool,
 }
 
 /// Walk HEAD and return up to `max_count` recent commits whose author time is
@@ -72,6 +76,20 @@ pub fn recent_commits(
         }
     } else {
         HashSet::new()
+    };
+
+    // Collect oids that any tag points to (peel annotated tags through to the
+    // referenced commit). Used to set is_tagged on the result rows.
+    let tagged_oids: HashSet<Oid> = {
+        let mut set = HashSet::new();
+        if let Ok(refs) = repo.references_glob("refs/tags/*") {
+            for r in refs.flatten() {
+                if let Ok(obj) = r.peel(git2::ObjectType::Commit) {
+                    set.insert(obj.id());
+                }
+            }
+        }
+        set
     };
 
     // For each NON-current branch, build oid -> branch_name (first encountered
@@ -174,6 +192,8 @@ pub fn recent_commits(
             email: author.email().unwrap_or("").to_string(),
             timestamp: ts,
             branch_label,
+            is_merge: commit.parent_count() > 1,
+            is_tagged: tagged_oids.contains(&oid),
         });
     }
 

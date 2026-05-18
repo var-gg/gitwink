@@ -40,6 +40,7 @@ pub fn run() {
             if let Some(panel) = app.get_webview_window("panel") {
                 let handle = app.handle().clone();
                 let focus_generation = Arc::new(AtomicU64::new(0));
+                let move_generation = Arc::new(AtomicU64::new(0));
 
                 panel.on_window_event(move |event| match event {
                     WindowEvent::Focused(false) => {
@@ -61,7 +62,22 @@ pub fn run() {
                         focus_generation.fetch_add(1, Ordering::SeqCst);
                     }
                     WindowEvent::Moved(pos) => {
-                        settings::save_panel_position(&handle, pos.x, pos.y);
+                        // Debounce: during a drag this fires ~60 Hz. Only
+                        // persist the *settled* position to avoid
+                        // hammering settings.json.
+                        let stamp = move_generation
+                            .fetch_add(1, Ordering::SeqCst)
+                            .wrapping_add(1);
+                        let gen_clone = Arc::clone(&move_generation);
+                        let handle_clone = handle.clone();
+                        let x = pos.x;
+                        let y = pos.y;
+                        std::thread::spawn(move || {
+                            std::thread::sleep(Duration::from_millis(200));
+                            if gen_clone.load(Ordering::SeqCst) == stamp {
+                                settings::save_panel_position(&handle_clone, x, y);
+                            }
+                        });
                     }
                     _ => {}
                 });
@@ -75,6 +91,8 @@ pub fn run() {
             commands::discover_repos,
             commands::list_recent_commits_cached,
             commands::recent_commits,
+            commands::get_pinned_repos,
+            commands::set_pinned_repos,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

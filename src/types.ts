@@ -30,6 +30,16 @@ export interface CommitSummary {
   timestamp: number;
   /** Branch hint when the commit is NOT on the user's currently checked-out branch. */
   branchLabel: string | null;
+  isMerge: boolean;
+  isTagged: boolean;
+}
+
+export type WindowDays = 1 | 3 | 7 | 30 | "all";
+
+export interface AuthorTally {
+  name: string;
+  count: number;
+  lastActivity: number;
 }
 
 export interface ChangedFile {

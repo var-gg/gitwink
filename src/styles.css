@@ -32,22 +32,24 @@ body,
   display: flex;
   flex-direction: column;
   height: 100%;
-  overflow: hidden;
+  /* visible so chip dropdowns can overlay the body. The webview itself
+     still clips to the OS window — that's fine, our panel is sized to
+     contain dropdowns within it. */
+  overflow: visible;
 }
+
+/* ----- header (title + chips on one row) ----- */
 
 .panel-header {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 10px 14px;
+  align-items: stretch;
+  gap: 8px;
+  padding: 6px 12px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  cursor: grab;
+  cursor: default;
   user-select: none;
   -webkit-user-select: none;
-}
-
-.panel-header:active {
-  cursor: grabbing;
+  min-height: 36px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -57,20 +59,312 @@ body,
 }
 
 .panel-header h1 {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   margin: 0;
+  align-self: center;
+  flex-shrink: 0;
+  cursor: grab;
+}
+
+.panel-header h1:active {
+  cursor: grabbing;
+}
+
+.header-chips {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.panel-drag-handle {
+  flex: 1;
+  cursor: grab;
+  align-self: stretch;
+}
+
+.panel-drag-handle:active {
+  cursor: grabbing;
 }
 
 .panel-status {
   font-size: 11px;
   opacity: 0.6;
+  flex-shrink: 0;
 }
+
+/* ----- chips (live inside .header-chips now) ----- */
+
+.chip-wrap {
+  position: relative;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 12px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.chip:hover {
+  background: #f4f4f6;
+}
+
+.chip.open {
+  background: rgba(80, 130, 240, 0.16);
+  border-color: rgba(80, 130, 240, 0.55);
+}
+
+.chip.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (prefers-color-scheme: dark) {
+  .chip {
+    background: #2a2a2c;
+    border-color: rgba(255, 255, 255, 0.14);
+  }
+  .chip:hover {
+    background: #34343a;
+  }
+  .chip.open {
+    background: rgba(140, 180, 255, 0.2);
+    border-color: rgba(140, 180, 255, 0.55);
+  }
+}
+
+.chip-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+}
+
+.chip-clear {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.chip-clear:hover {
+  background: rgba(0, 0, 0, 0.15);
+  opacity: 1;
+}
+
+.chip-caret {
+  font-size: 9px;
+  opacity: 0.55;
+}
+
+.chip-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  z-index: 50;
+  width: 280px;
+  max-height: 320px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
+}
+
+.chip-dropdown-left {
+  left: 0;
+}
+
+.chip-dropdown-right {
+  right: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .chip-dropdown {
+    background: #2a2a2c;
+    border-color: rgba(255, 255, 255, 0.16);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  }
+}
+
+.chip-search {
+  padding: 6px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  .chip-search {
+    border-bottom-color: rgba(255, 255, 255, 0.06);
+  }
+}
+
+.chip-search input {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.chip-search input:focus {
+  border-color: rgba(80, 130, 240, 0.6);
+}
+
+.chip-list {
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.chip-section {
+  padding: 6px 10px 2px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.55;
+}
+
+.chip-item-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 6px;
+}
+
+.chip-item-row.active {
+  background: rgba(80, 130, 240, 0.14);
+}
+
+.chip-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 5px 10px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chip-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+@media (prefers-color-scheme: dark) {
+  .chip-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+}
+
+.chip-item.active {
+  background: rgba(80, 130, 240, 0.18);
+}
+
+.chip-item.checked {
+  font-weight: 600;
+}
+
+.chip-item-name {
+  font-weight: 500;
+}
+
+.chip-item-path {
+  font-size: 10px;
+  opacity: 0.55;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+.chip-item-count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+.chip-check {
+  display: inline-block;
+  width: 12px;
+  font-size: 11px;
+  color: rgba(80, 130, 240, 0.95);
+}
+
+.chip-empty {
+  padding: 10px;
+  text-align: center;
+  font-size: 11px;
+  opacity: 0.55;
+}
+
+.chip-pin {
+  padding: 2px 6px;
+  border: none;
+  background: transparent;
+  color: rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.chip-pin:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.chip-pin.pinned {
+  color: rgba(240, 180, 60, 0.95);
+}
+
+@media (prefers-color-scheme: dark) {
+  .chip-pin {
+    color: rgba(255, 255, 255, 0.22);
+  }
+  .chip-pin:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .chip-pin.pinned {
+    color: rgba(255, 200, 90, 0.95);
+  }
+}
+
+/* AuthorsChip puts the count item differently — override path style */
+.chip-item:not(.chip-item-row .chip-item) {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ----- body ----- */
 
 .panel-body {
   flex: 1;
   overflow-y: auto;
-  padding: 14px;
+  padding: 0;
 }
 
 .panel-empty {
@@ -80,6 +374,8 @@ body,
   margin-top: 40%;
 }
 
+/* ----- timeline ----- */
+
 .timeline {
   margin: 0;
   padding: 0;
@@ -88,7 +384,7 @@ body,
 
 .timeline-row {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-columns: 28px 36px minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
   gap: 10px;
   align-items: baseline;
   padding: 6px 12px;
@@ -116,6 +412,23 @@ body,
 
 .timeline-row.selected {
   background: rgba(80, 130, 240, 0.18);
+}
+
+.timeline-marker {
+  text-align: center;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.marker-merge {
+  color: #8a7ce0;
+  opacity: 0.95;
+}
+
+.marker-tag {
+  color: #d99a2b;
+  opacity: 0.95;
 }
 
 .timeline-time {

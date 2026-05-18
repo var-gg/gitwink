@@ -15,6 +15,12 @@ function timeAgo(unixSeconds: number): string {
   return `${Math.floor(diff / 86_400)}d`;
 }
 
+function marker(c: CommitSummary): { glyph: string; cls: string; title: string } {
+  if (c.isTagged) return { glyph: "★", cls: "marker-tag", title: "Tagged commit" };
+  if (c.isMerge) return { glyph: "◆", cls: "marker-merge", title: "Merge commit" };
+  return { glyph: "●", cls: "marker-dot", title: "Commit" };
+}
+
 export function Timeline({ commits }: Props) {
   const [selected, setSelected] = useState(0);
   const listRef = useRef<HTMLUListElement | null>(null);
@@ -25,6 +31,9 @@ export function Timeline({ commits }: Props) {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // Ignore keys while typing in inputs (chip search boxes etc.)
+      const target = e.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA"].includes(target.tagName)) return;
       if (e.key === "j" || e.key === "ArrowDown") {
         setSelected((s) => Math.min(s + 1, commits.length - 1));
         e.preventDefault();
@@ -45,33 +54,39 @@ export function Timeline({ commits }: Props) {
   }, [selected]);
 
   if (commits.length === 0) {
-    return <p className="panel-empty">No commits in the last 7 days.</p>;
+    return <p className="panel-empty">No commits match.</p>;
   }
 
   return (
     <ul className="timeline" ref={listRef}>
-      {commits.map((c, i) => (
-        <li
-          key={`${c.repoPath}:${c.hash}`}
-          data-row={i}
-          className={"timeline-row" + (i === selected ? " selected" : "")}
-          onClick={() => setSelected(i)}
-        >
-          <span className="timeline-time">{timeAgo(c.timestamp)}</span>
-          <span className="timeline-repo" title={c.repoPath}>
-            {c.repoName}
-          </span>
-          <span className="timeline-summary" title={c.summary}>
-            {c.branchLabel && (
-              <span className="timeline-branch">[{c.branchLabel}]</span>
-            )}
-            {c.summary}
-          </span>
-          <span className="timeline-author" title={c.email}>
-            {c.author}
-          </span>
-        </li>
-      ))}
+      {commits.map((c, i) => {
+        const m = marker(c);
+        return (
+          <li
+            key={`${c.repoPath}:${c.hash}`}
+            data-row={i}
+            className={"timeline-row" + (i === selected ? " selected" : "")}
+            onClick={() => setSelected(i)}
+          >
+            <span className={"timeline-marker " + m.cls} title={m.title}>
+              {m.glyph}
+            </span>
+            <span className="timeline-time">{timeAgo(c.timestamp)}</span>
+            <span className="timeline-repo" title={c.repoPath}>
+              {c.repoName}
+            </span>
+            <span className="timeline-summary" title={c.summary}>
+              {c.branchLabel && (
+                <span className="timeline-branch">[{c.branchLabel}]</span>
+              )}
+              {c.summary}
+            </span>
+            <span className="timeline-author" title={c.email}>
+              {c.author}
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
 }

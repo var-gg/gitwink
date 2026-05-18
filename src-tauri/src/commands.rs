@@ -4,11 +4,36 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-use crate::{cache, discovery, git};
+use crate::{cache, discovery, git, settings};
 
 const MAX_COMMITS_PER_REPO: usize = 10;
+const MAX_COMMITS_PER_REPO_NO_WINDOW: usize = 1_000;
 const TIMELINE_WINDOW_DAYS: i64 = 7;
 const TIMELINE_MAX_TOTAL: usize = 50;
+const TIMELINE_MAX_TOTAL_NO_WINDOW: usize = 5_000;
+
+fn cutoff_for(window_days: Option<i64>) -> i64 {
+    match window_days {
+        Some(d) if d > 0 => unix_now() - d * 86_400,
+        _ => 0,
+    }
+}
+
+fn per_repo_cap(window_days: Option<i64>) -> usize {
+    if window_days.is_none() {
+        MAX_COMMITS_PER_REPO_NO_WINDOW
+    } else {
+        MAX_COMMITS_PER_REPO
+    }
+}
+
+fn total_cap(window_days: Option<i64>) -> usize {
+    if window_days.is_none() {
+        TIMELINE_MAX_TOTAL_NO_WINDOW
+    } else {
+        TIMELINE_MAX_TOTAL
+    }
+}
 
 #[tauri::command]
 pub fn ping() -> &'static str {
@@ -40,42 +65,43 @@ struct TimelineRepoFill {
 #[tauri::command]
 pub async fn list_recent_commits_cached(
     app: AppHandle,
+    window_days: Option<i64>,
 ) -> Result<Vec<git::CommitSummary>, String> {
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<git::CommitSummary>, String> {
         let conn = cache::open(&app).map_err(|e| e.to_string())?;
-        let cutoff = unix_now() - TIMELINE_WINDOW_DAYS * 86_400;
-        cache::list_recent_commits(&conn, cutoff, TIMELINE_MAX_TOTAL).map_err(|e| e.to_string())
+        cache::list_recent_commits(&conn, cutoff_for(window_days), total_cap(window_days))
+            .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub async fn recent_commits(app: AppHandle) -> Result<Vec<git::CommitSummary>, String> {
+pub async fn recent_commits(
+    app: AppHandle,
+    window_days: Option<i64>,
+) -> Result<Vec<git::CommitSummary>, String> {
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<git::CommitSummary>, String> {
         let conn = cache::open(&app).map_err(|e| e.to_string())?;
         let repos = cache::list_repos(&conn).map_err(|e| e.to_string())?;
-        let cutoff = unix_now() - TIMELINE_WINDOW_DAYS * 86_400;
+        let cutoff = cutoff_for(window_days);
+        let per_repo = per_repo_cap(window_days);
+        let total = total_cap(window_days);
 
         let mut all: Vec<git::CommitSummary> = Vec::new();
         for repo in repos {
-            let commits = git::recent_commits(
-                Path::new(&repo.path),
-                MAX_COMMITS_PER_REPO,
-                cutoff,
-            )
-            .unwrap_or_default();
+            let commits =
+                git::recent_commits(Path::new(&repo.path), per_repo, cutoff).unwrap_or_default();
             for mut c in commits {
                 c.repo_name = repo.name.clone();
                 all.push(c);
             }
         }
         all.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-        all.truncate(TIMELINE_MAX_TOTAL);
+        all.truncate(total);
 
-        // Persist for the next cold start.
         let mut conn = cache::open(&app).map_err(|e| e.to_string())?;
         cache::upsert_commits(&mut conn, &all).map_err(|e| e.to_string())?;
         Ok(all)
@@ -83,6 +109,17 @@ pub async fn recent_commits(app: AppHandle) -> Result<Vec<git::CommitSummary>, S
     .await
     .map_err(|e| e.to_string())?
 }
+
+#[tauri::command]
+pub fn get_pinned_repos(app: AppHandle) -> Vec<String> {
+    settings::load(&app).pinned_repos
+}
+
+#[tauri::command]
+pub fn set_pinned_repos(app: AppHandle, repos: Vec<String>) {
+    settings::save_pinned_repos(&app, repos);
+}
+
 
 fn unix_now() -> i64 {
     SystemTime::now()

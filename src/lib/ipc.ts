@@ -21,12 +21,26 @@ export async function discoverRepos(): Promise<number> {
   return invoke<number>("discover_repos");
 }
 
-export async function listRecentCommitsCached(): Promise<CommitSummary[]> {
-  return invoke<CommitSummary[]>("list_recent_commits_cached");
+export async function listRecentCommitsCached(
+  windowDays: number | null,
+): Promise<CommitSummary[]> {
+  return invoke<CommitSummary[]>("list_recent_commits_cached", {
+    windowDays,
+  });
 }
 
-export async function recentCommits(): Promise<CommitSummary[]> {
-  return invoke<CommitSummary[]>("recent_commits");
+export async function recentCommits(
+  windowDays: number | null,
+): Promise<CommitSummary[]> {
+  return invoke<CommitSummary[]>("recent_commits", { windowDays });
+}
+
+export async function getPinnedRepos(): Promise<string[]> {
+  return invoke<string[]>("get_pinned_repos");
+}
+
+export async function setPinnedRepos(repos: string[]): Promise<void> {
+  await invoke("set_pinned_repos", { repos });
 }
 
 export async function onScanProgress(

@@ -51,6 +51,8 @@ pub fn open(app: &AppHandle) -> Result<Connection> {
             email TEXT NOT NULL,
             timestamp INTEGER NOT NULL,
             branch_label TEXT,
+            is_merge INTEGER NOT NULL DEFAULT 0,
+            is_tagged INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (repo_path, hash)
         );
         CREATE INDEX IF NOT EXISTS idx_commits_ts ON commits(timestamp);
@@ -67,10 +69,17 @@ pub fn open(app: &AppHandle) -> Result<Connection> {
         CREATE INDEX IF NOT EXISTS idx_diffs_lru ON diffs(last_accessed_at);
         "#,
     )?;
-    // Migration: add branch_label to existing commits tables created before B.1.
-    // Silently ignore "duplicate column" errors on fresh DBs where the column
-    // is already present from the CREATE above.
+    // Migrations: idempotent ALTERs for columns added after the original
+    // schema. SQLite raises "duplicate column" on a fresh DB; ignored.
     let _ = conn.execute("ALTER TABLE commits ADD COLUMN branch_label TEXT", []);
+    let _ = conn.execute(
+        "ALTER TABLE commits ADD COLUMN is_merge INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE commits ADD COLUMN is_tagged INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
     Ok(conn)
 }
 
@@ -120,15 +129,17 @@ pub fn upsert_commits(conn: &mut Connection, commits: &[CommitSummary]) -> Resul
     {
         let mut stmt = tx.prepare(
             r#"
-            INSERT INTO commits (repo_path, hash, repo_name, short_hash, summary, author, email, timestamp, branch_label)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            INSERT INTO commits (repo_path, hash, repo_name, short_hash, summary, author, email, timestamp, branch_label, is_merge, is_tagged)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
             ON CONFLICT(repo_path, hash) DO UPDATE SET
                 repo_name = excluded.repo_name,
                 summary = excluded.summary,
                 author = excluded.author,
                 email = excluded.email,
                 timestamp = excluded.timestamp,
-                branch_label = excluded.branch_label
+                branch_label = excluded.branch_label,
+                is_merge = excluded.is_merge,
+                is_tagged = excluded.is_tagged
             "#,
         )?;
         for c in commits {
@@ -141,7 +152,9 @@ pub fn upsert_commits(conn: &mut Connection, commits: &[CommitSummary]) -> Resul
                 c.author,
                 c.email,
                 c.timestamp,
-                c.branch_label
+                c.branch_label,
+                c.is_merge as i32,
+                c.is_tagged as i32
             ])?;
         }
     }
@@ -156,7 +169,7 @@ pub fn list_recent_commits(
 ) -> Result<Vec<CommitSummary>> {
     let mut stmt = conn.prepare(
         r#"
-        SELECT repo_path, repo_name, hash, short_hash, summary, author, email, timestamp, branch_label
+        SELECT repo_path, repo_name, hash, short_hash, summary, author, email, timestamp, branch_label, is_merge, is_tagged
         FROM commits
         WHERE timestamp >= ?1
         ORDER BY timestamp DESC
@@ -175,6 +188,8 @@ pub fn list_recent_commits(
                 email: row.get(6)?,
                 timestamp: row.get(7)?,
                 branch_label: row.get(8)?,
+                is_merge: row.get::<_, i32>(9)? != 0,
+                is_tagged: row.get::<_, i32>(10)? != 0,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

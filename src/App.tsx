@@ -1,23 +1,36 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
+import { AuthorsChip } from "./components/AuthorsChip";
+import { RepoChip } from "./components/RepoChip";
 import { Timeline } from "./components/Timeline";
+import { TimeRangeChip } from "./components/TimeRangeChip";
 import {
   discoverRepos,
+  getPinnedRepos,
   listRecentCommitsCached,
   listRepos,
   onScanComplete,
   onScanProgress,
   onTimelineRepoFill,
+  recentCommits,
+  setPinnedRepos as savePinnedRepos,
 } from "./lib/ipc";
-import type { CommitSummary } from "./types";
+import type {
+  AuthorTally,
+  CommitSummary,
+  Repo,
+  WindowDays,
+} from "./types";
 import "./styles.css";
 
 const TIMELINE_MAX = 50;
 
-function startDrag(e: React.MouseEvent) {
-  if (e.buttons !== 1) return;
+function startDrag(e: React.PointerEvent<HTMLElement>) {
+  if (e.button !== 0) return;
+  const target = e.target as HTMLElement | null;
+  if (target?.closest("button, input, [data-no-drag]")) return;
   void getCurrentWindow().startDragging();
 }
 
@@ -33,10 +46,25 @@ function mergeCommits(
     .slice(0, TIMELINE_MAX);
 }
 
+function toWindowParam(w: WindowDays): number | null {
+  return w === "all" ? null : (w as number);
+}
+
 function App() {
-  const [repoCount, setRepoCount] = useState<number | null>(null);
   const [scanning, setScanning] = useState(false);
   const [commits, setCommits] = useState<CommitSummary[] | null>(null);
+  const [allRepos, setAllRepos] = useState<Repo[]>([]);
+  const [discoveredCount, setDiscoveredCount] = useState<number | null>(null);
+  const [pinnedRepos, setPinnedRepos] = useState<string[]>([]);
+
+  const [windowDays, setWindowDays] = useState<WindowDays>(7);
+  const [selectedRepoPath, setSelectedRepoPath] = useState<string | null>(null);
+  const [selectedAuthors, setSelectedAuthors] = useState<string[] | "all">(
+    "all",
+  );
+  const [openChip, setOpenChip] = useState<"repo" | "time" | "authors" | null>(
+    null,
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -45,38 +73,41 @@ function App() {
     let unF: UnlistenFn | undefined;
 
     (async () => {
-      // 1. Paint cached commits immediately.
       try {
-        const cached = await listRecentCommitsCached();
+        const cached = await listRecentCommitsCached(toWindowParam(windowDays));
         if (mounted) setCommits(cached);
-      } catch {
-        // First run.
-      }
+      } catch {}
 
-      // 2. Cached repo count for the header.
       try {
         const repos = await listRepos();
-        if (mounted) setRepoCount(repos.length);
-      } catch {
-        // First run.
-      }
+        if (mounted) {
+          setAllRepos(repos);
+          setDiscoveredCount(repos.length);
+        }
+      } catch {}
 
-      // 3. Subscribe before kicking off discovery.
+      try {
+        const pins = await getPinnedRepos();
+        if (mounted) setPinnedRepos(pins);
+      } catch {}
+
       unP = await onScanProgress((p) => {
-        if (mounted) setRepoCount(p.found);
+        if (mounted) setDiscoveredCount(p.found);
       });
-      unC = await onScanComplete((p) => {
+      unC = await onScanComplete(async (p) => {
         if (!mounted) return;
-        setRepoCount(p.count);
+        setDiscoveredCount(p.count);
         setScanning(false);
+        try {
+          const repos = await listRepos();
+          if (mounted) setAllRepos(repos);
+        } catch {}
       });
-      // 4. Stream per-repo commits into the timeline as discovery runs.
       unF = await onTimelineRepoFill((p) => {
         if (!mounted) return;
         setCommits((prev) => mergeCommits(prev ?? [], p.commits));
       });
 
-      // 5. Kick off the scan.
       setScanning(true);
       void discoverRepos().catch(() => {
         if (mounted) setScanning(false);
@@ -89,28 +120,111 @@ function App() {
       unC?.();
       unF?.();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  let status: string;
-  if (repoCount == null) {
-    status = "Loading…";
-  } else if (scanning) {
-    status = `Scanning… ${repoCount} ${repoCount === 1 ? "repo" : "repos"}`;
-  } else {
-    status = `${repoCount} ${repoCount === 1 ? "repository" : "repositories"}`;
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const cached = await listRecentCommitsCached(toWindowParam(windowDays));
+        if (!cancelled) setCommits(cached);
+      } catch {}
+      try {
+        const fresh = await recentCommits(toWindowParam(windowDays));
+        if (!cancelled) setCommits(fresh);
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [windowDays]);
+
+  const authors: AuthorTally[] = useMemo(() => {
+    const m = new Map<string, { count: number; lastActivity: number }>();
+    for (const c of commits ?? []) {
+      const cur = m.get(c.author);
+      if (cur) {
+        cur.count += 1;
+        if (c.timestamp > cur.lastActivity) cur.lastActivity = c.timestamp;
+      } else {
+        m.set(c.author, { count: 1, lastActivity: c.timestamp });
+      }
+    }
+    return Array.from(m.entries())
+      .map(([name, info]) => ({
+        name,
+        count: info.count,
+        lastActivity: info.lastActivity,
+      }))
+      .sort((a, b) => b.lastActivity - a.lastActivity);
+  }, [commits]);
+
+  const filteredCommits = useMemo(() => {
+    if (!commits) return null;
+    let f = commits;
+    if (selectedRepoPath) f = f.filter((c) => c.repoPath === selectedRepoPath);
+    if (selectedAuthors !== "all") {
+      const set = new Set(selectedAuthors);
+      f = f.filter((c) => set.has(c.author));
+    }
+    return f;
+  }, [commits, selectedRepoPath, selectedAuthors]);
+
+  function togglePin(path: string) {
+    setPinnedRepos((prev) => {
+      const next = prev.includes(path)
+        ? prev.filter((p) => p !== path)
+        : [...prev, path];
+      void savePinnedRepos(next);
+      return next;
+    });
   }
+
+  const repoCount = discoveredCount ?? allRepos.length;
 
   return (
     <main className="panel">
-      <header className="panel-header" onMouseDown={startDrag}>
+      <header className="panel-header" onPointerDown={startDrag}>
         <h1>gitwink</h1>
-        <span className="panel-status">{status}</span>
+        <div className="header-chips">
+          <RepoChip
+            open={openChip === "repo"}
+            onToggle={() => setOpenChip(openChip === "repo" ? null : "repo")}
+            onClose={() => setOpenChip(null)}
+            repos={allRepos}
+            pinned={pinnedRepos}
+            selectedPath={selectedRepoPath}
+            onSelect={setSelectedRepoPath}
+            onTogglePin={togglePin}
+            totalRepoCount={repoCount}
+          />
+          <TimeRangeChip
+            open={openChip === "time"}
+            onToggle={() => setOpenChip(openChip === "time" ? null : "time")}
+            onClose={() => setOpenChip(null)}
+            value={windowDays}
+            onChange={setWindowDays}
+          />
+          <AuthorsChip
+            open={openChip === "authors"}
+            onToggle={() =>
+              setOpenChip(openChip === "authors" ? null : "authors")
+            }
+            onClose={() => setOpenChip(null)}
+            authors={authors}
+            selected={selectedAuthors}
+            onChange={setSelectedAuthors}
+          />
+        </div>
+        <div className="panel-drag-handle" />
+        {scanning && <span className="panel-status">Scanning…</span>}
       </header>
       <section className="panel-body">
-        {commits == null ? (
+        {filteredCommits == null ? (
           <p className="panel-empty">Loading commits…</p>
         ) : (
-          <Timeline commits={commits} />
+          <Timeline commits={filteredCommits} />
         )}
       </section>
     </main>

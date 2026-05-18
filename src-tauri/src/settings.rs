@@ -8,6 +8,8 @@ use tauri::{AppHandle, Manager};
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct Settings {
     pub panel_position: Option<PanelPosition>,
+    #[serde(default)]
+    pub pinned_repos: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -57,5 +59,13 @@ pub fn clear_panel_position(app: &AppHandle) {
     s.panel_position = None;
     if let Err(e) = save(app, &s) {
         eprintln!("settings: failed to clear panel position: {e:#}");
+    }
+}
+
+pub fn save_pinned_repos(app: &AppHandle, pinned: Vec<String>) {
+    let mut s = load(app);
+    s.pinned_repos = pinned;
+    if let Err(e) = save(app, &s) {
+        eprintln!("settings: failed to persist pinned_repos: {e:#}");
     }
 }
