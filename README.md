@@ -18,8 +18,13 @@ agent commits  →  tray click  →  inline expand  →  "Copy as AI context"
 
 ## What v0.1 ships
 
-- System tray icon (Windows tray / macOS menu bar) with click-to-toggle and
-  right-click Quit / Reset position.
+- System tray icon (Windows tray / macOS menu bar) with click-to-toggle
+  and right-click Reset position / Open settings file / Quit.
+- Global hotkey `Ctrl+Shift+G` (Windows) / `Cmd+Shift+G` (macOS) to
+  summon or dismiss the panel from anywhere. Change it by editing
+  `panel_hotkey` in `settings.json` (right-click the tray icon →
+  "Open settings file…") to any Tauri shortcut spec, e.g.
+  `"Alt+Space"`, `"Ctrl+Alt+Backquote"`. Restart gitwink to apply.
 - First-run discovery walks default user dirs (`source`, `Documents`,
   `Projects`, `Code`, `Dev`, `repos`, `Desktop`, every non-system drive on
   Windows / `~/Projects`, `~/Code`, `~/Documents`, `~/Developer` on macOS).

@@ -58,22 +58,34 @@ pub fn run() {
             tray::setup(app)?;
 
             // Global hotkey to summon the panel from anywhere, even when
-            // tray-hidden. CmdOrCtrl+Shift+G — "G" for git/gitwink, Shift
-            // to avoid clashing with common single-modifier app hotkeys.
-            // Best-effort: if another running app already holds this
-            // binding (Windows registers globally, so first-bind wins) we
-            // log and continue rather than fail startup.
-            match "CmdOrCtrl+Shift+G".parse::<Shortcut>() {
+            // tray-hidden. Default CmdOrCtrl+Shift+G ("G" for gitwink),
+            // overridable via `panel_hotkey` in settings.json. Best-effort:
+            // if the user-supplied spec doesn't parse, or another running
+            // app already holds the binding (Windows registers globally,
+            // first-bind wins), we log and start up anyway — the tray
+            // icon stays as the fallback entry point.
+            let hotkey_spec = settings::load(app.handle())
+                .panel_hotkey
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| settings::DEFAULT_PANEL_HOTKEY.to_string());
+            match hotkey_spec.parse::<Shortcut>() {
                 Ok(panel_shortcut) => {
                     if let Err(e) = app.global_shortcut().register(panel_shortcut) {
                         eprintln!(
-                            "gitwink: failed to register global hotkey CmdOrCtrl+Shift+G ({e}); \
+                            "gitwink: failed to register global hotkey {hotkey_spec:?} ({e}); \
                              the tray icon still works as a fallback"
                         );
                     }
                 }
                 Err(e) => {
-                    eprintln!("gitwink: invalid global hotkey spec: {e}");
+                    eprintln!(
+                        "gitwink: invalid global hotkey spec {hotkey_spec:?} ({e}); \
+                         using fallback {default:?}",
+                        default = settings::DEFAULT_PANEL_HOTKEY
+                    );
+                    if let Ok(fallback) = settings::DEFAULT_PANEL_HOTKEY.parse::<Shortcut>() {
+                        let _ = app.global_shortcut().register(fallback);
+                    }
                 }
             }
 

@@ -5,6 +5,11 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
+/// Default global hotkey to summon the panel. Users can override via the
+/// `panel_hotkey` field in settings.json — see DEFAULT_PANEL_HOTKEY usage
+/// in lib.rs. `CmdOrCtrl` resolves to Cmd on macOS and Ctrl on Windows.
+pub const DEFAULT_PANEL_HOTKEY: &str = "CmdOrCtrl+Shift+G";
+
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct Settings {
     pub panel_position: Option<PanelPosition>,
@@ -12,6 +17,11 @@ pub struct Settings {
     pub pinned_repos: Vec<String>,
     #[serde(default)]
     pub diff_window: Option<DiffWindowState>,
+    /// Global hotkey spec (Tauri shortcut syntax, e.g. `"CmdOrCtrl+Shift+G"`,
+    /// `"Alt+Space"`, `"Ctrl+Alt+Backquote"`). None or invalid value falls
+    /// back to DEFAULT_PANEL_HOTKEY. Takes effect on next app start.
+    #[serde(default)]
+    pub panel_hotkey: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -36,6 +46,20 @@ fn settings_path(app: &AppHandle) -> Result<PathBuf> {
         .app_config_dir()
         .context("resolving app config dir")?;
     Ok(dir.join("settings.json"))
+}
+
+/// Public path resolver so the tray menu can offer "Open settings file..."
+/// — making sure the file exists first by writing the current (possibly
+/// default) state if it's missing.
+pub fn ensure_path(app: &AppHandle) -> Result<PathBuf> {
+    let path = settings_path(app)?;
+    if !path.exists() {
+        // Write whatever load() returns (default if no file) so the user
+        // has something to edit rather than opening a non-existent file.
+        let s = load(app);
+        save(app, &s)?;
+    }
+    Ok(path)
 }
 
 pub fn load(app: &AppHandle) -> Settings {
