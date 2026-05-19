@@ -51,7 +51,13 @@ export interface CommitSummary {
 }
 
 export interface BranchInfo {
+  /** Display name. Local: shorthand ("main"). Remote: includes remote prefix ("origin/main"). */
   name: string;
+  /** Fully-qualified ref name. Use this as the wire identifier when
+   * filtering — disambiguates a local "main" from a remote "origin/main". */
+  refName: string;
+  /** "local" | "remote" — frontend groups by this in the BranchChip. */
+  kind: "local" | "remote";
   tipHash: string;
   isHead: boolean;
   commitCount: number;

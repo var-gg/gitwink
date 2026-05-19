@@ -45,8 +45,12 @@ export async function listBranches(repoPath: string): Promise<BranchInfo[]> {
 
 export async function currentUpstreamStatus(
   repoPath: string,
+  branchName: string | null,
 ): Promise<UpstreamStatus | null> {
-  return invoke<UpstreamStatus | null>("current_upstream_status", { repoPath });
+  return invoke<UpstreamStatus | null>("current_upstream_status", {
+    repoPath,
+    branchName,
+  });
 }
 
 export async function repoCommits(

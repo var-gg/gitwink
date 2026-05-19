@@ -126,9 +126,11 @@ pub async fn list_branches(repo_path: String) -> Result<Vec<git::BranchInfo>, St
 #[tauri::command]
 pub async fn current_upstream_status(
     repo_path: String,
+    branch_name: Option<String>,
 ) -> Result<Option<git::UpstreamStatus>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        git::current_upstream_status(Path::new(&repo_path)).map_err(|e| e.to_string())
+        git::current_upstream_status(Path::new(&repo_path), branch_name.as_deref())
+            .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?

@@ -82,7 +82,18 @@ pub struct CommitFileBlobs {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BranchInfo {
+    /// Display name. For local refs this is the branch shorthand (e.g.
+    /// `"main"`); for remote-tracking refs it includes the remote prefix
+    /// (e.g. `"origin/main"`).
     pub name: String,
+    /// Fully qualified ref name (`refs/heads/<n>` or `refs/remotes/<n>`).
+    /// Used as the wire identifier when filtering — disambiguates local
+    /// branches whose shorthand happens to collide with a remote ref
+    /// shorthand and vice versa.
+    pub ref_name: String,
+    /// `"local"` or `"remote"`. Frontend uses this to group the two in
+    /// the BranchChip dropdown without re-parsing `ref_name`.
+    pub kind: String,
     pub tip_hash: String,
     pub is_head: bool,
     pub commit_count: usize,
@@ -489,6 +500,38 @@ pub fn file_diff(repo_path: &Path, commit_hash: &str, file_path: &str) -> Result
     Ok(out)
 }
 
+/// Cheap revwalk-based commit count + tip activity time for a single ref
+/// tip. Capped at 5,000 — the count is only a UI hint, and unbounded walks
+/// would block branch-picker render on monorepos.
+fn ref_count_and_activity(repo: &Repository, tip: Oid) -> (usize, i64) {
+    let mut count = 0usize;
+    let mut last_activity: i64 = 0;
+    if let Ok(mut rw) = repo.revwalk() {
+        // libgit2: set_sorting MUST be called before any push/hide.
+        let _ = rw.set_sorting(Sort::TIME);
+        if rw.push(tip).is_ok() {
+            for (i, oid_res) in rw.enumerate() {
+                let Ok(oid) = oid_res else { continue };
+                count = i + 1;
+                if i == 0 {
+                    if let Ok(c) = repo.find_commit(oid) {
+                        last_activity = c.time().seconds();
+                    }
+                }
+                if i >= 5_000 {
+                    count = 5_001;
+                    break;
+                }
+            }
+        }
+    }
+    (count, last_activity)
+}
+
+/// Return every local branch AND every remote-tracking ref in the repo.
+/// Remote refs come from `refs/remotes/*`, skipping any `*/HEAD` symbolic
+/// alias. Both share the same `BranchInfo` shape, with `kind` set so the
+/// frontend can render them in separate sections.
 pub fn list_branches(repo_path: &Path) -> Result<Vec<BranchInfo>> {
     let repo = Repository::open(repo_path)
         .with_context(|| format!("open repo {}", repo_path.display()))?;
@@ -502,49 +545,53 @@ pub fn list_branches(repo_path: &Path) -> Result<Vec<BranchInfo>> {
     };
 
     let mut out: Vec<BranchInfo> = Vec::new();
-    let Ok(refs) = repo.references_glob("refs/heads/*") else {
-        return Ok(out);
-    };
-    for r in refs.flatten() {
-        let Some(name) = r.shorthand().map(|s| s.to_string()) else {
-            continue;
-        };
-        let Some(tip) = r.target() else { continue };
 
-        let mut count = 0usize;
-        let mut last_activity: i64 = 0;
-        if let Ok(mut rw) = repo.revwalk() {
-            // libgit2: set_sorting MUST be called before any push/hide — a
-            // sort-mode change resets the walker, dropping previously-pushed
-            // starting points.
-            let _ = rw.set_sorting(Sort::TIME);
-            if rw.push(tip).is_ok() {
-                for (i, oid_res) in rw.enumerate() {
-                    let Ok(oid) = oid_res else { continue };
-                    count = i + 1;
-                    if i == 0 {
-                        if let Ok(c) = repo.find_commit(oid) {
-                            last_activity = c.time().seconds();
-                        }
-                    }
-                    // Cap to avoid scanning huge histories purely for the
-                    // branch picker; the count is only a hint.
-                    if i >= 5_000 {
-                        count = 5_001;
-                        break;
-                    }
-                }
-            }
+    // Local heads first.
+    if let Ok(refs) = repo.references_glob("refs/heads/*") {
+        for r in refs.flatten() {
+            let Some(name) = r.shorthand().map(|s| s.to_string()) else {
+                continue;
+            };
+            let Some(tip) = r.target() else { continue };
+            let (count, last_activity) = ref_count_and_activity(&repo, tip);
+            out.push(BranchInfo {
+                name: name.clone(),
+                ref_name: format!("refs/heads/{name}"),
+                kind: "local".to_string(),
+                tip_hash: tip.to_string(),
+                is_head: Some(&name) == head_branch.as_ref(),
+                commit_count: count,
+                last_activity,
+            });
         }
-
-        out.push(BranchInfo {
-            name: name.clone(),
-            tip_hash: tip.to_string(),
-            is_head: Some(&name) == head_branch.as_ref(),
-            commit_count: count,
-            last_activity,
-        });
     }
+
+    // Remote-tracking refs (local file reads — no fetch). Skip the symbolic
+    // `*/HEAD` alias and any ref the target isn't reachable for.
+    if let Ok(refs) = repo.references_glob("refs/remotes/*") {
+        for r in refs.flatten() {
+            let Some(name) = r.shorthand().map(|s| s.to_string()) else {
+                continue;
+            };
+            if name.ends_with("/HEAD") {
+                continue;
+            }
+            let Some(tip) = r.target() else { continue };
+            let (count, last_activity) = ref_count_and_activity(&repo, tip);
+            out.push(BranchInfo {
+                name: name.clone(),
+                ref_name: format!("refs/remotes/{name}"),
+                kind: "remote".to_string(),
+                tip_hash: tip.to_string(),
+                is_head: false,
+                commit_count: count,
+                last_activity,
+            });
+        }
+    }
+
+    // Sort by recency overall; UI groups by `kind` so this just controls
+    // intra-group ordering.
     out.sort_by(|a, b| b.last_activity.cmp(&a.last_activity));
     Ok(out)
 }
@@ -554,29 +601,48 @@ pub fn list_branches(repo_path: &Path) -> Result<Vec<BranchInfo>> {
 /// stays trivially small even on diverged branches.
 const AHEAD_BEHIND_CAP: usize = 99;
 
-/// Report how the currently checked-out branch relates to its upstream
-/// remote-tracking ref. Returns None for detached HEAD or when no upstream
-/// is configured AND no `origin/<branch>` fallback exists.
+/// Report how a given local branch relates to its upstream remote-tracking
+/// ref. When `branch_name` is None, defaults to the currently checked-out
+/// branch. Returns None for detached HEAD (no branch_name given), for an
+/// unknown branch name, or when no upstream is configured AND no
+/// `origin/<branch>` fallback exists.
 ///
 /// PURE READ. We only inspect refs the user/IDE already wrote with
 /// `git fetch`/`pull`; gitwink never initiates network activity.
-pub fn current_upstream_status(repo_path: &Path) -> Result<Option<UpstreamStatus>> {
+pub fn current_upstream_status(
+    repo_path: &Path,
+    branch_name: Option<&str>,
+) -> Result<Option<UpstreamStatus>> {
     let repo = Repository::open(repo_path)
         .with_context(|| format!("open repo {}", repo_path.display()))?;
 
-    if repo.head_detached().unwrap_or(false) {
-        return Ok(None);
-    }
-
-    let head = match repo.head() {
-        Ok(h) => h,
-        Err(_) => return Ok(None),
-    };
-    let Some(local_branch_name) = head.shorthand().map(|s| s.to_string()) else {
-        return Ok(None);
-    };
-    let Some(local_oid) = head.target() else {
-        return Ok(None);
+    // Resolve the local branch we're computing for.
+    let (local_branch_name, local_oid) = match branch_name {
+        Some(name) => {
+            let Ok(branch) = repo.find_branch(name, BranchType::Local) else {
+                return Ok(None);
+            };
+            let Some(oid) = branch.get().target() else {
+                return Ok(None);
+            };
+            (name.to_string(), oid)
+        }
+        None => {
+            if repo.head_detached().unwrap_or(false) {
+                return Ok(None);
+            }
+            let head = match repo.head() {
+                Ok(h) => h,
+                Err(_) => return Ok(None),
+            };
+            let Some(name) = head.shorthand().map(|s| s.to_string()) else {
+                return Ok(None);
+            };
+            let Some(oid) = head.target() else {
+                return Ok(None);
+            };
+            (name, oid)
+        }
     };
 
     // Resolve upstream: prefer the configured upstream (`branch.<n>.remote`
@@ -909,21 +975,6 @@ pub fn repo_commits(
 
     let tagged_oids = collect_tagged_oids(&repo);
 
-    // Remote tracking refs (origin/*) are local-file reads — `git fetch` has
-    // already written them, gitwink never calls fetch itself. Including them
-    // as additional revwalk roots makes "someone/agent pushed to a remote
-    // branch you don't have locally" visible in the timeline. We only do
-    // this in all-branches mode; when the user explicitly filtered to local
-    // branches in the BranchChip, we respect that filter and don't mix in
-    // remote noise.
-    let include_remotes = matches!(branches, None | Some(&[]));
-    let remote_tips = if include_remotes {
-        collect_origin_remote_tips(&repo, since_unix_seconds, REMOTE_TIP_ROOT_CAP)
-    } else {
-        Vec::new()
-    };
-    let remote_badges = build_remote_badge_map(&remote_tips);
-
     let mut revwalk = repo.revwalk().context("init revwalk")?;
     // libgit2 contract: set_sorting resets the walker, so it MUST run before
     // any push/hide. Calling it after pushes (as we did in 847ed51) silently
@@ -933,39 +984,73 @@ pub fn repo_commits(
         .context("set revwalk sort")?;
     let mut pushed = 0usize;
 
-    match branches {
-        Some(names) if !names.is_empty() => {
-            for name in names {
-                let ref_name = format!("refs/heads/{name}");
-                if let Ok(reference) = repo.find_reference(&ref_name) {
-                    if let Some(oid) = reference.target() {
-                        if revwalk.push(oid).is_ok() {
-                            pushed += 1;
+    // Remote tips contribute both as revwalk roots (so remote-only commits
+    // appear) AND as the source of per-row "origin/X" badges. In explicit
+    // mode (user picked specific refs), only the remote refs they picked
+    // count. In all-branches mode, auto-discover the recent origin/* tips
+    // with the same window filter — this is the GitLens-killer feature.
+    let mut remote_tips: Vec<RemoteTip> = Vec::new();
+
+    let explicit_names: Option<&[String]> = match branches {
+        Some(s) if !s.is_empty() => Some(s),
+        _ => None,
+    };
+
+    if let Some(names) = explicit_names {
+        // BranchChip selection — names may be either full ref paths
+        // (`refs/heads/...` / `refs/remotes/...`) or bare shorthand for
+        // local branches (callers from before the multi-ref change).
+        for name in names {
+            let full = if name.starts_with("refs/") {
+                name.clone()
+            } else {
+                format!("refs/heads/{name}")
+            };
+            let Ok(reference) = repo.find_reference(&full) else {
+                continue;
+            };
+            let Some(oid) = reference.target() else {
+                continue;
+            };
+            if revwalk.push(oid).is_ok() {
+                pushed += 1;
+                // Picked-remote refs feed the badge map so users see
+                // `origin/X` even when their selection is explicit.
+                if full.starts_with("refs/remotes/") {
+                    if let Some(short) = reference.shorthand() {
+                        if let Ok(commit) = repo.find_commit(oid) {
+                            remote_tips.push(RemoteTip {
+                                label: short.to_string(),
+                                oid,
+                                last_activity: commit.time().seconds(),
+                            });
                         }
                     }
                 }
             }
         }
-        _ => {
-            if let Ok(refs) = repo.references_glob("refs/heads/*") {
-                for r in refs.flatten() {
-                    if let Some(oid) = r.target() {
-                        if revwalk.push(oid).is_ok() {
-                            pushed += 1;
-                        }
+    } else {
+        // All-branches mode: every local head + recent origin/* tips.
+        if let Ok(refs) = repo.references_glob("refs/heads/*") {
+            for r in refs.flatten() {
+                if let Some(oid) = r.target() {
+                    if revwalk.push(oid).is_ok() {
+                        pushed += 1;
                     }
                 }
             }
+        }
+        remote_tips = collect_origin_remote_tips(
+            &repo,
+            since_unix_seconds,
+            REMOTE_TIP_ROOT_CAP,
+        );
+        for tip in &remote_tips {
+            let _ = revwalk.push(tip.oid);
         }
     }
 
-    // Add remote tip OIDs as extra revwalk roots so remote-only commits
-    // (e.g. a branch on origin nobody pulled locally yet) appear. Revwalk
-    // dedupes by OID, so this is a no-op for commits already reachable
-    // from local heads.
-    for tip in &remote_tips {
-        let _ = revwalk.push(tip.oid);
-    }
+    let remote_badges = build_remote_badge_map(&remote_tips);
 
     if pushed == 0 && remote_tips.is_empty() {
         let Ok(head) = repo.head() else {

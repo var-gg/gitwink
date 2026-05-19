@@ -68,19 +68,6 @@ body,
   -webkit-user-select: none;
 }
 
-.panel-header h1 {
-  font-size: 13px;
-  font-weight: 600;
-  margin: 0;
-  align-self: center;
-  flex-shrink: 0;
-  cursor: grab;
-}
-
-.panel-header h1:active {
-  cursor: grabbing;
-}
-
 .header-chips {
   display: flex;
   align-items: center;
@@ -107,6 +94,8 @@ body,
   white-space: nowrap;
 }
 .upstream-badge-synced {
+  /* glyph-only when in sync — minimum footprint */
+  padding: 0 5px;
   background: rgba(60, 160, 100, 0.12);
   color: rgba(40, 130, 80, 0.95);
 }
@@ -418,6 +407,22 @@ body,
   font-size: 10px;
   opacity: 0.6;
   margin-left: 4px;
+}
+
+/* Section header inside BranchChip dropdown (Local / Remote tracking).
+ * Sticky enough to read at a glance, quiet enough not to look clickable. */
+.chip-section-header {
+  padding: 8px 10px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.45;
+  user-select: none;
+  cursor: help;
+}
+.chip-section-header:first-child {
+  padding-top: 4px;
 }
 
 .chip-empty {

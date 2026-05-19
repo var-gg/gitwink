@@ -77,14 +77,19 @@ function UpstreamBadge({ status }: UpstreamBadgeProps) {
         "upstream-badge" + (synced ? " upstream-badge-synced" : " upstream-badge-diverged")
       }
       title={title}
+      aria-label={
+        synced
+          ? `In sync with ${status.upstream}`
+          : `${status.ahead} ahead, ${status.behind} behind ${status.upstream}`
+      }
     >
       {synced ? (
-        <>
-          <span className="upstream-badge-check" aria-hidden="true">
-            ✓
-          </span>
-          <span className="upstream-badge-ref">{status.upstream}</span>
-        </>
+        // Compact: glyph only. Full ref name lives in title/aria-label so
+        // the header doesn't overflow when both BranchChip and this badge
+        // share space.
+        <span className="upstream-badge-check" aria-hidden="true">
+          ✓
+        </span>
       ) : (
         <>
           {status.ahead > 0 && <span className="upstream-badge-ahead">↑{aheadStr}</span>}
@@ -242,12 +247,11 @@ function App() {
     };
   }, [windowDays, singleMode]);
 
-  // ----- single-repo mode: load branches + commits + upstream status -----
+  // ----- single-repo mode: load branches + commits -----
   useEffect(() => {
     if (!singleMode) {
       setBranches([]);
       setSelectedBranches("all");
-      setUpstream(null);
       return;
     }
     let cancelled = false;
@@ -264,8 +268,45 @@ function App() {
         );
         if (!cancelled) setCommits(cs);
       } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRepoPath, windowDays]);
+
+  // ----- single-repo mode: upstream status (selection-aware) -----
+  // Refetches whenever the repo OR the BranchChip selection changes. Logic:
+  //   • "all" or multi-select → HEAD (fall back so the default view shows
+  //     something meaningful instead of nothing).
+  //   • single LOCAL branch focused → that branch's upstream.
+  //   • single REMOTE ref focused → no badge (remote refs have no upstream
+  //     of their own in our model).
+  useEffect(() => {
+    if (!singleMode) {
+      setUpstream(null);
+      return;
+    }
+    let cancelled = false;
+
+    let branchParam: string | null = null;
+    let skipFetch = false;
+    if (selectedBranches !== "all" && selectedBranches.length === 1) {
+      const only = selectedBranches[0];
+      if (only.startsWith("refs/heads/")) {
+        branchParam = only.slice("refs/heads/".length);
+      } else if (only.startsWith("refs/remotes/")) {
+        skipFetch = true;
+      }
+    }
+    if (skipFetch) {
+      setUpstream(null);
+      return;
+    }
+
+    (async () => {
       try {
-        const us = await currentUpstreamStatus(selectedRepoPath!);
+        const us = await currentUpstreamStatus(selectedRepoPath!, branchParam);
         if (!cancelled) setUpstream(us);
       } catch {
         if (!cancelled) setUpstream(null);
@@ -274,8 +315,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRepoPath, windowDays]);
+  }, [selectedRepoPath, singleMode, selectedBranches]);
 
   // ----- single-repo mode: refresh commits when branches selection changes -----
   useEffect(() => {
@@ -378,11 +418,11 @@ function App() {
       <header className="panel-header" onPointerDown={startDrag}>
         <img
           src="/icon.png"
-          alt=""
+          alt="gitwink"
+          title="gitwink"
           className="panel-header-icon"
           draggable={false}
         />
-        <h1>gitwink</h1>
         <div className="header-chips">
           <RepoChip
             open={openChip === "repo"}
