@@ -374,6 +374,19 @@ export function Timeline({
                   <span className="timeline-branch">[{c.branchLabel}]</span>
                 )}
                 {c.summary}
+                {c.remoteTipLabel && (
+                  <span
+                    className="timeline-remote-tip"
+                    title={
+                      c.remoteTipExtraCount > 0
+                        ? `Remote tracking refs at this commit (read-only, from your last git fetch). +${c.remoteTipExtraCount} more.`
+                        : "Remote tracking ref at this commit (read-only, from your last git fetch)."
+                    }
+                  >
+                    {c.remoteTipLabel}
+                    {c.remoteTipExtraCount > 0 && ` +${c.remoteTipExtraCount}`}
+                  </span>
+                )}
               </span>
               <span className="timeline-author" title={c.email}>
                 {c.author}

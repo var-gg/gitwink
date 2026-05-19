@@ -65,21 +65,16 @@ impl RepoWatcher {
                 return;
             };
 
-            // Walk up to the .git directory we're watching, then look it up
-            // in the map to get the repo_path *in the form the rest of the
-            // app uses* (cache rows, discovery output, panel state).
-            let Some(git_dir) = path.ancestors().find(|p| {
-                p.file_name()
-                    .and_then(|n| n.to_str())
-                    .map(|n| n == ".git")
-                    .unwrap_or(false)
-            }) else {
-                return;
-            };
+            // Find the repo this event belongs to. Worktrees keep their
+            // gitdir at `main/.git/worktrees/<name>` and submodules at
+            // `super/.git/modules/<name>`, so "first ancestor named .git"
+            // matches the WRONG directory in those cases. Look up the
+            // event's ancestors against the registered watched dirs and
+            // take the longest-prefix match instead.
             let Ok(map) = g2r.lock() else {
                 return;
             };
-            let Some(repo_path) = map.get(git_dir).cloned() else {
+            let Some(repo_path) = repo_for_event_path(path, &map) else {
                 return;
             };
             drop(map);
@@ -94,23 +89,46 @@ impl RepoWatcher {
     }
 
     pub fn add(&self, repo_path: &Path) {
-        let Some(git_dir) = resolve_git_dir(repo_path) else {
+        let dirs = resolve_git_dirs_to_watch(repo_path);
+        if dirs.is_empty() {
             return;
-        };
-        let canon = git_dir.canonicalize().unwrap_or_else(|_| git_dir.clone());
+        }
         let Ok(mut map) = self.git_to_repo.lock() else {
             return;
         };
-        if map.contains_key(&canon) {
-            return;
-        }
         let Ok(mut w) = self.inner.lock() else {
             return;
         };
-        if w.watch(&canon, RecursiveMode::Recursive).is_ok() {
-            map.insert(canon, repo_path.to_path_buf());
+        for dir in dirs {
+            let canon = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+            if map.contains_key(&canon) {
+                continue;
+            }
+            if w.watch(&canon, RecursiveMode::Recursive).is_ok() {
+                map.insert(canon, repo_path.to_path_buf());
+            }
         }
     }
+}
+
+/// Resolve an inbound notify event back to one of our registered repos by
+/// finding the longest-ancestor that's a key in `git_to_repo`. Falls back
+/// to per-ancestor canonicalize for non-canonical input.
+fn repo_for_event_path(
+    event_path: &Path,
+    git_to_repo: &HashMap<PathBuf, PathBuf>,
+) -> Option<PathBuf> {
+    for ancestor in event_path.ancestors() {
+        if let Some(repo) = git_to_repo.get(ancestor) {
+            return Some(repo.clone());
+        }
+        if let Ok(canon) = ancestor.canonicalize() {
+            if let Some(repo) = git_to_repo.get(&canon) {
+                return Some(repo.clone());
+            }
+        }
+    }
+    None
 }
 
 /// Return the actual git directory for `repo_path`. For a normal clone this
@@ -136,6 +154,38 @@ fn resolve_git_dir(repo_path: &Path) -> Option<PathBuf> {
         }
     }
     None
+}
+
+/// Return every git dir we should subscribe to for `repo_path`. For a normal
+/// clone that's just `<repo>/.git`. For a linked worktree it's the per-worktree
+/// gitdir PLUS the main repo's common gitdir, because shared refs (notably
+/// `refs/remotes/*`, `packed-refs`, and `FETCH_HEAD`) live in the common dir
+/// rather than the per-worktree dir. Without watching both, a `git fetch` in
+/// the main checkout never produces a fresh-update event for the worktree.
+fn resolve_git_dirs_to_watch(repo_path: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let Some(git_dir) = resolve_git_dir(repo_path) else {
+        return out;
+    };
+    out.push(git_dir.clone());
+
+    if let Ok(text) = std::fs::read_to_string(git_dir.join("commondir")) {
+        // Path-aware trim: only strip line terminators. `trim()` would also
+        // remove leading/trailing whitespace from the path itself, which
+        // (while rare) would be wrong.
+        let raw = text.trim_end_matches(['\n', '\r']);
+        let p = Path::new(raw);
+        let common = if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            git_dir.join(p)
+        };
+        if common != git_dir && common.is_dir() {
+            out.push(common);
+        }
+    }
+
+    out
 }
 
 /// Trailing-edge debounce: collapse a burst of events into a single refresh
@@ -203,4 +253,57 @@ fn unix_now() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn p(s: &str) -> PathBuf {
+        PathBuf::from(s.replace('/', std::path::MAIN_SEPARATOR_STR.chars().next().unwrap().to_string().as_str()))
+    }
+
+    #[test]
+    fn event_path_under_normal_repo_gitdir_maps_to_repo() {
+        let repo = p("/tmp/myrepo");
+        let gitdir = p("/tmp/myrepo/.git");
+        let mut map = HashMap::new();
+        map.insert(gitdir.clone(), repo.clone());
+
+        let event = gitdir.join("HEAD");
+        assert_eq!(repo_for_event_path(&event, &map), Some(repo));
+    }
+
+    #[test]
+    fn event_path_under_worktree_gitdir_maps_to_worktree_repo() {
+        // Worktree at /tmp/worktree, gitdir at /tmp/main/.git/worktrees/wt1.
+        // The "first ancestor named .git" of an event under that path is
+        // /tmp/main/.git, which is the WRONG repo. Longest-prefix lookup
+        // should pick the registered worktree gitdir instead.
+        let worktree_repo = p("/tmp/worktree");
+        let worktree_gitdir = p("/tmp/main/.git/worktrees/wt1");
+        let mut map = HashMap::new();
+        map.insert(worktree_gitdir.clone(), worktree_repo.clone());
+
+        let event = worktree_gitdir.join("HEAD");
+        assert_eq!(repo_for_event_path(&event, &map), Some(worktree_repo));
+    }
+
+    #[test]
+    fn event_path_under_submodule_gitdir_maps_to_submodule_repo() {
+        let sub_repo = p("/tmp/super/sub");
+        let sub_gitdir = p("/tmp/super/.git/modules/sub");
+        let mut map = HashMap::new();
+        map.insert(sub_gitdir.clone(), sub_repo.clone());
+
+        let event = sub_gitdir.join("refs/heads/main");
+        assert_eq!(repo_for_event_path(&event, &map), Some(sub_repo));
+    }
+
+    #[test]
+    fn unregistered_event_returns_none() {
+        let map: HashMap<PathBuf, PathBuf> = HashMap::new();
+        let event = p("/tmp/random/path");
+        assert_eq!(repo_for_event_path(&event, &map), None);
+    }
 }

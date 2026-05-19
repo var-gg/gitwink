@@ -10,6 +10,7 @@ import type {
   ScanComplete,
   ScanProgress,
   TimelineRepoFill,
+  UpstreamStatus,
 } from "../types";
 
 export async function ping(): Promise<string> {
@@ -40,6 +41,12 @@ export async function recentCommits(
 
 export async function listBranches(repoPath: string): Promise<BranchInfo[]> {
   return invoke<BranchInfo[]>("list_branches", { repoPath });
+}
+
+export async function currentUpstreamStatus(
+  repoPath: string,
+): Promise<UpstreamStatus | null> {
+  return invoke<UpstreamStatus | null>("current_upstream_status", { repoPath });
 }
 
 export async function repoCommits(

@@ -88,6 +88,58 @@ body,
   flex-shrink: 0;
 }
 
+/* Upstream ahead/behind badge in single-repo mode. Read-only — sits next
+ * to the BranchChip and shows how far the local branch has drifted from
+ * its origin/<branch> tracking ref. Tooltip explains the local-only,
+ * no-fetch caveat. Deliberately not a button: it's an info badge. */
+.upstream-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px;
+  height: 20px;
+  border-radius: 10px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: help;
+  user-select: none;
+  white-space: nowrap;
+}
+.upstream-badge-synced {
+  background: rgba(60, 160, 100, 0.12);
+  color: rgba(40, 130, 80, 0.95);
+}
+.upstream-badge-diverged {
+  background: rgba(220, 140, 40, 0.14);
+  color: rgba(200, 120, 30, 0.95);
+}
+.upstream-badge-check {
+  font-weight: 700;
+}
+.upstream-badge-ref {
+  font-weight: 500;
+  opacity: 0.85;
+}
+.upstream-badge-ahead,
+.upstream-badge-behind {
+  font-variant-numeric: tabular-nums;
+}
+.upstream-badge-ahead + .upstream-badge-behind {
+  margin-left: 2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .upstream-badge-synced {
+    background: rgba(80, 200, 130, 0.16);
+    color: rgba(120, 220, 160, 0.95);
+  }
+  .upstream-badge-diverged {
+    background: rgba(255, 180, 80, 0.18);
+    color: rgba(255, 200, 120, 0.95);
+  }
+}
+
 .panel-drag-handle {
   flex: 1;
   cursor: grab;
@@ -588,6 +640,31 @@ body,
   .timeline-branch {
     background: rgba(140, 180, 255, 0.16);
     color: rgba(160, 190, 255, 0.95);
+  }
+}
+
+/* Remote-tracking ref badge — appears after the commit summary when an
+ * origin/<branch> tip points at this commit. Deliberately quieter than
+ * the local branch label: thinner weight, monospace, neutral grey so it
+ * doesn't compete with local identity in the timeline. */
+.timeline-remote-tip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  background: rgba(0, 0, 0, 0.05);
+  color: rgba(0, 0, 0, 0.55);
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+@media (prefers-color-scheme: dark) {
+  .timeline-remote-tip {
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.5);
   }
 }
 

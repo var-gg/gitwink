@@ -5,9 +5,10 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::time::UNIX_EPOCH;
 
 use anyhow::{Context, Result};
-use git2::{Oid, Repository, Sort};
+use git2::{BranchType, Oid, Repository, Sort};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,6 +37,16 @@ pub struct CommitSummary {
     /// Full commit message (summary + body). Surfaced in the inline
     /// expansion. Empty string if libgit2 couldn't decode it.
     pub message: String,
+    /// Remote-tracking ref shorthand (e.g. "origin/main") that points at
+    /// this exact commit. Local file read — we never call `git fetch`.
+    /// None when no remote ref points here. Kept separate from
+    /// `branch_label` because remote tip identity is "this commit IS the
+    /// tip of origin/X", not "this commit is somewhere on origin/X".
+    pub remote_tip_label: Option<String>,
+    /// If multiple remote refs point at this same commit (e.g. origin/main
+    /// and origin/release), this is the count of additional ones beyond
+    /// `remote_tip_label`. UI renders `+N` after the badge.
+    pub remote_tip_extra_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,6 +88,29 @@ pub struct BranchInfo {
     pub commit_count: usize,
     /// Unix seconds of the tip commit, for "recent activity" sort.
     pub last_activity: i64,
+}
+
+/// Snapshot of the current branch's relation to its upstream remote-tracking
+/// ref. Computed from local files only — gitwink never calls `git fetch`, so
+/// these counts reflect the user's last fetch, not the live remote.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpstreamStatus {
+    /// Local branch name (the currently checked-out branch).
+    pub local_branch: String,
+    /// Upstream ref shorthand, e.g. "origin/main".
+    pub upstream: String,
+    /// Commits on local that aren't on upstream. Capped at 99.
+    pub ahead: u32,
+    /// Commits on upstream that aren't on local. Capped at 99.
+    pub behind: u32,
+    /// True when the count was clamped at 99.
+    pub ahead_capped: bool,
+    pub behind_capped: bool,
+    /// Unix seconds of `<gitdir>/FETCH_HEAD` mtime, when present. Useful for
+    /// a "last fetch was N days ago" hint in the UI. None if FETCH_HEAD
+    /// doesn't exist yet (e.g. clone with no follow-up fetch).
+    pub last_fetch_unix: Option<i64>,
 }
 
 /// Extension classification. We override libgit2's is_binary heuristic for
@@ -315,7 +349,15 @@ pub fn commit_file_blobs(
 
         let commondir_file = gitdir.join("commondir");
         if let Ok(text) = std::fs::read_to_string(&commondir_file) {
-            let common = gitdir.join(text.trim());
+            // Path-aware trim: only strip line terminators. `trim()` would
+            // also remove leading/trailing whitespace from the path itself.
+            let raw = text.trim_end_matches(['\n', '\r']);
+            let p = std::path::Path::new(raw);
+            let common = if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                gitdir.join(p)
+            };
             if let Ok(bytes) = std::fs::read(common.join(&rel)) {
                 return Some(bytes);
             }
@@ -472,8 +514,11 @@ pub fn list_branches(repo_path: &Path) -> Result<Vec<BranchInfo>> {
         let mut count = 0usize;
         let mut last_activity: i64 = 0;
         if let Ok(mut rw) = repo.revwalk() {
+            // libgit2: set_sorting MUST be called before any push/hide — a
+            // sort-mode change resets the walker, dropping previously-pushed
+            // starting points.
+            let _ = rw.set_sorting(Sort::TIME);
             if rw.push(tip).is_ok() {
-                let _ = rw.set_sorting(Sort::TIME);
                 for (i, oid_res) in rw.enumerate() {
                     let Ok(oid) = oid_res else { continue };
                     count = i + 1;
@@ -504,11 +549,211 @@ pub fn list_branches(repo_path: &Path) -> Result<Vec<BranchInfo>> {
     Ok(out)
 }
 
+/// Cap shown to the user when ahead/behind crosses 99. We clamp the integer
+/// itself rather than displaying "99+" purely in CSS so the IPC payload
+/// stays trivially small even on diverged branches.
+const AHEAD_BEHIND_CAP: usize = 99;
+
+/// Report how the currently checked-out branch relates to its upstream
+/// remote-tracking ref. Returns None for detached HEAD or when no upstream
+/// is configured AND no `origin/<branch>` fallback exists.
+///
+/// PURE READ. We only inspect refs the user/IDE already wrote with
+/// `git fetch`/`pull`; gitwink never initiates network activity.
+pub fn current_upstream_status(repo_path: &Path) -> Result<Option<UpstreamStatus>> {
+    let repo = Repository::open(repo_path)
+        .with_context(|| format!("open repo {}", repo_path.display()))?;
+
+    if repo.head_detached().unwrap_or(false) {
+        return Ok(None);
+    }
+
+    let head = match repo.head() {
+        Ok(h) => h,
+        Err(_) => return Ok(None),
+    };
+    let Some(local_branch_name) = head.shorthand().map(|s| s.to_string()) else {
+        return Ok(None);
+    };
+    let Some(local_oid) = head.target() else {
+        return Ok(None);
+    };
+
+    // Resolve upstream: prefer the configured upstream (`branch.<n>.remote`
+    // + `branch.<n>.merge`), fall back to `origin/<local_branch_name>` if
+    // the user just clones without `set-upstream`.
+    let (upstream_label, upstream_oid) = {
+        let configured = repo
+            .find_branch(&local_branch_name, BranchType::Local)
+            .ok()
+            .and_then(|b| b.upstream().ok())
+            .and_then(|ub| {
+                let name = ub.name().ok().flatten().map(|s| s.to_string())?;
+                let oid = ub.get().target()?;
+                Some((name, oid))
+            });
+
+        if let Some(pair) = configured {
+            pair
+        } else {
+            let fallback_short = format!("origin/{local_branch_name}");
+            let fallback_full = format!("refs/remotes/{fallback_short}");
+            match repo
+                .find_reference(&fallback_full)
+                .ok()
+                .and_then(|r| r.target().map(|oid| (fallback_short.clone(), oid)))
+            {
+                Some(pair) => pair,
+                None => return Ok(None),
+            }
+        }
+    };
+
+    let (ahead_raw, behind_raw) = repo
+        .graph_ahead_behind(local_oid, upstream_oid)
+        .context("graph_ahead_behind")?;
+
+    let ahead_capped = ahead_raw > AHEAD_BEHIND_CAP;
+    let behind_capped = behind_raw > AHEAD_BEHIND_CAP;
+    let ahead = ahead_raw.min(AHEAD_BEHIND_CAP) as u32;
+    let behind = behind_raw.min(AHEAD_BEHIND_CAP) as u32;
+
+    // FETCH_HEAD mtime lives in the *common* git dir for worktrees, so
+    // resolve commondir manually (git2 0.19 doesn't expose Repository::commondir).
+    // For a normal clone this is just repo.path().
+    let gitdir = repo.path();
+    let common = std::fs::read_to_string(gitdir.join("commondir"))
+        .ok()
+        .map(|text| {
+            let raw = text.trim_end_matches(['\n', '\r']);
+            let p = std::path::Path::new(raw);
+            if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                gitdir.join(p)
+            }
+        })
+        .unwrap_or_else(|| gitdir.to_path_buf());
+
+    let last_fetch_unix = std::fs::metadata(common.join("FETCH_HEAD"))
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|st| st.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64);
+
+    Ok(Some(UpstreamStatus {
+        local_branch: local_branch_name,
+        upstream: upstream_label,
+        ahead,
+        behind,
+        ahead_capped,
+        behind_capped,
+        last_fetch_unix,
+    }))
+}
+
 /// Branch label sketch: how far back into a single branch's history we look
 /// when answering "is this commit on this branch?". 5k commits comfortably
 /// covers any normally-active branch; older commits get no label, which is
 /// fine — the timeline is for recent work, and label is a hint, not truth.
 const BRANCH_LABEL_SCAN_CAP: usize = 5_000;
+
+/// Max number of `refs/remotes/origin/*` tips we'll push into the timeline
+/// revwalk per repo. Tips beyond this (sorted by tip-commit recency) are
+/// dropped, which avoids unbounded revwalk roots on repos with hundreds of
+/// stale remote branches. 64 covers every active project we've seen.
+const REMOTE_TIP_ROOT_CAP: usize = 64;
+
+/// A `refs/remotes/origin/<short>` ref pinned to a single commit. We don't
+/// walk this — it's just a tip OID we may use as a revwalk root and as a
+/// per-commit badge.
+#[derive(Clone)]
+struct RemoteTip {
+    /// Shorthand label, e.g. `"origin/main"`.
+    label: String,
+    oid: Oid,
+    /// Tip commit time, used to sort + filter against the request window.
+    last_activity: i64,
+}
+
+/// Badge metadata for a single commit: the primary remote label plus an
+/// extra-count hint when multiple remote refs collapse onto the same OID.
+#[derive(Clone)]
+struct RemoteBadge {
+    primary: String,
+    extra_count: usize,
+}
+
+/// Read `refs/remotes/origin/*` from disk (NO network — these refs are
+/// whatever the user/IDE/CI last wrote during `git fetch`). Excludes the
+/// symbolic `origin/HEAD`. Filters by `since_unix_seconds` so abandoned
+/// remote branches don't drag the timeline back. Returns at most `cap`
+/// tips, sorted by tip-commit recency.
+fn collect_origin_remote_tips(
+    repo: &Repository,
+    since_unix_seconds: i64,
+    cap: usize,
+) -> Vec<RemoteTip> {
+    let mut out: Vec<RemoteTip> = Vec::new();
+    let Ok(iter) = repo.references_glob("refs/remotes/origin/*") else {
+        return out;
+    };
+    for r in iter.flatten() {
+        let Some(label) = r.shorthand().map(str::to_string) else {
+            continue;
+        };
+        // Symbolic ref like `origin/HEAD` resolves to another origin/<name>
+        // — keep the named target only, drop the symbolic alias.
+        if label == "origin/HEAD" || label.ends_with("/HEAD") {
+            continue;
+        }
+        let Some(oid) = r.target() else { continue };
+        let Ok(commit) = repo.find_commit(oid) else {
+            continue;
+        };
+        let ts = commit.time().seconds();
+        if since_unix_seconds > 0 && ts < since_unix_seconds {
+            continue;
+        }
+        out.push(RemoteTip {
+            label,
+            oid,
+            last_activity: ts,
+        });
+    }
+    out.sort_by(|a, b| {
+        b.last_activity
+            .cmp(&a.last_activity)
+            .then_with(|| a.label.cmp(&b.label))
+    });
+    out.truncate(cap);
+    out
+}
+
+/// Group remote tips by the commit OID they point at, so each commit gets
+/// one `(primary, extra_count)` pair instead of N rows. Primary label is
+/// chosen deterministically (sorted ascending) for stable UI.
+fn build_remote_badge_map(tips: &[RemoteTip]) -> HashMap<Oid, RemoteBadge> {
+    let mut grouped: HashMap<Oid, Vec<String>> = HashMap::new();
+    for tip in tips {
+        grouped.entry(tip.oid).or_default().push(tip.label.clone());
+    }
+    grouped
+        .into_iter()
+        .map(|(oid, mut labels)| {
+            labels.sort();
+            let primary = labels[0].clone();
+            let extra_count = labels.len().saturating_sub(1);
+            (
+                oid,
+                RemoteBadge {
+                    primary,
+                    extra_count,
+                },
+            )
+        })
+        .collect()
+}
 
 /// Walk `tip` and report which of `targets` it reaches, bounded by
 /// `scan_cap` so a branch with deep history can't pin first-paint.
@@ -525,10 +770,14 @@ fn limited_reachable_membership(
     let Ok(mut rw) = repo.revwalk() else {
         return found;
     };
+    // libgit2: set_sorting resets the walker, so it MUST run before push.
+    // Doing it after push silently empties the walker.
+    if rw.set_sorting(Sort::TIME).is_err() {
+        return found;
+    }
     if rw.push(tip).is_err() {
         return found;
     }
-    let _ = rw.set_sorting(Sort::TIME);
 
     for (i, oid_res) in rw.enumerate() {
         if i >= scan_cap || found.len() == targets.len() {
@@ -660,7 +909,28 @@ pub fn repo_commits(
 
     let tagged_oids = collect_tagged_oids(&repo);
 
+    // Remote tracking refs (origin/*) are local-file reads — `git fetch` has
+    // already written them, gitwink never calls fetch itself. Including them
+    // as additional revwalk roots makes "someone/agent pushed to a remote
+    // branch you don't have locally" visible in the timeline. We only do
+    // this in all-branches mode; when the user explicitly filtered to local
+    // branches in the BranchChip, we respect that filter and don't mix in
+    // remote noise.
+    let include_remotes = matches!(branches, None | Some(&[]));
+    let remote_tips = if include_remotes {
+        collect_origin_remote_tips(&repo, since_unix_seconds, REMOTE_TIP_ROOT_CAP)
+    } else {
+        Vec::new()
+    };
+    let remote_badges = build_remote_badge_map(&remote_tips);
+
     let mut revwalk = repo.revwalk().context("init revwalk")?;
+    // libgit2 contract: set_sorting resets the walker, so it MUST run before
+    // any push/hide. Calling it after pushes (as we did in 847ed51) silently
+    // drops the pushed starting points.
+    revwalk
+        .set_sorting(Sort::TIME)
+        .context("set revwalk sort")?;
     let mut pushed = 0usize;
 
     match branches {
@@ -689,7 +959,15 @@ pub fn repo_commits(
         }
     }
 
-    if pushed == 0 {
+    // Add remote tip OIDs as extra revwalk roots so remote-only commits
+    // (e.g. a branch on origin nobody pulled locally yet) appear. Revwalk
+    // dedupes by OID, so this is a no-op for commits already reachable
+    // from local heads.
+    for tip in &remote_tips {
+        let _ = revwalk.push(tip.oid);
+    }
+
+    if pushed == 0 && remote_tips.is_empty() {
         let Ok(head) = repo.head() else {
             return Ok(Vec::new());
         };
@@ -698,10 +976,6 @@ pub fn repo_commits(
         };
         revwalk.push(head_commit.id()).context("push HEAD")?;
     }
-
-    revwalk
-        .set_sorting(Sort::TIME)
-        .context("set revwalk sort")?;
 
     // Pass 1: collect just the rows we'll return. Cheap — bounded by
     // max_count and the since cutoff.
@@ -739,6 +1013,10 @@ pub fn repo_commits(
         let message = commit.message().unwrap_or("").to_string();
         let ts = commit.time().seconds();
         let branch_label = labels.get(&oid).cloned().flatten();
+        let (remote_tip_label, remote_tip_extra_count) = match remote_badges.get(&oid) {
+            Some(b) => (Some(b.primary.clone()), b.extra_count),
+            None => (None, 0),
+        };
 
         out.push(CommitSummary {
             repo_path: repo_path_str.clone(),
@@ -754,6 +1032,8 @@ pub fn repo_commits(
             is_tagged: tagged_oids.contains(&oid),
             parents,
             message,
+            remote_tip_label,
+            remote_tip_extra_count,
         });
     }
 
@@ -790,7 +1070,20 @@ pub fn recent_commits(
 
     let tagged_oids = collect_tagged_oids(&repo);
 
+    // Remote tracking refs (origin/*) are local-file reads — see comment in
+    // `repo_commits` for the rationale. We always include them here because
+    // `recent_commits` is the all-branches view by definition.
+    let remote_tips =
+        collect_origin_remote_tips(&repo, since_unix_seconds, REMOTE_TIP_ROOT_CAP);
+    let remote_badges = build_remote_badge_map(&remote_tips);
+
     let mut revwalk = repo.revwalk().context("init revwalk")?;
+    // libgit2 contract: set_sorting resets the walker, so it MUST run before
+    // any push/hide. Calling it after pushes (as we did in 847ed51) silently
+    // drops the pushed starting points.
+    revwalk
+        .set_sorting(Sort::TIME)
+        .context("set revwalk sort")?;
 
     // Walk every local ref head, not just HEAD. The revwalk dedupes commits
     // that appear on multiple branches, so an agent that committed to a
@@ -806,9 +1099,14 @@ pub fn recent_commits(
             }
         }
     }
+    // Add remote tip OIDs as extra roots — surfaces commits pushed to
+    // origin/<branch> that have no local head.
+    for tip in &remote_tips {
+        let _ = revwalk.push(tip.oid);
+    }
     // Fall back to HEAD if for some reason no heads were enumerable
-    // (newly-init'd repo, detached HEAD, etc.).
-    if pushed == 0 {
+    // (newly-init'd repo, detached HEAD, etc.) AND no remote tips.
+    if pushed == 0 && remote_tips.is_empty() {
         let head = match repo.head() {
             Ok(h) => h,
             Err(_) => return Ok(Vec::new()),
@@ -819,10 +1117,6 @@ pub fn recent_commits(
         };
         revwalk.push(head_commit.id()).context("push HEAD")?;
     }
-
-    revwalk
-        .set_sorting(Sort::TIME)
-        .context("set revwalk sort")?;
 
     // Pass 1: collect the output rows first. Bounded by max_count and the
     // since cutoff (TIME sort is descending, so once we cross the cutoff
@@ -862,6 +1156,10 @@ pub fn recent_commits(
         let message = commit.message().unwrap_or("").to_string();
         let ts = commit.time().seconds();
         let branch_label = labels.get(&oid).cloned().flatten();
+        let (remote_tip_label, remote_tip_extra_count) = match remote_badges.get(&oid) {
+            Some(b) => (Some(b.primary.clone()), b.extra_count),
+            None => (None, 0),
+        };
 
         out.push(CommitSummary {
             repo_path: repo_path_str.clone(),
@@ -877,6 +1175,8 @@ pub fn recent_commits(
             is_tagged: tagged_oids.contains(&oid),
             parents,
             message,
+            remote_tip_label,
+            remote_tip_extra_count,
         });
     }
 

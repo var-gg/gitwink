@@ -90,6 +90,11 @@ pub fn open(app: &AppHandle) -> Result<Connection> {
         "ALTER TABLE commits ADD COLUMN message TEXT NOT NULL DEFAULT ''",
         [],
     );
+    let _ = conn.execute("ALTER TABLE commits ADD COLUMN remote_tip_label TEXT", []);
+    let _ = conn.execute(
+        "ALTER TABLE commits ADD COLUMN remote_tip_extra_count INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
     Ok(conn)
 }
 
@@ -139,8 +144,8 @@ pub fn upsert_commits(conn: &mut Connection, commits: &[CommitSummary]) -> Resul
     {
         let mut stmt = tx.prepare(
             r#"
-            INSERT INTO commits (repo_path, hash, repo_name, short_hash, summary, author, email, timestamp, branch_label, is_merge, is_tagged, parents, message)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+            INSERT INTO commits (repo_path, hash, repo_name, short_hash, summary, author, email, timestamp, branch_label, is_merge, is_tagged, parents, message, remote_tip_label, remote_tip_extra_count)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
             ON CONFLICT(repo_path, hash) DO UPDATE SET
                 repo_name = excluded.repo_name,
                 summary = excluded.summary,
@@ -151,7 +156,9 @@ pub fn upsert_commits(conn: &mut Connection, commits: &[CommitSummary]) -> Resul
                 is_merge = excluded.is_merge,
                 is_tagged = excluded.is_tagged,
                 parents = excluded.parents,
-                message = excluded.message
+                message = excluded.message,
+                remote_tip_label = excluded.remote_tip_label,
+                remote_tip_extra_count = excluded.remote_tip_extra_count
             "#,
         )?;
         for c in commits {
@@ -169,7 +176,9 @@ pub fn upsert_commits(conn: &mut Connection, commits: &[CommitSummary]) -> Resul
                 c.is_merge as i32,
                 c.is_tagged as i32,
                 parents_json,
-                c.message
+                c.message,
+                c.remote_tip_label,
+                c.remote_tip_extra_count as i64,
             ])?;
         }
     }
@@ -184,7 +193,7 @@ pub fn list_recent_commits(
 ) -> Result<Vec<CommitSummary>> {
     let mut stmt = conn.prepare(
         r#"
-        SELECT repo_path, repo_name, hash, short_hash, summary, author, email, timestamp, branch_label, is_merge, is_tagged, parents, message
+        SELECT repo_path, repo_name, hash, short_hash, summary, author, email, timestamp, branch_label, is_merge, is_tagged, parents, message, remote_tip_label, remote_tip_extra_count
         FROM commits
         WHERE timestamp >= ?1
         ORDER BY timestamp DESC
@@ -209,6 +218,8 @@ pub fn list_recent_commits(
                 is_tagged: row.get::<_, i32>(10)? != 0,
                 parents,
                 message: row.get(12)?,
+                remote_tip_label: row.get(13)?,
+                remote_tip_extra_count: row.get::<_, i64>(14)? as usize,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

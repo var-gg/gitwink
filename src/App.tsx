@@ -8,6 +8,7 @@ import { RepoChip } from "./components/RepoChip";
 import { Timeline } from "./components/Timeline";
 import { TimeRangeChip } from "./components/TimeRangeChip";
 import {
+  currentUpstreamStatus,
   discoverRepos,
   dismissPanel,
   getPinnedRepos,
@@ -26,6 +27,7 @@ import type {
   BranchInfo,
   CommitSummary,
   Repo,
+  UpstreamStatus,
   WindowDays,
 } from "./types";
 import "./styles.css";
@@ -40,6 +42,59 @@ function startDrag(e: React.PointerEvent<HTMLElement>) {
   // buttons). The user is interacting with the dropdown, not the window.
   if (target?.closest("button, input, .chip-dropdown, [data-no-drag]")) return;
   void getCurrentWindow().startDragging();
+}
+
+function formatFetchAge(unixSeconds: number): string {
+  const ageSec = Math.max(0, Math.floor(Date.now() / 1000) - unixSeconds);
+  if (ageSec < 60) return "just now";
+  if (ageSec < 3600) return `${Math.floor(ageSec / 60)}m ago`;
+  if (ageSec < 86_400) return `${Math.floor(ageSec / 3600)}h ago`;
+  return `${Math.floor(ageSec / 86_400)}d ago`;
+}
+
+interface UpstreamBadgeProps {
+  status: UpstreamStatus;
+}
+
+/** Tiny inline status badge: shows `synced` / `↑N` / `↓N` / `↑N ↓N` next
+ * to the BranchChip in single-repo mode. Reads from local refs only —
+ * gitwink never calls git fetch. Tooltip explains the last-fetch caveat
+ * so users don't expect live remote state. */
+function UpstreamBadge({ status }: UpstreamBadgeProps) {
+  const synced = status.ahead === 0 && status.behind === 0;
+  const aheadStr = status.ahead.toString() + (status.aheadCapped ? "+" : "");
+  const behindStr = status.behind.toString() + (status.behindCapped ? "+" : "");
+  const fetchHint = status.lastFetchUnix
+    ? `Last fetch: ${formatFetchAge(status.lastFetchUnix)}`
+    : "No fetch recorded yet";
+  const title = synced
+    ? `${status.localBranch} is in sync with ${status.upstream}.\n${fetchHint}. gitwink never calls git fetch itself.`
+    : `${status.localBranch} vs ${status.upstream}: ${status.ahead} ahead, ${status.behind} behind.\n${fetchHint}. gitwink never calls git fetch itself.`;
+
+  return (
+    <span
+      className={
+        "upstream-badge" + (synced ? " upstream-badge-synced" : " upstream-badge-diverged")
+      }
+      title={title}
+    >
+      {synced ? (
+        <>
+          <span className="upstream-badge-check" aria-hidden="true">
+            ✓
+          </span>
+          <span className="upstream-badge-ref">{status.upstream}</span>
+        </>
+      ) : (
+        <>
+          {status.ahead > 0 && <span className="upstream-badge-ahead">↑{aheadStr}</span>}
+          {status.behind > 0 && (
+            <span className="upstream-badge-behind">↓{behindStr}</span>
+          )}
+        </>
+      )}
+    </span>
+  );
 }
 
 function mergeCommits(
@@ -76,6 +131,7 @@ function App() {
   const [selectedBranches, setSelectedBranches] = useState<string[] | "all">(
     "all",
   );
+  const [upstream, setUpstream] = useState<UpstreamStatus | null>(null);
 
   // Fresh-commit tracking — populated by file-watcher pushes, cleared on
   // panel blur (i.e. "the user has seen this, mark as read on close").
@@ -186,11 +242,12 @@ function App() {
     };
   }, [windowDays, singleMode]);
 
-  // ----- single-repo mode: load branches + commits -----
+  // ----- single-repo mode: load branches + commits + upstream status -----
   useEffect(() => {
     if (!singleMode) {
       setBranches([]);
       setSelectedBranches("all");
+      setUpstream(null);
       return;
     }
     let cancelled = false;
@@ -207,6 +264,12 @@ function App() {
         );
         if (!cancelled) setCommits(cs);
       } catch {}
+      try {
+        const us = await currentUpstreamStatus(selectedRepoPath!);
+        if (!cancelled) setUpstream(us);
+      } catch {
+        if (!cancelled) setUpstream(null);
+      }
     })();
     return () => {
       cancelled = true;
@@ -343,6 +406,9 @@ function App() {
               selected={selectedBranches}
               onChange={setSelectedBranches}
             />
+          )}
+          {singleMode && upstream && (
+            <UpstreamBadge status={upstream} />
           )}
           <TimeRangeChip
             open={openChip === "time"}
