@@ -597,8 +597,10 @@ fn validate_repo_candidate(candidate_path: &Path) -> Option<ValidatedRepo> {
         return None;
     }
     let workdir = repo.workdir()?;
-    let canonical = std::fs::canonicalize(workdir).unwrap_or_else(|_| workdir.to_path_buf());
-    let gitdir = repo.path().to_path_buf();
+    let canonical = strip_unc_prefix(
+        std::fs::canonicalize(workdir).unwrap_or_else(|_| workdir.to_path_buf()),
+    );
+    let gitdir = strip_unc_prefix(repo.path().to_path_buf());
 
     let name = canonical
         .file_name()
@@ -612,6 +614,26 @@ fn validate_repo_candidate(candidate_path: &Path) -> Option<ValidatedRepo> {
         gitdir_path: gitdir.to_string_lossy().into_owned(),
         name,
     })
+}
+
+/// Strip Windows extended-length path prefix (`\\?\`) for storage. We
+/// keep using it transiently for OS calls that need >MAX_PATH support,
+/// but storing it as the canonical_path key creates phantom duplicates
+/// against rows that were written before the orchestrator existed (or
+/// by any path that didn't go through `fs::canonicalize`). True UNC
+/// extended-length paths (`\\?\UNC\server\share\…`) are left alone —
+/// stripping their prefix would lose the UNC discriminator.
+fn strip_unc_prefix(p: PathBuf) -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        let s = p.to_string_lossy();
+        if let Some(rest) = s.strip_prefix(r"\\?\") {
+            if !rest.starts_with("UNC\\") {
+                return PathBuf::from(rest);
+            }
+        }
+    }
+    p
 }
 
 // ---------------------------------------------------------------------------

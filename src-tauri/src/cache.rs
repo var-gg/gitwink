@@ -242,7 +242,89 @@ pub fn open(app: &AppHandle) -> Result<Connection> {
     // We don't gate behaviour on this yet, but future migrations can.
     let _ = conn.pragma_update(None, "user_version", 2_i64);
 
+    // v0.1.2 cleanup: the v0.1.1 orchestrator used `fs::canonicalize`
+    // and stored its `\\?\…` Windows extended-length output as
+    // canonical_path. Existing rows from v0.1.0 / migration backfill
+    // used the non-prefixed form, so the same repo on disk ended up as
+    // two rows with no way for the unique index to dedup them. Strip
+    // the prefix here once — idempotent on warm DBs that have no
+    // prefixed rows.
+    #[cfg(target_os = "windows")]
+    dedupe_unc_canonical_paths(&conn);
+
     Ok(conn)
+}
+
+/// Walk every repos row whose canonical_path starts with `\\?\`. If a
+/// non-prefixed twin already exists, drop the prefixed row (the twin is
+/// the keeper). Otherwise rename in place. Same treatment for
+/// repo_sources + path_aliases foreign references. True extended-UNC
+/// paths (`\\?\UNC\…`) are skipped — stripping their prefix would
+/// merge `\\?\UNC\server\share\foo` into `UNC\server\share\foo`, which
+/// is a different path.
+#[cfg(target_os = "windows")]
+fn dedupe_unc_canonical_paths(conn: &Connection) {
+    let prefixed: Vec<String> = match conn.prepare(
+        // LIKE pattern `\\?\%` with ESCAPE not needed — `?` isn't a
+        // SQL wildcard, `_` is.
+        "SELECT canonical_path FROM repos WHERE canonical_path LIKE '\\\\?\\%'",
+    ) {
+        Ok(mut stmt) => stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .map(|rows| rows.flatten().collect())
+            .unwrap_or_default(),
+        Err(_) => return,
+    };
+
+    for prefixed_path in prefixed {
+        let Some(rest) = prefixed_path.strip_prefix(r"\\?\") else {
+            continue;
+        };
+        // Skip true extended-UNC; stripping would lose the UNC marker.
+        if rest.starts_with("UNC\\") {
+            continue;
+        }
+        let unprefixed = rest.to_string();
+
+        // Twin exists → drop the prefixed row + its dangling source/alias rows.
+        let twin: bool = conn
+            .query_row(
+                "SELECT 1 FROM repos WHERE canonical_path = ?1",
+                params![&unprefixed],
+                |_| Ok(true),
+            )
+            .unwrap_or(false);
+
+        if twin {
+            let _ = conn.execute(
+                "DELETE FROM repos WHERE canonical_path = ?1",
+                params![&prefixed_path],
+            );
+            let _ = conn.execute(
+                "DELETE FROM repo_sources WHERE repo_canonical_path = ?1",
+                params![&prefixed_path],
+            );
+            let _ = conn.execute(
+                "DELETE FROM path_aliases WHERE canonical_path = ?1",
+                params![&prefixed_path],
+            );
+            continue;
+        }
+
+        // No twin → rename in place across the three tables.
+        let _ = conn.execute(
+            "UPDATE repos SET canonical_path = ?1, path = ?1 WHERE canonical_path = ?2",
+            params![&unprefixed, &prefixed_path],
+        );
+        let _ = conn.execute(
+            "UPDATE repo_sources SET repo_canonical_path = ?1 WHERE repo_canonical_path = ?2",
+            params![&unprefixed, &prefixed_path],
+        );
+        let _ = conn.execute(
+            "UPDATE path_aliases SET canonical_path = ?1 WHERE canonical_path = ?2",
+            params![&unprefixed, &prefixed_path],
+        );
+    }
 }
 
 // ----- repos -----
