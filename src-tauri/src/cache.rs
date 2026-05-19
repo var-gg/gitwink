@@ -9,9 +9,19 @@ use tauri::{AppHandle, Manager};
 use crate::git::CommitSummary;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Repo {
     pub path: String,
     pub name: String,
+    /// Lifecycle status: "active" | "missing" | "removed". Frontend
+    /// greys out "missing" rows and filters out "removed". Defaults to
+    /// "active" for old rows that predate the lifecycle migration.
+    #[serde(default = "default_status")]
+    pub status: String,
+}
+
+fn default_status() -> String {
+    "active".to_string()
 }
 
 /// Default ceiling for the diffs blob store. Older entries are evicted in
@@ -238,12 +248,23 @@ pub fn open(app: &AppHandle) -> Result<Connection> {
 // ----- repos -----
 
 pub fn list_repos(conn: &Connection) -> Result<Vec<Repo>> {
-    let mut stmt = conn.prepare("SELECT path, name FROM repos ORDER BY name COLLATE NOCASE")?;
+    // Filter out user-removed (tombstoned) rows so a deleted repo
+    // doesn't reappear in the chip dropdown. Missing rows DO come
+    // through — the UI greys them out so the user can decide.
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT path, name, status
+        FROM repos
+        WHERE user_state != 'removed'
+        ORDER BY name COLLATE NOCASE
+        "#,
+    )?;
     let rows = stmt
         .query_map([], |row| {
             Ok(Repo {
                 path: row.get(0)?,
                 name: row.get(1)?,
+                status: row.get(2)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

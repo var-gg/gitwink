@@ -50,6 +50,16 @@ pub struct ScanProgressPayload {
     pub errors: usize,
 }
 
+/// Repo lifecycle transition (active → missing or vice versa). Frontend
+/// uses this to grey out a row that moved/disappeared on disk, or to
+/// restore a row that came back.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoStatusPayload {
+    pub canonical_path: String,
+    pub status: &'static str,
+}
+
 /// Meta-table key that tracks whether the first-launch full scan has
 /// already completed. Lives in cache.db (not settings.json) so wiping
 /// the cache correctly re-triggers the full scan.
@@ -223,6 +233,99 @@ async fn run_discovery_async(app: AppHandle, cancel: CancellationToken) -> Resul
     }
 }
 
+/// Walk active rows, check path existence, flip status accordingly.
+/// Emits one `timeline://repo-status` event per row that changed state
+/// so the frontend can grey out / restore individual rows without a
+/// full reload. Read-only: never deletes a row even if it's been gone
+/// forever — that's the user's call via hide/relink.
+fn verify_existing_repos(app: &AppHandle, conn: &mut Connection) -> Result<()> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT canonical_path, status
+        FROM repos
+        WHERE user_state NOT IN ('removed')
+          AND status IN ('active', 'missing')
+        "#,
+    )?;
+    let rows: Vec<(String, String)> = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(stmt);
+
+    let now = unix_now();
+    let mut transitions: Vec<(String, &'static str)> = Vec::new();
+    let tx = conn.transaction()?;
+    for (path, status) in rows {
+        let exists = Path::new(&path).is_dir();
+        let new_status: &'static str = if exists { "active" } else { "missing" };
+        if status == new_status {
+            continue;
+        }
+        if new_status == "missing" {
+            tx.execute(
+                "UPDATE repos SET status = 'missing', missing_since = ?1 WHERE canonical_path = ?2",
+                params![now, &path],
+            )?;
+        } else {
+            tx.execute(
+                "UPDATE repos SET status = 'active', missing_since = NULL, last_verified_at = ?1 WHERE canonical_path = ?2",
+                params![now, &path],
+            )?;
+        }
+        transitions.push((path, new_status));
+    }
+    tx.commit()?;
+
+    for (path, status) in transitions {
+        let _ = app.emit(
+            "timeline://repo-status",
+            &RepoStatusPayload {
+                canonical_path: path,
+                status,
+            },
+        );
+    }
+    Ok(())
+}
+
+/// Mark a repo as user-hidden. Sets user_state='removed' (so UI filters
+/// it out) and adds a tombstone (so future discovery passes don't auto-
+/// rediscover it). Returns the canonical path that was hidden, or an
+/// error if no such repo exists in cache.
+pub fn hide_repo(app: &AppHandle, canonical_path: &str) -> Result<()> {
+    let mut conn = cache::open(app)?;
+    let now = unix_now();
+    let tx = conn.transaction()?;
+    let updated = tx.execute(
+        "UPDATE repos SET user_state = 'removed', removed_at = ?1 WHERE canonical_path = ?2",
+        params![now, canonical_path],
+    )?;
+    if updated == 0 {
+        return Err(anyhow::anyhow!("no such repo: {canonical_path}"));
+    }
+    tx.execute(
+        r#"
+        INSERT INTO discovery_tombstones (canonical_path, removed_at, reason)
+        VALUES (?1, ?2, 'user_hide')
+        ON CONFLICT(canonical_path) DO UPDATE SET
+            removed_at = excluded.removed_at,
+            reason = excluded.reason
+        "#,
+        params![canonical_path, now],
+    )?;
+    tx.commit()?;
+
+    let _ = app.emit(
+        "timeline://repo-status",
+        &RepoStatusPayload {
+            canonical_path: canonical_path.to_string(),
+            status: "removed",
+        },
+    );
+    let _ = append_scan_log(app, &format!("{now} user_hide: {canonical_path}"));
+    Ok(())
+}
+
 /// Update the tray tooltip to reflect the current scan state. Best-
 /// effort: tray might not exist yet or the tooltip API might fail on
 /// some Linux distros — log to stderr if so but don't propagate.
@@ -252,6 +355,16 @@ fn run_pipeline_sync(
     cancel: CancellationToken,
     is_first_run: bool,
 ) -> Result<(usize, usize)> {
+    // Verification sweep: check active cached repos for path existence
+    // BEFORE doing new discovery. Repos that disappeared on disk get
+    // marked 'missing' so the UI can grey them out. Repos that came
+    // back from 'missing' get restored. Path existence is cheap (no
+    // git2 here) — full re-validation happens when a candidate comes
+    // through the regular tier flow.
+    if let Err(e) = verify_existing_repos(app, conn) {
+        eprintln!("orchestrator verification sweep failed: {e:#}");
+    }
+
     let mut candidates: Vec<Candidate> = Vec::new();
 
     // Tier 1: VS Code-family recents (VS Code / Insiders / Cursor / Windsurf).

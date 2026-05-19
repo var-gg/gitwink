@@ -257,6 +257,7 @@ pub fn run() {
             commands::list_branches,
             commands::current_upstream_status,
             commands::explicit_add_repo,
+            commands::hide_repo,
             commands::repo_commits,
             commands::changed_files,
             commands::file_diff,

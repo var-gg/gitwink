@@ -4,6 +4,11 @@
 export interface Repo {
   path: string;
   name: string;
+  /** Lifecycle status. "active" = on disk and validates as a git repo,
+   * "missing" = previously seen but path no longer exists (greyed in
+   * UI), "removed" = user explicitly hid it (filtered out, won't auto-
+   * rediscover). Older cache rows default to "active". */
+  status: "active" | "missing" | "removed";
 }
 
 export interface ScanProgress {

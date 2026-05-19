@@ -475,6 +475,49 @@ body,
   }
 }
 
+/* "Missing" repo row: greyed text + small tag, plus a ✕ hide button
+ * in place of the pin star. Drag/drop a new path onto the panel to
+ * relink, or hide to suppress auto-rediscovery. */
+.chip-item-row.missing .chip-item-name,
+.chip-item-row.missing .chip-item-path {
+  opacity: 0.45;
+}
+.chip-item-missing-tag {
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.8;
+  color: rgba(180, 50, 50, 0.95);
+}
+.chip-hide {
+  width: 26px;
+  background: transparent;
+  border: none;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+.chip-hide:hover {
+  background: rgba(220, 80, 80, 0.12);
+  color: rgba(200, 50, 50, 0.95);
+}
+@media (prefers-color-scheme: dark) {
+  .chip-item-missing-tag {
+    color: rgba(255, 140, 140, 0.95);
+  }
+  .chip-hide {
+    color: rgba(255, 255, 255, 0.4);
+  }
+  .chip-hide:hover {
+    background: rgba(255, 120, 120, 0.16);
+    color: rgba(255, 160, 160, 0.95);
+  }
+}
+
 /* AuthorsChip puts the count item differently — override path style */
 .chip-item:not(.chip-item-row .chip-item) {
   flex-direction: row;

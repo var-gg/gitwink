@@ -177,6 +177,23 @@ pub async fn explicit_add_repo(
     .map_err(|e| e.to_string())?
 }
 
+/// Hide a repo from the panel and prevent auto-rediscovery. Tombstoned;
+/// the user can bring it back with explicit_add_repo. Used by the
+/// "hide" affordance on missing-status rows in the RepoChip.
+#[tauri::command]
+pub async fn hide_repo(
+    app: AppHandle,
+    canonical_path: String,
+) -> Result<(), String> {
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        discovery_orchestrator::hide_repo(&app2, &canonical_path)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn changed_files(
     repo_path: String,
@@ -468,6 +485,7 @@ pub async fn discover_repos(app: AppHandle) -> Result<usize, String> {
                 let repo = cache::Repo {
                     path: path_str.clone(),
                     name: name.clone(),
+                    status: "active".to_string(),
                 };
                 found.push(repo.clone());
                 let _ = app.emit(

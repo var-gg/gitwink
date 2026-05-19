@@ -12,6 +12,7 @@ interface Props {
   selectedPath: string | null;
   onSelect: (path: string | null) => void;
   onTogglePin: (path: string) => void;
+  onHide: (path: string) => void;
   totalRepoCount: number;
 }
 
@@ -24,6 +25,7 @@ export function RepoChip({
   selectedPath,
   onSelect,
   onTogglePin,
+  onHide,
   totalRepoCount,
 }: Props) {
   const [query, setQuery] = useState("");
@@ -121,6 +123,7 @@ export function RepoChip({
                   onClose();
                 }}
                 onPin={() => onTogglePin(r.path)}
+                onHide={() => onHide(r.path)}
               />
             ))}
           </>
@@ -139,6 +142,7 @@ export function RepoChip({
                   onClose();
                 }}
                 onPin={() => onTogglePin(r.path)}
+                onHide={() => onHide(r.path)}
               />
             ))}
           </>
@@ -157,30 +161,67 @@ function RepoItem({
   active,
   onSelect,
   onPin,
+  onHide,
 }: {
   repo: Repo;
   pinned: boolean;
   active: boolean;
   onSelect: () => void;
   onPin: () => void;
+  onHide: () => void;
 }) {
+  const isMissing = repo.status === "missing";
   return (
-    <div className={"chip-item-row" + (active ? " active" : "")}>
-      <button type="button" className="chip-item" onClick={onSelect}>
-        <span className="chip-item-name">{repo.name}</span>
-        <span className="chip-item-path">{repo.path}</span>
-      </button>
+    <div
+      className={
+        "chip-item-row" +
+        (active ? " active" : "") +
+        (isMissing ? " missing" : "")
+      }
+    >
       <button
         type="button"
-        className={"chip-pin" + (pinned ? " pinned" : "")}
-        onClick={(e) => {
-          e.stopPropagation();
-          onPin();
-        }}
-        title={pinned ? "Unpin" : "Pin"}
+        className="chip-item"
+        onClick={onSelect}
+        title={
+          isMissing
+            ? `${repo.path} — moved or deleted on disk. Drop the new path on the panel to relink, or click ✕ to hide.`
+            : repo.path
+        }
       >
-        ★
+        <span className="chip-item-name">
+          {repo.name}
+          {isMissing && (
+            <span className="chip-item-missing-tag"> · missing</span>
+          )}
+        </span>
+        <span className="chip-item-path">{repo.path}</span>
       </button>
+      {isMissing ? (
+        <button
+          type="button"
+          className="chip-hide"
+          onClick={(e) => {
+            e.stopPropagation();
+            onHide();
+          }}
+          title="Hide this repo (won't auto-rediscover)"
+        >
+          ✕
+        </button>
+      ) : (
+        <button
+          type="button"
+          className={"chip-pin" + (pinned ? " pinned" : "")}
+          onClick={(e) => {
+            e.stopPropagation();
+            onPin();
+          }}
+          title={pinned ? "Unpin" : "Pin"}
+        >
+          ★
+        </button>
+      )}
     </div>
   );
 }

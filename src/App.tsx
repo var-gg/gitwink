@@ -12,6 +12,7 @@ import {
   dismissPanel,
   explicitAddRepo,
   getPinnedRepos,
+  hideRepo,
   listBranches,
   listRecentCommitsCached,
   listRepos,
@@ -166,6 +167,7 @@ function App() {
     let unProgress: UnlistenFn | undefined;
     let unDiscovered: UnlistenFn | undefined;
     let unFill: UnlistenFn | undefined;
+    let unStatus: UnlistenFn | undefined;
 
     (async () => {
       try {
@@ -204,7 +206,13 @@ function App() {
         if (!mounted) return;
         setAllRepos((prev) => {
           if (prev.some((r) => r.path === p.path)) return prev;
-          const next = [...prev, { path: p.path, name: p.name }];
+          // Orchestrator only emits for validated repos, so status='active'
+          // is correct on insert. Status transitions later flip this via
+          // the repo-status listener.
+          const next = [
+            ...prev,
+            { path: p.path, name: p.name, status: "active" as const },
+          ];
           // Keep stable display order to avoid jitter in the chip dropdown.
           next.sort((a, b) => a.name.localeCompare(b.name));
           return next;
@@ -217,6 +225,35 @@ function App() {
           if (mounted) setCommits(refreshed);
         } catch {}
       });
+
+      // Repo status transitions (active ↔ missing ↔ removed) — backend
+      // emits one event per row that changed. Patch allRepos in place
+      // so the RepoChip row greys out / restores / drops without a
+      // full reload.
+      const { listen } = await import("@tauri-apps/api/event");
+      unStatus = await listen<{ canonicalPath: string; status: string }>(
+        "timeline://repo-status",
+        (e) => {
+          if (!mounted) return;
+          const { canonicalPath, status } = e.payload;
+          if (status === "removed") {
+            setAllRepos((prev) => prev.filter((r) => r.path !== canonicalPath));
+            setDiscoveredCount((prev) =>
+              prev != null ? Math.max(0, prev - 1) : prev,
+            );
+            return;
+          }
+          if (status === "active" || status === "missing") {
+            setAllRepos((prev) =>
+              prev.map((r) =>
+                r.path === canonicalPath
+                  ? { ...r, status: status as "active" | "missing" }
+                  : r,
+              ),
+            );
+          }
+        },
+      );
 
       unFill = await onTimelineRepoFill((p) => {
         if (!mounted) return;
@@ -243,6 +280,7 @@ function App() {
       unProgress?.();
       unDiscovered?.();
       unFill?.();
+      unStatus?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -529,6 +567,19 @@ function App() {
             selectedPath={selectedRepoPath}
             onSelect={setSelectedRepoPath}
             onTogglePin={togglePin}
+            onHide={(path) => {
+              // Optimistic: drop from local list immediately; backend
+              // will tombstone so it stays gone across restarts.
+              setAllRepos((prev) => prev.filter((r) => r.path !== path));
+              setDiscoveredCount((prev) =>
+                prev != null ? Math.max(0, prev - 1) : prev,
+              );
+              void hideRepo(path).catch(() => {
+                // If the backend rejects (race / already gone), fall
+                // back to re-fetching the list so UI matches truth.
+                void listRepos().then((r) => setAllRepos(r));
+              });
+            }}
             totalRepoCount={repoCount}
           />
           {singleMode && (
