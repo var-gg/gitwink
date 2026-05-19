@@ -1,5 +1,7 @@
 # gitwink
 
+**English** · [한국어](README.ko.md)
+
 > Tray-resident, read-only git glance for the AI-agent era.
 
 **Status:** v0.1 — usable. Cold-start friendly tray app.
