@@ -5,6 +5,21 @@ All notable changes to gitwink will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] — 2026-05-21
+
+### Added
+
+- Multi-select repo filter — checkboxes in the Repo chip filter the
+  timeline to several repositories at once, alongside the existing
+  single-repo mode. Selected repos float to the top of the dropdown when
+  it reopens; in single-repo mode the checkboxes are read-only.
+  Contributed by @mangchhe (#1).
+
+### Fixed
+
+- Chip dropdowns no longer clip past the edge of the panel — they are
+  now clamped to stay within the window.
+
 ## [0.1.0] — 2026-05-19
 
 First usable release. Tray-resident, read-only git glance tool.
