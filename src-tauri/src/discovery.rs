@@ -32,6 +32,15 @@ const HARD_EXCLUDE: &[&str] = &[
 
 const MAX_DEPTH: usize = 8;
 
+/// Whether a directory name is in the hard-exclude set. Exposed so the
+/// explicit-add nested-repo discovery can skip the same names when
+/// walking a super-repo's children.
+pub fn is_hard_excluded(name: &str) -> bool {
+    HARD_EXCLUDE
+        .iter()
+        .any(|excl| name.eq_ignore_ascii_case(excl))
+}
+
 pub fn default_roots() -> Vec<PathBuf> {
     let mut roots: Vec<PathBuf> = Vec::new();
 
@@ -113,10 +122,7 @@ where
         .standard_filters(false)
         .hidden(false)
         .filter_entry(|entry| {
-            let name = entry.file_name().to_string_lossy();
-            !HARD_EXCLUDE
-                .iter()
-                .any(|excl| name.eq_ignore_ascii_case(excl))
+            !is_hard_excluded(&entry.file_name().to_string_lossy())
         })
         .build_parallel()
         .run(|| {

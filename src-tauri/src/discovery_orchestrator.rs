@@ -203,48 +203,17 @@ pub fn add_repo_explicit(app: &AppHandle, raw_path: &str) -> Result<DiscoveredRe
         tx.commit()?;
     }
 
-    let payload = DiscoveredRepoPayload {
-        path: validated.canonical_path.clone(),
-        name: validated.name.clone(),
-        source: DiscoverySource::Manual.as_str(),
-        confidence: 100,
-    };
-    let _ = app.emit("timeline://repo-discovered", &payload);
+    let payload = announce_registered_repo(app, &validated, DiscoverySource::Manual, 100);
 
-    // Read the new repo's recent commits and stream them into the
-    // timeline. Without this the repo row appears but its commits never
-    // show — `add_repo_explicit` only registered the repo, mirroring
-    // what `discover_repos` does for auto-discovered repos.
-    const RECENT_WINDOW_DAYS: i64 = 7;
-    const RECENT_MAX: usize = 10;
-    let repo_path = PathBuf::from(&validated.canonical_path);
-    let cutoff = now - RECENT_WINDOW_DAYS * 86_400;
-    let commits = git::recent_commits(&repo_path, RECENT_MAX, cutoff)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|mut c| {
-            c.repo_name = validated.name.clone();
-            c
-        })
-        .collect::<Vec<_>>();
-    if !commits.is_empty() {
-        if let Ok(mut conn2) = cache::open(app) {
-            let _ = cache::upsert_commits(&mut conn2, &commits);
-        }
-        let _ = app.emit(
-            "timeline://repo-fill",
-            RepoFillPayload {
-                commits,
-                fresh: false,
-            },
-        );
-    }
-
-    // Attach the file watcher so future commits in this repo refresh
-    // the timeline live, same as an auto-discovered repo.
-    if let Some(w) = app.try_state::<watcher::RepoWatcher>() {
-        w.add(&repo_path);
-    }
+    // A "super-repo" the user picked may contain independent nested
+    // repos — standalone clones the parent typically .gitignore's.
+    // Discover and register those too: the user added the folder to
+    // watch its git activity, and that includes what's nested inside.
+    discover_nested_repos(
+        app,
+        &PathBuf::from(&validated.canonical_path),
+        &validated.canonical_path,
+    );
 
     let _ = append_scan_log(
         app,
@@ -255,6 +224,140 @@ pub fn add_repo_explicit(app: &AppHandle, raw_path: &str) -> Result<DiscoveredRe
     );
 
     Ok(payload)
+}
+
+/// Stream a freshly-registered repo to the frontend: emit
+/// `timeline://repo-discovered`, read + cache + emit its recent commits
+/// via `timeline://repo-fill`, and attach the file watcher. Returns the
+/// payload. Shared by explicit add and nested-repo discovery.
+fn announce_registered_repo(
+    app: &AppHandle,
+    repo: &ValidatedRepo,
+    source: DiscoverySource,
+    confidence: i32,
+) -> DiscoveredRepoPayload {
+    let payload = DiscoveredRepoPayload {
+        path: repo.canonical_path.clone(),
+        name: repo.name.clone(),
+        source: source.as_str(),
+        confidence,
+    };
+    let _ = app.emit("timeline://repo-discovered", &payload);
+
+    let repo_path = PathBuf::from(&repo.canonical_path);
+    let cutoff = unix_now() - 7 * 86_400;
+    let commits = git::recent_commits(&repo_path, 10, cutoff)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|mut c| {
+            c.repo_name = repo.name.clone();
+            c
+        })
+        .collect::<Vec<_>>();
+    if !commits.is_empty() {
+        if let Ok(mut conn) = cache::open(app) {
+            let _ = cache::upsert_commits(&mut conn, &commits);
+        }
+        let _ = app.emit(
+            "timeline://repo-fill",
+            RepoFillPayload {
+                commits,
+                fresh: false,
+            },
+        );
+    }
+
+    if let Some(w) = app.try_state::<watcher::RepoWatcher>() {
+        w.add(&repo_path);
+    }
+
+    payload
+}
+
+/// Discover *independent* nested repos inside an explicitly-added folder.
+/// A user who picks a "super-repo" containing standalone clones (each
+/// with its own `.git` directory) expects those to show up too.
+/// Submodules and linked worktrees — whose `.git` is a *file* pointing
+/// into the parent — belong to the parent and are skipped. Nested repos
+/// register with normal user_state; only the explicitly-picked folder is
+/// pinned. Best-effort: any failure is swallowed.
+fn discover_nested_repos(app: &AppHandle, super_path: &Path, super_canonical: &str) {
+    // `scan_path` stops descending at the first `.git`, so walking
+    // `super_path` itself would stop at the super-repo's own `.git` and
+    // never see what's nested. Start one level down — walk each child.
+    let mut found: Vec<PathBuf> = Vec::new();
+    let Ok(entries) = std::fs::read_dir(super_path) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let child = entry.path();
+        if !child.is_dir() {
+            continue;
+        }
+        let name = child
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if discovery::is_hard_excluded(&name) {
+            continue;
+        }
+        discovery::scan_path(&child, |p| {
+            // Independent repo only: `.git` is a directory. A `.git`
+            // *file* means submodule / linked worktree — skip.
+            if p.join(".git").is_dir() {
+                found.push(p);
+            }
+        });
+    }
+    if found.is_empty() {
+        return;
+    }
+
+    let Ok(mut conn) = cache::open(app) else {
+        return;
+    };
+    let now = unix_now();
+    let mut registered: Vec<ValidatedRepo> = Vec::new();
+    {
+        let Ok(tx) = conn.transaction() else {
+            return;
+        };
+        for path in &found {
+            let Some(validated) = validate_repo_candidate(path) else {
+                continue;
+            };
+            // The super-repo itself was already registered by the caller.
+            if validated.canonical_path == super_canonical {
+                continue;
+            }
+            let candidate = Candidate {
+                path: PathBuf::from(&validated.canonical_path),
+                source: DiscoverySource::Manual,
+                confidence: 90,
+                raw_hint: Some(format!("nested-of:{super_canonical}")),
+            };
+            if upsert_discovered_repo(&tx, &validated, &candidate, now).is_err() {
+                continue;
+            }
+            let _ = record_repo_source(&tx, &validated, &candidate, now);
+            let _ = record_path_alias(&tx, &validated, &candidate, now);
+            registered.push(validated);
+        }
+        if tx.commit().is_err() {
+            return;
+        }
+    }
+
+    for validated in registered {
+        announce_registered_repo(app, &validated, DiscoverySource::Manual, 90);
+        let _ = append_scan_log(
+            app,
+            &format!(
+                "{} nested_add: path={} name={} super={}",
+                now, validated.canonical_path, validated.name, super_canonical
+            ),
+        );
+    }
 }
 
 async fn run_discovery_async(app: AppHandle, cancel: CancellationToken) -> Result<()> {
