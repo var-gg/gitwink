@@ -1146,6 +1146,24 @@ fn unix_now() -> i64 {
 mod tests {
     use super::*;
 
+    /// Build an absolute, OS-native path from segments. `learn_roots`
+    /// walks `Path::parent()`, which only splits on the host platform's
+    /// real separator — a hard-coded Windows `C:\…` literal collapses to
+    /// a single component on the Unix CI runners, so the walk finds no
+    /// parents. Constructing the path per-OS keeps these tests honest on
+    /// both Windows and macOS.
+    fn os_path(segments: &[&str]) -> String {
+        let mut p = if cfg!(windows) {
+            PathBuf::from("C:\\")
+        } else {
+            PathBuf::from("/")
+        };
+        for s in segments {
+            p.push(s);
+        }
+        p.to_string_lossy().into_owned()
+    }
+
     #[test]
     fn dedup_keeps_highest_confidence_per_path() {
         let p = PathBuf::from("/tmp/test-repo");
@@ -1192,14 +1210,16 @@ mod tests {
 
     #[test]
     fn learn_roots_proposes_parent_and_grandparent() {
+        let workspace = os_path(&["k2", "keymall", "workspace"]);
+        let gitdir = os_path(&["k2", "keymall", "workspace", ".git"]);
         let repo = ValidatedRepo {
-            observed_path: "C:\\k2\\keymall\\workspace".into(),
-            canonical_path: "C:\\k2\\keymall\\workspace".into(),
-            gitdir_path: "C:\\k2\\keymall\\workspace\\.git".into(),
+            observed_path: workspace.clone(),
+            canonical_path: workspace,
+            gitdir_path: gitdir,
             name: "workspace".into(),
         };
         let roots = learn_roots_from_repo(&repo, DiscoverySource::Manual);
-        // Expect parent (C:\k2\keymall) + grandparent (C:\k2)
+        // Expect parent (…/k2/keymall) + grandparent (…/k2)
         let paths: Vec<String> = roots
             .iter()
             .map(|r| r.root_path.to_string_lossy().into_owned())
@@ -1214,19 +1234,20 @@ mod tests {
 
     #[test]
     fn learn_roots_does_not_climb_into_drive_root() {
-        // A repo directly under C:\foo: parent C:\foo is fine, but
-        // grandparent C:\ must NOT be learned.
+        // A repo sitting directly under the filesystem / drive root:
+        // that root itself must NEVER be learned as a scan root.
+        let foo = os_path(&["foo"]);
+        let gitdir = os_path(&["foo", ".git"]);
         let repo = ValidatedRepo {
-            observed_path: "C:\\foo".into(),
-            canonical_path: "C:\\foo".into(),
-            gitdir_path: "C:\\foo\\.git".into(),
+            observed_path: foo.clone(),
+            canonical_path: foo,
+            gitdir_path: gitdir,
             name: "foo".into(),
         };
         let roots = learn_roots_from_repo(&repo, DiscoverySource::Vscode);
+        let fs_root = if cfg!(windows) { "C:\\" } else { "/" };
         for r in &roots {
-            let s = r.root_path.to_string_lossy();
-            assert_ne!(s.as_ref(), "C:\\");
-            assert_ne!(s.as_ref(), "C:");
+            assert_ne!(r.root_path.to_string_lossy().as_ref(), fs_root);
         }
     }
 }
