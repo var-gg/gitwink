@@ -1,6 +1,6 @@
 [package]
 name = "gitwink"
-version = "0.1.3"
+version = "0.2.0"
 description = "Tray-resident, read-only git glance for the AI-agent era."
 authors = ["var-gg"]
 edition = "2021"
