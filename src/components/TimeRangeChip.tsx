@@ -31,6 +31,7 @@ export function TimeRangeChip({ open, onToggle, onClose, value, onChange }: Prop
       open={open}
       onToggle={onToggle}
       onClose={onClose}
+      align="right"
     >
       <div className="chip-list">
         {OPTIONS.map((o) => (

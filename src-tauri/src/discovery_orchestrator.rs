@@ -12,6 +12,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
@@ -25,6 +26,8 @@ use crate::discovery;
 use crate::discovery_sources::{
     self, Candidate, DiscoverySource, GitConfigHint,
 };
+use crate::git;
+use crate::watcher;
 
 /// Payload mirroring `cache::Repo` plus the source the orchestrator
 /// learned the repo from. Frontend uses `name` + `path` directly and
@@ -110,6 +113,31 @@ impl OrchestratorHandle {
     }
 }
 
+/// Whether a discovery run is currently in flight. The frontend pulls
+/// this on startup via the `get_scan_state` command. Relying only on
+/// the `scan-progress` push event races with frontend listener
+/// registration — a fast run (warm cache, few repos) can emit its
+/// `complete` event before the listener exists, leaving the panel's
+/// "Scanning…" indicator stuck on forever.
+pub struct ScanState(pub AtomicBool);
+
+impl Default for ScanState {
+    fn default() -> Self {
+        // True at construction: the orchestrator is started right after
+        // this is managed, so "scanning" is the correct initial state.
+        Self(AtomicBool::new(true))
+    }
+}
+
+/// Payload for `timeline://repo-fill`. A local mirror of the structs in
+/// `commands.rs` / `watcher.rs` — kept here to avoid a cross-module
+/// dependency for a two-field DTO.
+#[derive(Debug, Clone, Serialize)]
+struct RepoFillPayload {
+    commits: Vec<git::CommitSummary>,
+    fresh: bool,
+}
+
 /// Spin up the discovery prewarm task. Fire-and-forget: the task runs
 /// to completion or until cancelled, logging summary lines to scan.log.
 pub fn start(app: AppHandle) -> OrchestratorHandle {
@@ -183,6 +211,41 @@ pub fn add_repo_explicit(app: &AppHandle, raw_path: &str) -> Result<DiscoveredRe
     };
     let _ = app.emit("timeline://repo-discovered", &payload);
 
+    // Read the new repo's recent commits and stream them into the
+    // timeline. Without this the repo row appears but its commits never
+    // show — `add_repo_explicit` only registered the repo, mirroring
+    // what `discover_repos` does for auto-discovered repos.
+    const RECENT_WINDOW_DAYS: i64 = 7;
+    const RECENT_MAX: usize = 10;
+    let repo_path = PathBuf::from(&validated.canonical_path);
+    let cutoff = now - RECENT_WINDOW_DAYS * 86_400;
+    let commits = git::recent_commits(&repo_path, RECENT_MAX, cutoff)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|mut c| {
+            c.repo_name = validated.name.clone();
+            c
+        })
+        .collect::<Vec<_>>();
+    if !commits.is_empty() {
+        if let Ok(mut conn2) = cache::open(app) {
+            let _ = cache::upsert_commits(&mut conn2, &commits);
+        }
+        let _ = app.emit(
+            "timeline://repo-fill",
+            RepoFillPayload {
+                commits,
+                fresh: false,
+            },
+        );
+    }
+
+    // Attach the file watcher so future commits in this repo refresh
+    // the timeline live, same as an auto-discovered repo.
+    if let Some(w) = app.try_state::<watcher::RepoWatcher>() {
+        w.add(&repo_path);
+    }
+
     let _ = append_scan_log(
         app,
         &format!(
@@ -195,6 +258,9 @@ pub fn add_repo_explicit(app: &AppHandle, raw_path: &str) -> Result<DiscoveredRe
 }
 
 async fn run_discovery_async(app: AppHandle, cancel: CancellationToken) -> Result<()> {
+    if let Some(s) = app.try_state::<ScanState>() {
+        s.0.store(true, Ordering::SeqCst);
+    }
     let app_for_blocking = app.clone();
     let cancel_for_blocking = cancel.clone();
 
@@ -214,6 +280,12 @@ async fn run_discovery_async(app: AppHandle, cancel: CancellationToken) -> Resul
         Ok((summary.0, summary.1, is_first_run))
     })
     .await;
+
+    // Scan finished — clear the flag regardless of success so the panel
+    // never sticks on "Scanning…" after an errored or cancelled run.
+    if let Some(s) = app.try_state::<ScanState>() {
+        s.0.store(false, Ordering::SeqCst);
+    }
 
     match join {
         Ok(Ok((seen, valid, first))) => {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { open } from "@tauri-apps/plugin-dialog";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
 import { AuthorsChip } from "./components/AuthorsChip";
@@ -12,6 +13,7 @@ import {
   dismissPanel,
   explicitAddRepo,
   getPinnedRepos,
+  getScanState,
   hideRepo,
   listBranches,
   listRecentCommitsCached,
@@ -21,6 +23,7 @@ import {
   onTimelineRepoFill,
   recentCommits,
   repoCommits,
+  setPanelSticky,
   setPinnedRepos as savePinnedRepos,
 } from "./lib/ipc";
 import type {
@@ -151,6 +154,10 @@ function App() {
   // `addError` clears itself after 4s so a typo'd path doesn't linger.
   const [addError, setAddError] = useState<string | null>(null);
 
+  // True while the native folder picker is open. The picker steals OS
+  // focus, which would otherwise blur-dismiss the panel mid add-repo.
+  const [dialogOpen, setDialogOpen] = useState(false);
+
   const singleMode = selectedRepoPath != null;
 
   // Mirror selectedRepoPath into a ref so the file-watcher listener — set up
@@ -191,7 +198,18 @@ function App() {
       // Orchestrator owns discovery now — we just listen.
       // `scanning` is the UI flag for the progress strip + tray; the
       // tray icon's own tooltip is updated by Rust directly.
-      setScanning(true);
+      //
+      // Pull the real scan state first: the `scan-progress` 'complete'
+      // event can fire before this listener registers (a fast run on a
+      // repo-light machine), which would otherwise leave "Scanning…"
+      // stuck on forever. The listener below still catches state changes
+      // that happen after this point.
+      try {
+        const st = await getScanState();
+        if (mounted) setScanning(st);
+      } catch {
+        if (mounted) setScanning(true);
+      }
       unProgress = await onOrchestratorProgress((p) => {
         if (!mounted) return;
         setDiscoveredCount(p.reposFound);
@@ -411,7 +429,21 @@ function App() {
     const trimmed = rawPath.trim();
     if (!trimmed) return false;
     try {
-      await explicitAddRepo(trimmed);
+      const repo = await explicitAddRepo(trimmed);
+      // Add the row directly from the return value. The
+      // timeline://repo-discovered event can race with listener
+      // registration, so a user-initiated add must not depend on it.
+      // The onRepoDiscovered listener dedups by path, so a later event
+      // for the same repo is harmless.
+      setAllRepos((prev) => {
+        if (prev.some((r) => r.path === repo.path)) return prev;
+        const next = [
+          ...prev,
+          { path: repo.path, name: repo.name, status: "active" as const },
+        ];
+        next.sort((a, b) => a.name.localeCompare(b.name));
+        return next;
+      });
       setAddError(null);
       return true;
     } catch (err) {
@@ -426,6 +458,44 @@ function App() {
       return false;
     }
   }, []);
+
+  // Panel "sticky" mode — resist blur-dismiss while the user is mid
+  // add-repo flow. Two cases: (1) the empty-state screen is up, so the
+  // user must reach another window to find a folder; (2) the native
+  // folder picker is open and has stolen focus. The backend blur
+  // handler skips hide while sticky.
+  const emptyState = allRepos.length === 0 && !singleMode;
+  const panelSticky = emptyState || dialogOpen;
+  useEffect(() => {
+    void setPanelSticky(panelSticky);
+  }, [panelSticky]);
+
+  // Add a repo via the native folder picker. Sets dialogOpen so the
+  // panel stays sticky; also pushes sticky=true synchronously before
+  // the picker opens, since the useEffect above races with the picker
+  // stealing focus.
+  const handleAddRepo = useCallback(async () => {
+    setDialogOpen(true);
+    await setPanelSticky(true);
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: true,
+        title: "Add a Git repository",
+      });
+      if (selected) {
+        const list = Array.isArray(selected) ? selected : [selected];
+        for (const p of list) {
+          await tryAddPath(p);
+        }
+      }
+    } catch {
+      // Picker failed to open / plugin error — leave the footer hint
+      // and drop/paste paths in place, nothing else to surface.
+    } finally {
+      setDialogOpen(false);
+    }
+  }, [tryAddPath]);
 
   // Tauri drag-drop. Fires on this window's drop zone (the whole panel).
   // We listen for the "drop" variant only — "hover"/"cancel" are just
@@ -630,7 +700,11 @@ function App() {
         {filteredCommits == null ? (
           <p className="panel-empty">Loading commits…</p>
         ) : allRepos.length === 0 && !singleMode ? (
-          <EmptyDropPanel scanning={scanning} addError={addError} />
+          <EmptyDropPanel
+            scanning={scanning}
+            addError={addError}
+            onBrowse={() => void handleAddRepo()}
+          />
         ) : (
           <Timeline
             key={singleMode ? `single:${selectedRepoPath}` : "all"}
@@ -642,8 +716,20 @@ function App() {
           />
         )}
         {allRepos.length > 0 && (
-          <div className="panel-footer-hint" title="Drag a repo folder onto the panel, or paste a path">
-            Drop or paste a repo folder to add it
+          <div className="panel-footer-hint">
+            <button
+              type="button"
+              className="add-repo-btn"
+              onClick={() => void handleAddRepo()}
+            >
+              + Add repo…
+            </button>
+            <span
+              className="panel-footer-hint-text"
+              title="Copy a repo folder's path in your file manager, then paste it here"
+            >
+              or paste a path
+            </span>
             {addError && <span className="panel-footer-hint-error"> · {addError}</span>}
           </div>
         )}
@@ -655,14 +741,18 @@ function App() {
 interface EmptyDropPanelProps {
   scanning: boolean;
   addError: string | null;
+  onBrowse: () => void;
 }
 
 /** First-paint state for a fresh PC where no repos are cached AND the
  * background scan hasn't found anything yet (no VS Code recents, no
  * git config hints, etc). Shows a big drop target as the *primary* UI
  * rather than a blank "Scanning…" screen — the explicit-add path is a
- * first-class flow, not a hidden escape hatch. */
-function EmptyDropPanel({ scanning, addError }: EmptyDropPanelProps) {
+ * first-class flow, not a hidden escape hatch. The panel is sticky
+ * (resists blur-dismiss) while this screen is up, so the user can
+ * reach a file-manager window to drag a folder back without the panel
+ * closing. */
+function EmptyDropPanel({ scanning, addError, onBrowse }: EmptyDropPanelProps) {
   return (
     <div className="empty-drop">
       <div className="empty-drop-icon" aria-hidden="true">
@@ -670,6 +760,13 @@ function EmptyDropPanel({ scanning, addError }: EmptyDropPanelProps) {
       </div>
       <div className="empty-drop-title">Drop a repo folder here</div>
       <div className="empty-drop-sub">or paste a path (Ctrl+V / Cmd+V)</div>
+      <button
+        type="button"
+        className="add-repo-btn empty-drop-btn"
+        onClick={onBrowse}
+      >
+        Browse for a folder…
+      </button>
       {scanning && (
         <div className="empty-drop-status">Scanning for repos…</div>
       )}

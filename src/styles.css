@@ -17,6 +17,11 @@ body,
   height: 100%;
   background: #fafafa;
   color: #1a1a1a;
+  /* The panel window is a fixed size (resizable: false) and panel-body
+   * owns its own vertical scroll — nothing should ever scroll at the
+   * document level. A chip dropdown that mis-anchors past the panel
+   * edge must clip, not spawn a scrollbar. Hard guard against both axes. */
+  overflow: hidden;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -604,22 +609,60 @@ body,
   flex-shrink: 0;
   padding: 4px 12px 6px;
   font-size: 10px;
-  opacity: 0.4;
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.panel-footer-hint-text {
+  opacity: 0.4;
   cursor: default;
-  text-align: center;
 }
 .panel-footer-hint-error {
   color: rgba(180, 50, 50, 0.95);
-  opacity: 1;
 }
+
+/* "+ Add repo" button — footer (compact) and empty-state (larger). The
+ * native folder picker it opens is the primary repo-add path; drop /
+ * paste stay as secondary affordances. */
+.add-repo-btn {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+.add-repo-btn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+}
+.empty-drop-btn {
+  margin-top: 10px;
+  padding: 6px 14px;
+  font-size: 12px;
+}
+
 @media (prefers-color-scheme: dark) {
   .panel-footer-hint {
     border-top-color: rgba(255, 255, 255, 0.08);
   }
   .panel-footer-hint-error {
     color: rgba(255, 160, 160, 0.95);
+  }
+  .add-repo-btn {
+    border-color: rgba(255, 255, 255, 0.18);
+  }
+  .add-repo-btn:hover {
+    background: rgba(255, 255, 255, 0.10);
   }
 }
 

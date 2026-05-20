@@ -34,6 +34,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             #[cfg(target_os = "macos")]
             {
@@ -42,6 +43,8 @@ pub fn run() {
             }
 
             app.manage(commands::PendingDiff::default());
+            app.manage(commands::PanelSticky::default());
+            app.manage(discovery_orchestrator::ScanState::default());
 
             // Spin up the .git watcher and attach it to every repo the
             // cache already knows about. discover_repos adds new ones
@@ -207,6 +210,17 @@ pub fn run() {
                             if gen_clone.load(Ordering::SeqCst) != stamp {
                                 return;
                             }
+                            // Sticky: the panel resists blur-dismiss while the
+                            // empty-state add-repo screen is up or a native
+                            // folder picker is open. Focus left the panel, but
+                            // the user is mid add-repo flow, not dismissing.
+                            let sticky = handle_clone
+                                .try_state::<commands::PanelSticky>()
+                                .map(|s| s.0.load(Ordering::SeqCst))
+                                .unwrap_or(false);
+                            if sticky {
+                                return;
+                            }
                             // Don't dismiss the panel just because the user
                             // clicked into our own diff window — that's still
                             // an in-app interaction.
@@ -265,6 +279,8 @@ pub fn run() {
             commands::open_diff,
             commands::take_pending_diff_open,
             commands::dismiss_panel,
+            commands::set_panel_sticky,
+            commands::get_scan_state,
             commands::get_pinned_repos,
             commands::set_pinned_repos,
         ])

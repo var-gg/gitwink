@@ -291,6 +291,37 @@ pub fn dismiss_panel(app: AppHandle) {
     }
 }
 
+/// Whether the panel should resist blur-dismiss. The frontend sets this
+/// true while the empty-state add-repo screen is showing or a native
+/// folder picker is open — both legitimately move focus off the panel
+/// without the user wanting it closed. The blur handler in `lib.rs`
+/// checks this before hiding.
+pub struct PanelSticky(pub std::sync::atomic::AtomicBool);
+
+impl Default for PanelSticky {
+    fn default() -> Self {
+        Self(std::sync::atomic::AtomicBool::new(false))
+    }
+}
+
+#[tauri::command]
+pub fn set_panel_sticky(sticky: bool, state: tauri::State<'_, PanelSticky>) {
+    state
+        .0
+        .store(sticky, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Whether a discovery run is currently in flight. The frontend pulls
+/// this on startup so the "Scanning…" indicator is correct even when
+/// the orchestrator finished before the scan-progress listener was
+/// registered.
+#[tauri::command]
+pub fn get_scan_state(
+    state: tauri::State<'_, discovery_orchestrator::ScanState>,
+) -> bool {
+    state.0.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 #[tauri::command]
 pub async fn open_diff(
     app: AppHandle,

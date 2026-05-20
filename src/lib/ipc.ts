@@ -161,6 +161,22 @@ export async function dismissPanel(): Promise<void> {
   await invoke("dismiss_panel");
 }
 
+/** Tell the backend whether the panel should resist blur-dismiss. Set
+ * true while the empty-state add-repo screen is showing or a native
+ * folder picker is open — focus legitimately leaves the panel in both
+ * cases without the user meaning to dismiss it. */
+export async function setPanelSticky(sticky: boolean): Promise<void> {
+  await invoke("set_panel_sticky", { sticky });
+}
+
+/** Pull the orchestrator's current scan state. Used at startup: the
+ * `scan-progress` 'complete' event can fire before this window's
+ * listener registers (fast run on a repo-light machine), which would
+ * otherwise leave the "Scanning…" indicator stuck on. */
+export async function getScanState(): Promise<boolean> {
+  return invoke<boolean>("get_scan_state");
+}
+
 export async function getPinnedRepos(): Promise<string[]> {
   return invoke<string[]>("get_pinned_repos");
 }
