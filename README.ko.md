@@ -16,6 +16,18 @@ merge, 수정 어느 것도 못 한다. 설계상 읽기 전용.
 
 ## 다운로드
 
+**Windows — [Scoop](https://scoop.sh):**
+
+```sh
+scoop bucket add var-gg https://github.com/var-gg/scoop-bucket
+scoop install gitwink
+```
+
+이후 업데이트는 `scoop update gitwink`. Scoop은 빌드를 추출해 설치하므로
+SmartScreen 경고가 아예 뜨지 않는다.
+
+**또는 직접 다운로드:**
+
 [**최신 릴리즈 다운로드 →**](https://github.com/var-gg/gitwink/releases/latest)
 
 - **Windows** — `.exe` (NSIS 인스톨러) 또는 `.msi`
@@ -24,6 +36,13 @@ merge, 수정 어느 것도 못 한다. 설계상 읽기 전용.
 현재 아티팩트는 서명되지 않아, 첫 실행 시 Windows SmartScreen / macOS
 Gatekeeper가 경고를 띄운다 — 우회 방법은 릴리즈 노트에 있다. 직접
 빌드하려면 [개발](#개발) 참고.
+
+## 코드 서명
+
+gitwink는 오픈소스를 위한 [SignPath Foundation](https://signpath.org/)
+무상 코드 서명 프로그램에 참여하고 있다 — [코드 서명 정책](CODE_SIGNING_POLICY.md)
+참고. 첫 서명 릴리즈가 나오기 전까지 Windows 빌드는 서명되지 않은
+상태다 (위 [다운로드](#다운로드) 참고).
 
 ## 만든 이유
 
@@ -98,7 +117,8 @@ side-by-side diff, 바이너리 자산의 인라인 이미지 프리뷰, 위치/
 ## 기술 스택
 
 Tauri 2 · Rust · React + TypeScript · `git2` · SQLite · 커스텀
-SVG DAG 드로어 · 텔레메트리 없음, 폰홈 없음, 네트워크 없음.
+SVG DAG 드로어 · 텔레메트리 없음, 폰홈 없음 — 네트워크 사용은 끌 수
+있는 업데이트 확인뿐.
 
 ## 개발
 

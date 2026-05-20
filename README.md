@@ -16,6 +16,18 @@ cannot commit, push, merge, or modify anything. Read-only by design.
 
 ## Download
 
+**Windows — [Scoop](https://scoop.sh):**
+
+```sh
+scoop bucket add var-gg https://github.com/var-gg/scoop-bucket
+scoop install gitwink
+```
+
+Update later with `scoop update gitwink`. Scoop installs the build by
+extraction, so the SmartScreen prompt never appears.
+
+**Or download directly:**
+
 [**Download the latest release →**](https://github.com/var-gg/gitwink/releases/latest)
 
 - **Windows** — `.exe` (NSIS installer) or `.msi`
@@ -106,7 +118,8 @@ and a singleton that remembers position, size, and maximised state.
 ## Tech
 
 Tauri 2 · Rust · React + TypeScript · `git2` · SQLite · custom SVG DAG
-drawer · no telemetry, no phone-home, no network.
+drawer · no telemetry, no phone-home — the only network access is an
+opt-out check for updates.
 
 ## Development
 
