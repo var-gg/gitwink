@@ -10,7 +10,9 @@ interface Props {
   repos: Repo[];
   pinned: string[];
   selectedPath: string | null;
+  selectedPaths: string[] | "all";
   onSelect: (path: string | null) => void;
+  onSelectMulti: (paths: string[] | "all") => void;
   onTogglePin: (path: string) => void;
   onHide: (path: string) => void;
   totalRepoCount: number;
@@ -23,7 +25,9 @@ export function RepoChip({
   repos,
   pinned,
   selectedPath,
+  selectedPaths,
   onSelect,
+  onSelectMulti,
   onTogglePin,
   onHide,
   totalRepoCount,
@@ -61,22 +65,35 @@ export function RepoChip({
     r.name.toLowerCase().includes(q) ||
     r.path.toLowerCase().includes(q);
 
-  const pinnedRepos = useMemo(
-    () =>
-      pinnedSnapshot
-        .map((p) => repoByPath.get(p))
-        .filter((r): r is Repo => !!r)
-        .filter(matches),
-    [pinnedSnapshot, repoByPath, q],
-  );
+  const pinnedRepos = useMemo(() => {
+    const filtered = pinnedSnapshot
+      .filter((p) => {
+        const r = repoByPath.get(p);
+        return r && matches(r);
+      })
+      .map((p) => repoByPath.get(p)!);
+    const selected = Array.isArray(selectedPaths) ? selectedPaths : [];
+    return filtered.sort((a, b) => {
+      const aSelected = selected.includes(a.path);
+      const bSelected = selected.includes(b.path);
+      if (aSelected && !bSelected) return -1;
+      if (!aSelected && bSelected) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [pinnedSnapshot, repoByPath, query, selectedPaths]);
 
   const otherRepos = useMemo(() => {
-    const snapSet = new Set(pinnedSnapshot);
-    return repos
-      .filter((r) => !snapSet.has(r.path))
-      .filter(matches)
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [repos, pinnedSnapshot, q]);
+    const filtered = repos
+      .filter((r) => !pinnedSnapshot.includes(r.path) && matches(r));
+    const selected = Array.isArray(selectedPaths) ? selectedPaths : [];
+    return filtered.sort((a, b) => {
+      const aSelected = selected.includes(a.path);
+      const bSelected = selected.includes(b.path);
+      if (aSelected && !bSelected) return -1;
+      if (!aSelected && bSelected) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [repos, pinnedSnapshot, query, selectedPaths]);
 
   const selected = selectedPath ? repoByPath.get(selectedPath) : null;
   const label = selected ? (
@@ -93,8 +110,22 @@ export function RepoChip({
         ✕
       </span>
     </>
-  ) : (
+  ) : selectedPaths === "all" ? (
     <>All repos ({totalRepoCount})</>
+  ) : (
+    <>
+      {selectedPaths.length} repos
+      <span
+        className="chip-clear"
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelectMulti("all");
+        }}
+        title="Clear filter"
+      >
+        ✕
+      </span>
+    </>
   );
 
   return (
@@ -114,16 +145,6 @@ export function RepoChip({
         />
       </div>
       <div className="chip-list">
-        <button
-          type="button"
-          className={"chip-item" + (selectedPath == null ? " active" : "")}
-          onClick={() => {
-            onSelect(null);
-            onClose();
-          }}
-        >
-          <span className="chip-item-name">All repos</span>
-        </button>
         {pinnedRepos.length > 0 && (
           <>
             <div className="chip-section">📌 Pinned</div>
@@ -133,9 +154,17 @@ export function RepoChip({
                 repo={r}
                 pinned={livePinned.has(r.path)}
                 active={selectedPath === r.path}
+                selected={Array.isArray(selectedPaths) && selectedPaths.includes(r.path)}
                 onSelect={() => {
                   onSelect(r.path);
                   onClose();
+                }}
+                onToggleSelect={() => {
+                  const current = Array.isArray(selectedPaths) ? selectedPaths : [];
+                  const next = current.includes(r.path)
+                    ? current.filter((p) => p !== r.path)
+                    : [...current, r.path];
+                  onSelectMulti(next.length === 0 ? "all" : next);
                 }}
                 onPin={() => onTogglePin(r.path)}
                 onHide={() => onHide(r.path)}
@@ -152,9 +181,17 @@ export function RepoChip({
                 repo={r}
                 pinned={livePinned.has(r.path)}
                 active={selectedPath === r.path}
+                selected={Array.isArray(selectedPaths) && selectedPaths.includes(r.path)}
                 onSelect={() => {
                   onSelect(r.path);
                   onClose();
+                }}
+                onToggleSelect={() => {
+                  const current = Array.isArray(selectedPaths) ? selectedPaths : [];
+                  const next = current.includes(r.path)
+                    ? current.filter((p) => p !== r.path)
+                    : [...current, r.path];
+                  onSelectMulti(next.length === 0 ? "all" : next);
                 }}
                 onPin={() => onTogglePin(r.path)}
                 onHide={() => onHide(r.path)}
@@ -174,14 +211,18 @@ function RepoItem({
   repo,
   pinned,
   active,
+  selected,
   onSelect,
+  onToggleSelect,
   onPin,
   onHide,
 }: {
   repo: Repo;
   pinned: boolean;
   active: boolean;
+  selected: boolean;
   onSelect: () => void;
+  onToggleSelect: () => void;
   onPin: () => void;
   onHide: () => void;
 }) {
@@ -191,9 +232,19 @@ function RepoItem({
       className={
         "chip-item-row" +
         (active ? " active" : "") +
-        (isMissing ? " missing" : "")
+        (isMissing ? " missing" : "") +
+        (selected ? " selected" : "")
       }
     >
+      <div
+        className={`chip-checkbox ${selected ? "checked" : ""}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleSelect();
+        }}
+      >
+        {selected && <span className="chip-checkbox-icon">✓</span>}
+      </div>
       <button
         type="button"
         className="chip-item"
