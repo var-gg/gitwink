@@ -329,9 +329,9 @@ body,
 }
 
 .chip-list {
+  max-height: 320px;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 4px 0;
 }
 
 .chip-section {
@@ -345,14 +345,91 @@ body,
 .chip-item-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   padding-right: 6px;
+  padding-left: 8px;
   min-width: 0;
   max-width: 100%;
+  transition: all 0.2s ease;
 }
 
 .chip-item-row.active {
   background: rgba(80, 130, 240, 0.14);
+}
+
+.chip-item-row.selected {
+  background: linear-gradient(90deg, rgba(80, 130, 240, 0.08), rgba(80, 130, 240, 0.12));
+  transition: background 0.2s ease;
+}
+
+@media (prefers-color-scheme: dark) {
+  .chip-item-row.selected {
+    background: linear-gradient(90deg, rgba(80, 130, 240, 0.15), rgba(80, 130, 240, 0.2));
+  }
+}
+
+.chip-checkbox {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  cursor: pointer;
+  border: 2px solid rgba(128, 128, 128, 0.3);
+  border-radius: 5px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+@media (prefers-color-scheme: dark) {
+  .chip-checkbox {
+    border-color: rgba(255, 255, 255, 0.25);
+    background: rgba(0, 0, 0, 0.4);
+  }
+}
+
+.chip-checkbox:hover {
+  transform: scale(1.08);
+  border-color: rgba(80, 130, 240, 0.5);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  .chip-checkbox:hover {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+}
+
+.chip-checkbox.checked {
+  background: linear-gradient(135deg, #5082f0, #4a7ae8);
+  border-color: #5082f0;
+  box-shadow: 0 2px 8px rgba(80, 130, 240, 0.35);
+  transform: scale(1.05);
+}
+
+.chip-checkbox.checked:hover {
+  background: linear-gradient(135deg, #5a8cf5, #5489f0);
+  box-shadow: 0 3px 10px rgba(80, 130, 240, 0.45);
+}
+
+.chip-checkbox-icon {
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  animation: checkmark 0.2s ease-out;
+}
+
+@keyframes checkmark {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .chip-item {

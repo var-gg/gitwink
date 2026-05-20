@@ -139,6 +139,9 @@ function App() {
 
   const [windowDays, setWindowDays] = useState<WindowDays>(7);
   const [selectedRepoPath, setSelectedRepoPath] = useState<string | null>(null);
+  const [selectedRepoPaths, setSelectedRepoPaths] = useState<string[] | "all">(
+    "all",
+  );
   const [selectedAuthors, setSelectedAuthors] = useState<string[] | "all">(
     "all",
   );
@@ -676,10 +679,17 @@ function App() {
 
   const filteredCommits = useMemo(() => {
     if (!commits) return null;
-    if (selectedAuthors === "all") return commits;
-    const set = new Set(selectedAuthors);
-    return commits.filter((c) => set.has(c.author));
-  }, [commits, selectedAuthors]);
+    let result = commits;
+    if (selectedAuthors !== "all") {
+      const set = new Set(selectedAuthors);
+      result = result.filter((c) => set.has(c.author));
+    }
+    if (!singleMode && selectedRepoPaths !== "all") {
+      const repoSet = new Set(selectedRepoPaths);
+      result = result.filter((c) => repoSet.has(c.repoPath));
+    }
+    return result;
+  }, [commits, selectedAuthors, selectedRepoPaths, singleMode]);
 
   function togglePin(path: string) {
     setPinnedRepos((prev) => {
@@ -711,7 +721,9 @@ function App() {
             repos={allRepos}
             pinned={pinnedRepos}
             selectedPath={selectedRepoPath}
+            selectedPaths={selectedRepoPaths}
             onSelect={setSelectedRepoPath}
+            onSelectMulti={setSelectedRepoPaths}
             onTogglePin={togglePin}
             onHide={(path) => {
               // Optimistic: drop from local list immediately; backend
