@@ -342,6 +342,40 @@ body,
   opacity: 0.55;
 }
 
+/* "All repos" is a section header that also resets the filter — styled
+ * to read as interactive (hover, active), unlike the plain Pinned label. */
+.chip-section-all {
+  display: block;
+  width: 100%;
+  padding: 6px 10px 4px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-align: left;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.chip-section-all:hover {
+  opacity: 0.95;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.chip-section-all.active {
+  opacity: 1;
+  color: rgb(80, 130, 240);
+}
+
+@media (prefers-color-scheme: dark) {
+  .chip-section-all:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+}
+
 .chip-item-row {
   display: flex;
   align-items: center;
@@ -367,17 +401,17 @@ body,
   }
 }
 
-/* Compact custom checkbox for the multi-repo filter. Rendered as a
+/* Custom checkbox for the multi-repo filter. Rendered as a
  * <button role="checkbox"> so it's focusable and keyboard-operable. */
 .chip-checkbox {
-  width: 15px;
-  height: 15px;
+  width: 20px;
+  height: 20px;
   box-sizing: border-box;
   flex-shrink: 0;
   padding: 0;
   cursor: pointer;
-  border: 1.5px solid rgba(128, 128, 128, 0.35);
-  border-radius: 4px;
+  border: 2px solid rgba(128, 128, 128, 0.35);
+  border-radius: 5px;
   transition: border-color 0.15s ease, background 0.15s ease;
   display: flex;
   align-items: center;
@@ -415,7 +449,7 @@ body,
 
 .chip-checkbox-icon {
   color: white;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
   line-height: 1;
   animation: checkmark 0.15s ease-out;
@@ -447,6 +481,14 @@ body,
   font-size: 12px;
   text-align: left;
   cursor: pointer;
+}
+
+/* In a repo row the checkbox + row gap already provide the left inset;
+ * the item's own padding (sized for the pre-checkbox layout) would
+ * double up. Trim it so the checkbox sits evenly after the row edge. */
+.chip-item-row .chip-item {
+  padding-left: 2px;
+  padding-right: 6px;
 }
 
 .chip-item:hover {

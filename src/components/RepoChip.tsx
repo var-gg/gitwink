@@ -163,20 +163,6 @@ export function RepoChip({
         />
       </div>
       <div className="chip-list">
-        <button
-          type="button"
-          className={
-            "chip-item" +
-            (selectedPath == null && selectedPaths === "all" ? " active" : "")
-          }
-          onClick={() => {
-            onSelect(null);
-            onSelectMulti("all");
-            onClose();
-          }}
-        >
-          <span className="chip-item-name">All repos</span>
-        </button>
         {pinnedRepos.length > 0 && (
           <>
             <div className="chip-section">📌 Pinned</div>
@@ -205,34 +191,43 @@ export function RepoChip({
             ))}
           </>
         )}
-        {otherRepos.length > 0 && (
-          <>
-            <div className="chip-section">All repos</div>
-            {otherRepos.map((r) => (
-              <RepoItem
-                key={r.path}
-                repo={r}
-                pinned={livePinned.has(r.path)}
-                active={selectedPath === r.path}
-                selected={Array.isArray(selectedPaths) && selectedPaths.includes(r.path)}
-                checkboxReadonly={singleRepoMode}
-                onSelect={() => {
-                  onSelect(r.path);
-                  onClose();
-                }}
-                onToggleSelect={() => {
-                  const current = Array.isArray(selectedPaths) ? selectedPaths : [];
-                  const next = current.includes(r.path)
-                    ? current.filter((p) => p !== r.path)
-                    : [...current, r.path];
-                  onSelectMulti(next.length === 0 ? "all" : next);
-                }}
-                onPin={() => onTogglePin(r.path)}
-                onHide={() => onHide(r.path)}
-              />
-            ))}
-          </>
-        )}
+        <button
+          type="button"
+          className={
+            "chip-section-all" +
+            (selectedPath == null && selectedPaths === "all" ? " active" : "")
+          }
+          onClick={() => {
+            onSelect(null);
+            onSelectMulti("all");
+            onClose();
+          }}
+        >
+          All repos
+        </button>
+        {otherRepos.map((r) => (
+          <RepoItem
+            key={r.path}
+            repo={r}
+            pinned={livePinned.has(r.path)}
+            active={selectedPath === r.path}
+            selected={Array.isArray(selectedPaths) && selectedPaths.includes(r.path)}
+            checkboxReadonly={singleRepoMode}
+            onSelect={() => {
+              onSelect(r.path);
+              onClose();
+            }}
+            onToggleSelect={() => {
+              const current = Array.isArray(selectedPaths) ? selectedPaths : [];
+              const next = current.includes(r.path)
+                ? current.filter((p) => p !== r.path)
+                : [...current, r.path];
+              onSelectMulti(next.length === 0 ? "all" : next);
+            }}
+            onPin={() => onTogglePin(r.path)}
+            onHide={() => onHide(r.path)}
+          />
+        ))}
         {pinnedRepos.length === 0 && otherRepos.length === 0 && (
           <div className="chip-empty">No repos match.</div>
         )}
