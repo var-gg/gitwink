@@ -31,6 +31,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "publisher": "var-gg",
     "shortDescription": "Tray-resident, read-only git glance for the AI-agent era.",
@@ -42,5 +43,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/var-gg/gitwink/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgxOEZFODU4M0Y1NkU4Q0MKUldUTTZGWS9XT2lQZ2NzTjZDU0M0S1JpZVdvMitlM2hxYmdBSk94amJNK3p3dG5uT3ltQWQ2NDgK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

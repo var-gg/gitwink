@@ -23,17 +23,22 @@ import {
   onPanelShown,
   onRepoDiscovered,
   onTimelineRepoFill,
+  onUpdateNone,
+  onUpdateShowModal,
   recentCommits,
   repoCommits,
   setBranchSelection as saveBranchSelection,
   setPanelSticky,
   setPinnedRepos as savePinnedRepos,
+  updateGetState,
 } from "./lib/ipc";
+import { UpdateModal } from "./components/UpdateModal";
 import type {
   AuthorTally,
   BranchInfo,
   CommitSummary,
   Repo,
+  UpdateStatePayload,
   UpstreamStatus,
   WindowDays,
 } from "./types";
@@ -166,6 +171,16 @@ function App() {
   // focus, which would otherwise blur-dismiss the panel mid add-repo.
   const [dialogOpen, setDialogOpen] = useState(false);
 
+  // Self-update modal — populated when the backend asks the panel to
+  // surface it (tray "Update available" item / a manual check). null =
+  // closed. The modal never auto-pops; the tray dot is the only passive
+  // cue.
+  const [updateModal, setUpdateModal] = useState<UpdateStatePayload | null>(
+    null,
+  );
+  // Transient "you're up to date" line after a manual check found nothing.
+  const [upToDate, setUpToDate] = useState(false);
+
   const singleMode = selectedRepoPath != null;
 
   // Mirror selectedRepoPath into a ref so the file-watcher listener — set up
@@ -184,6 +199,8 @@ function App() {
     let unFill: UnlistenFn | undefined;
     let unStatus: UnlistenFn | undefined;
     let unShown: UnlistenFn | undefined;
+    let unUpdateModal: UnlistenFn | undefined;
+    let unUpdateNone: UnlistenFn | undefined;
 
     (async () => {
       try {
@@ -231,6 +248,21 @@ function App() {
       // is the only re-fetch trigger besides a filter change.
       unShown = await onPanelShown(() => {
         if (mounted) setRefreshNonce((n) => n + 1);
+      });
+
+      // Updater: backend asks the panel to surface the modal (tray
+      // "Update available" item, a manual check hit, or a Scoop install).
+      unUpdateModal = await onUpdateShowModal(async () => {
+        try {
+          const st = await updateGetState();
+          if (mounted) setUpdateModal(st);
+        } catch {}
+      });
+      // A manual check found nothing — show a brief "up to date" line.
+      unUpdateNone = await onUpdateNone(() => {
+        if (!mounted) return;
+        setUpToDate(true);
+        window.setTimeout(() => setUpToDate(false), 3000);
       });
 
       // Per-repo discovery: merge into allRepos so the repo chip
@@ -317,6 +349,8 @@ function App() {
       unFill?.();
       unStatus?.();
       unShown?.();
+      unUpdateModal?.();
+      unUpdateNone?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -597,6 +631,12 @@ function App() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
+      // The update modal is the top-most layer — close it first.
+      if (updateModal) {
+        setUpdateModal(null);
+        e.preventDefault();
+        return;
+      }
       if (openChip != null) return; // dropdown handles its own Esc
       // Timeline's Esc handler stopImmediatePropagation()s if an
       // expansion is open, so by the time we get here neither a
@@ -612,7 +652,7 @@ function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [openChip, singleMode]);
+  }, [openChip, singleMode, updateModal]);
 
   const authors: AuthorTally[] = useMemo(() => {
     const m = new Map<string, { count: number; lastActivity: number }>();
@@ -723,6 +763,9 @@ function App() {
         </div>
         <div className="panel-drag-handle" />
         {scanning && <span className="panel-status">Scanning…</span>}
+        {upToDate && !scanning && (
+          <span className="panel-status">✓ Up to date</span>
+        )}
         <button
           type="button"
           className="panel-close"
@@ -770,6 +813,12 @@ function App() {
           </div>
         )}
       </section>
+      {updateModal && (
+        <UpdateModal
+          state={updateModal}
+          onClose={() => setUpdateModal(null)}
+        />
+      )}
     </main>
   );
 }

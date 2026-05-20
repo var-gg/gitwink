@@ -49,25 +49,40 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
+      # Pull the CHANGELOG.md section for this tag. It becomes both the
+      # GitHub Release body and the `notes` field of `latest.json` — i.e.
+      # the changelog the in-app updater modal shows.
+      - name: Extract changelog for this tag
+        id: changelog
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          body=$(awk -v ver="$version" '
+            $0 ~ "^## \\[" ver "\\]" { capture=1; next }
+            capture && /^## \[/ { exit }
+            capture { print }
+          ' CHANGELOG.md)
+          if [ -z "$(printf "%s" "$body" | tr -d "[:space:]")" ]; then
+            body="See the commit history for changes in this release."
+          fi
+          {
+            echo "body<<__GITWINK_CHANGELOG__"
+            printf "%s\n" "$body"
+            echo "__GITWINK_CHANGELOG__"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build + attach to GitHub Release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Updater signing — tauri-action signs each installer and
+          # generates/uploads `latest.json` when these are present.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'gitwink ${{ github.ref_name }}'
-          releaseBody: |
-            Unsigned artefacts attached below.
-
-            **Windows:** the `.msi` will show a SmartScreen "unknown publisher"
-            warning until v0.1 picks up code-signing. Click "More info" →
-            "Run anyway".
-
-            **macOS:** Gatekeeper will block on first launch. Right-click the
-            app → Open → confirm, or
-            `xattr -d com.apple.quarantine /Applications/gitwink.app`.
-
-            Full changes: see commits in this tag.
+          releaseBody: ${{ steps.changelog.outputs.body }}
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

@@ -12,6 +12,7 @@ import type {
   ScanComplete,
   ScanProgress,
   TimelineRepoFill,
+  UpdateStatePayload,
   UpstreamStatus,
 } from "../types";
 
@@ -243,4 +244,41 @@ export async function onTimelineRepoFill(
  * as a fallback for anything the live file-watcher missed. */
 export async function onPanelShown(cb: () => void): Promise<UnlistenFn> {
   return listen("panel://shown", () => cb());
+}
+
+// ----- self-update -----
+
+/** Snapshot the updater state for the modal: the pending update (if any)
+ * plus whether this is a Scoop install. */
+export async function updateGetState(): Promise<UpdateStatePayload> {
+  return invoke<UpdateStatePayload>("update_get_state");
+}
+
+/** Download + install the pending update, then relaunch. Resolves only
+ * on failure — on success the app process is replaced before the
+ * promise settles. */
+export async function updateInstall(): Promise<void> {
+  await invoke("update_install");
+}
+
+/** "Skip vX" — suppress the update indicator for the current version. */
+export async function updateSkip(): Promise<void> {
+  await invoke("update_skip");
+}
+
+/** "Later" — hide the update indicator for 24h. */
+export async function updateSnooze(): Promise<void> {
+  await invoke("update_snooze");
+}
+
+/** Backend asks the panel to open the update modal — fired by the tray
+ * "Update available" item, a manual check that found a release, or a
+ * manual check on a Scoop install. */
+export async function onUpdateShowModal(cb: () => void): Promise<UnlistenFn> {
+  return listen("update://show-modal", () => cb());
+}
+
+/** A manual check found nothing — the panel shows a brief "up to date". */
+export async function onUpdateNone(cb: () => void): Promise<UnlistenFn> {
+  return listen("update://none", () => cb());
 }

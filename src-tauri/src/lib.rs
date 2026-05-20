@@ -13,6 +13,7 @@ mod discovery_sources;
 mod git;
 mod settings;
 mod tray;
+mod update;
 mod watcher;
 mod window;
 
@@ -35,6 +36,7 @@ pub fn run() {
         )
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             #[cfg(target_os = "macos")]
             {
@@ -61,6 +63,12 @@ pub fn run() {
             }
 
             tray::setup(app)?;
+
+            // Self-update: managed state + background check loop (one
+            // check on startup, then every 24h). update::start is a
+            // no-op for Scoop installs — Scoop owns those updates.
+            app.manage(update::UpdateState::default());
+            update::start(app.handle().clone());
 
             // Prewarm discovery in the background. Reads cache + IDE
             // recents + git config + (first-run only) full fs walk and
@@ -290,6 +298,10 @@ pub fn run() {
             commands::set_pinned_repos,
             commands::get_branch_selection,
             commands::set_branch_selection,
+            commands::update_get_state,
+            commands::update_install,
+            commands::update_skip,
+            commands::update_snooze,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

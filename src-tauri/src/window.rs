@@ -34,6 +34,22 @@ pub fn hide_panel(app: &AppHandle) {
     }
 }
 
+/// Unconditionally show + focus the panel. Unlike `toggle_panel` this
+/// never hides — used by the updater flow to surface the update modal
+/// regardless of the panel's current visibility.
+pub fn show_panel(app: &AppHandle) {
+    let Some(window) = app.get_webview_window(PANEL_LABEL) else {
+        return;
+    };
+    if !window.is_visible().unwrap_or(false) {
+        position_panel(&window);
+    }
+    let _ = window.set_always_on_top(true);
+    let _ = window.show();
+    let _ = window.set_focus();
+    let _ = window.emit("panel://shown", ());
+}
+
 fn position_panel(window: &WebviewWindow) {
     let app = window.app_handle();
     let saved = settings::load(app).panel_position;

@@ -11,6 +11,20 @@ use tauri::{AppHandle, Manager};
 /// in lib.rs. `CmdOrCtrl` resolves to Cmd on macOS and Ctrl on Windows.
 pub const DEFAULT_PANEL_HOTKEY: &str = "CmdOrCtrl+Shift+G";
 
+/// How gitwink checks for its own updates. Serialized lowercase in
+/// settings.json (`"enabled"` / `"manual"` / `"disabled"`).
+#[derive(Debug, Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum UpdateCheckMode {
+    /// Auto-check on startup + every 24h, with the tray dot + menu item.
+    #[default]
+    Enabled,
+    /// No auto-check; only the tray "Check for updates" item works.
+    Manual,
+    /// Updater fully off — no checks, no tray affordances.
+    Disabled,
+}
+
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct Settings {
     pub panel_position: Option<PanelPosition>,
@@ -30,6 +44,18 @@ pub struct Settings {
     /// first-entry default.
     #[serde(default)]
     pub branch_selections: HashMap<String, Vec<String>>,
+    /// Update-checker behaviour — see `UpdateCheckMode`.
+    #[serde(default)]
+    pub update_check: UpdateCheckMode,
+    /// Version the user chose to "Skip" in the update modal. Suppresses
+    /// the update indicator for exactly this version; a newer release
+    /// re-surfaces it (different version string).
+    #[serde(default)]
+    pub update_skipped_version: Option<String>,
+    /// Unix timestamp until which the update indicator stays hidden after
+    /// the user picked "Later". Absent or in the past = show normally.
+    #[serde(default)]
+    pub update_snooze_until: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -140,4 +166,22 @@ pub fn save_diff_window(app: &AppHandle, state: DiffWindowState) {
 
 pub fn save_replace(app: &AppHandle, settings: &Settings) -> Result<()> {
     save(app, settings)
+}
+
+/// Persist the version the user chose to skip (or `None` to clear it).
+pub fn save_update_skipped_version(app: &AppHandle, version: Option<String>) {
+    let mut s = load(app);
+    s.update_skipped_version = version;
+    if let Err(e) = save(app, &s) {
+        eprintln!("settings: failed to persist update_skipped_version: {e:#}");
+    }
+}
+
+/// Persist the "Later" snooze deadline (or `None` to clear it).
+pub fn save_update_snooze_until(app: &AppHandle, until: Option<i64>) {
+    let mut s = load(app);
+    s.update_snooze_until = until;
+    if let Err(e) = save(app, &s) {
+        eprintln!("settings: failed to persist update_snooze_until: {e:#}");
+    }
 }

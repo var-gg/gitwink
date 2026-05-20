@@ -3,8 +3,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_updater::UpdaterExt;
 
-use crate::{cache, discovery, discovery_orchestrator, git, settings, watcher};
+use crate::{cache, discovery, discovery_orchestrator, git, settings, update, watcher};
 
 const MAX_COMMITS_PER_REPO: usize = 10;
 const MAX_COMMITS_PER_REPO_NO_WINDOW: usize = 1_000;
@@ -520,6 +521,67 @@ fn unix_now() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+// ----- self-update -----
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateStatePayload {
+    /// The pending update, or `None` when up to date / not yet checked.
+    pub available: Option<update::AvailableUpdate>,
+    /// True for Scoop installs — the modal shows a `scoop update` hint
+    /// instead of an in-app "Update now" button.
+    pub scoop: bool,
+}
+
+/// Snapshot the updater state for the modal: the pending update (if any)
+/// plus whether this is a Scoop install.
+#[tauri::command]
+pub fn update_get_state(app: AppHandle) -> UpdateStatePayload {
+    let available = app
+        .state::<update::UpdateState>()
+        .available
+        .lock()
+        .unwrap()
+        .clone();
+    UpdateStatePayload {
+        available,
+        scoop: update::installed_via_scoop(),
+    }
+}
+
+/// Download + install the pending update, then relaunch. The NSIS
+/// installer runs in `passive` mode (progress UI, no prompts). Refuses
+/// to run for Scoop installs.
+#[tauri::command]
+pub async fn update_install(app: AppHandle) -> Result<(), String> {
+    if update::installed_via_scoop() {
+        return Err("Installed via Scoop — run `scoop update gitwink` instead.".into());
+    }
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    let pending = updater
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "No update available.".to_string())?;
+    pending
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|e| e.to_string())?;
+    app.restart();
+}
+
+/// "Skip vX" — suppress the update indicator for the current version.
+#[tauri::command]
+pub fn update_skip(app: AppHandle) {
+    update::skip_current(&app);
+}
+
+/// "Later" — hide the update indicator for 24h.
+#[tauri::command]
+pub fn update_snooze(app: AppHandle) {
+    update::snooze(&app);
 }
 
 #[tauri::command]

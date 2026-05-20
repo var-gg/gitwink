@@ -140,3 +140,19 @@ export interface CommitFileBlobs {
   extension: string;
   isLfs: boolean;
 }
+
+/** A pending self-update — mirrors update::AvailableUpdate (Rust). */
+export interface AvailableUpdate {
+  version: string;
+  /** Release notes / changelog text from the GitHub release. */
+  notes: string;
+}
+
+/** Updater snapshot for the modal — mirrors commands::UpdateStatePayload. */
+export interface UpdateStatePayload {
+  /** The pending update, or null when up to date / not yet checked. */
+  available: AvailableUpdate | null;
+  /** True for Scoop installs — the modal shows a `scoop update` hint
+   * instead of an in-app "Update now" button. */
+  scoop: boolean;
+}
