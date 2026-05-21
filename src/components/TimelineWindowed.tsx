@@ -85,6 +85,13 @@ function marker(c: CommitSummary): { glyph: string; cls: string; title: string }
   return { glyph: "●", cls: "marker-dot", title: "Commit" };
 }
 
+/** Stable per-row identity — `repoPath:hash`. Distinct repos can share a
+ * commit hash (forks / clones), so the all-repos timeline must key rows by
+ * path+hash, never hash alone. */
+function rowKey(c: { repoPath: string; hash: string }): string {
+  return `${c.repoPath}:${c.hash}`;
+}
+
 export function TimelineWindowed({
   repoIds,
   authors,
@@ -116,7 +123,7 @@ export function TimelineWindowed({
   const [viewportH, setViewportH] = useState(0);
   // `selected` is a GLOBAL row index (it can point at a not-yet-loaded row).
   const [selected, setSelected] = useState(0);
-  const [expandedHash, setExpandedHash] = useState<string | null>(null);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
   // "N new commits" pill — set when the scanner reports new commits while
   // the reader is scrolled away from the top.
   const [newCount, setNewCount] = useState(0);
@@ -147,10 +154,10 @@ export function TimelineWindowed({
   // Global index of the open expansion's row, or -1 when nothing is open /
   // the expanded commit is outside the loaded window.
   const expandedIndex = useMemo(() => {
-    if (!expandedHash) return -1;
-    const li = rows.findIndex((r) => r.hash === expandedHash);
+    if (!expandedKey) return -1;
+    const li = rows.findIndex((r) => rowKey(r) === expandedKey);
     return li >= 0 ? baseIndex + li : -1;
-  }, [rows, baseIndex, expandedHash]);
+  }, [rows, baseIndex, expandedKey]);
   const expH = expandedIndex >= 0 ? expansionH : 0;
   // content-y of the top of global row `i`.
   const offsetOfRow = (i: number) =>
@@ -199,10 +206,11 @@ export function TimelineWindowed({
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    setExpandedHash(null);
-    el.scrollTop = offsetOfRowRef.current(recovery.index);
-    // Read scrollTop back: the browser clamps it to the track, so a
-    // recovery near the very end lands short of the raw row offset.
+    setExpandedKey(null);
+    // The recovery collapses any open expansion, so the post-recovery
+    // geometry is plain rows — scroll by the bare row height. Read it back:
+    // the browser clamps scrollTop to the track near the very end.
+    el.scrollTop = recovery.index * ROW_H;
     setScrollTop(el.scrollTop);
     setSelected(recovery.index);
     setNewCount(0);
@@ -219,8 +227,8 @@ export function TimelineWindowed({
     setTimeout(() => setCopyStatus("idle"), result === "copied" ? 1500 : 2000);
   }, []);
 
-  const toggleExpand = useCallback((hash: string) => {
-    setExpandedHash((cur) => (cur === hash ? null : hash));
+  const toggleExpand = useCallback((key: string) => {
+    setExpandedKey((cur) => (cur === key ? null : key));
   }, []);
 
   // `ref` for the open expansion's <li>: measure its height (it grows as
@@ -310,14 +318,14 @@ export function TimelineWindowed({
       const target = e.target as HTMLElement | null;
       if (target && ["INPUT", "TEXTAREA"].includes(target.tagName)) return;
       if (e.key === "j" || e.key === "ArrowDown") {
-        setSelected((s) => Math.min(s + 1, count - 1));
+        setSelected((s) => Math.min(s + 1, Math.max(0, count - 1)));
         e.preventDefault();
       } else if (e.key === "k" || e.key === "ArrowUp") {
         setSelected((s) => Math.max(s - 1, 0));
         e.preventDefault();
       } else if (e.key === "Enter") {
         const c = commitAt(selected);
-        if (c) toggleExpand(c.hash);
+        if (c) toggleExpand(rowKey(c));
         e.preventDefault();
       } else if (e.key === "c" || e.key === "C") {
         const c = commitAt(selected);
@@ -325,15 +333,15 @@ export function TimelineWindowed({
           void copyAiContext(c);
           e.preventDefault();
         }
-      } else if (e.key === "Escape" && expandedHash != null) {
-        setExpandedHash(null);
+      } else if (e.key === "Escape" && expandedKey != null) {
+        setExpandedKey(null);
         e.preventDefault();
         e.stopImmediatePropagation();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [commitAt, selected, count, toggleExpand, expandedHash, copyAiContext]);
+  }, [commitAt, selected, count, toggleExpand, expandedKey, copyAiContext]);
 
   // Bring the selected row into view. Uses the live row geometry so a
   // selection below the open expansion still lands right.
@@ -385,8 +393,8 @@ export function TimelineWindowed({
     const row = target.closest<HTMLLIElement>("[data-row]");
     const idx = row ? parseInt(row.dataset.row ?? "-1", 10) : -1;
     let commit: CommitSummary | null = idx >= 0 ? commitAt(idx) : null;
-    if (!commit && expandedHash) {
-      commit = rows.find((c) => c.hash === expandedHash) ?? null;
+    if (!commit && expandedKey) {
+      commit = rows.find((c) => rowKey(c) === expandedKey) ?? null;
     }
     const fileEl = target.closest<HTMLElement>("[data-file-path]");
     const filePath = fileEl?.dataset.filePath ?? null;
@@ -422,19 +430,19 @@ export function TimelineWindowed({
       continue;
     }
     const m = marker(c);
-    const freshKey = `${c.repoPath}:${c.hash}`;
+    const key = rowKey(c);
     items.push(
-      <Fragment key={freshKey}>
+      <Fragment key={key}>
         <li
           data-row={gi}
           className={
             "timeline-row" +
             (gi === selected ? " selected" : "") +
-            (expandedHash === c.hash ? " expanded" : "")
+            (expandedKey === key ? " expanded" : "")
           }
           onClick={() => {
             setSelected(gi);
-            toggleExpand(c.hash);
+            toggleExpand(key);
           }}
           onMouseEnter={() => onRowEnter(c)}
           onMouseLeave={() => onRowLeave(c)}
@@ -443,9 +451,9 @@ export function TimelineWindowed({
             className={
               "timeline-marker " +
               m.cls +
-              (freshHashes.has(freshKey) ? " fresh" : "")
+              (freshHashes.has(key) ? " fresh" : "")
             }
-            title={freshHashes.has(freshKey) ? `${m.title} (new)` : m.title}
+            title={freshHashes.has(key) ? `${m.title} (new)` : m.title}
           >
             {m.glyph}
           </span>
@@ -485,7 +493,7 @@ export function TimelineWindowed({
             {c.author}
           </span>
         </li>
-        {expandedHash === c.hash && (
+        {expandedKey === key && (
           <li
             className="timeline-expansion"
             ref={measureExpansion}

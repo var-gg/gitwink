@@ -458,21 +458,40 @@ export function useTimelineWindow(
   const countNew = useCallback(() => machinery.countNew(), [machinery]);
 
   // (Re)load whenever the filters or refreshNonce change. The first load
-  // starts at the top; later ones recover around the focused commit. A
-  // background git→cache refill follows, then a quiet in-place re-pull so
-  // anything the live watcher missed still lands.
+  // starts at the top; later ones recover around the focused commit.
+  //
+  // A background git→cache refill follows ONLY when fresh git data could
+  // exist — the first load, a panel re-summon (`refreshNonce`), or a
+  // changed time window. A repo / author chip change is a pure re-query of
+  // the already-cached commits, so it skips the refill. The refill (and its
+  // quiet in-place re-pull) is sequenced strictly AFTER the primary reload,
+  // so it can never supersede that reload's anchor recovery.
   const filterKey = JSON.stringify([repoIds, authors, windowDays, refreshNonce]);
+  const refillKeyRef = useRef<{ windowDays: number | null; refreshNonce: number }>(
+    { windowDays, refreshNonce },
+  );
   useEffect(() => {
     const isInitial = windowRef.current.filter == null;
-    void machinery.reload(isInitial ? "top" : "recover", false, true);
-    const qidAtKick = queryRef.current;
-    recentCommits(paramsRef.current.windowDays)
+    const prevRefill = refillKeyRef.current;
+    const needsRefill =
+      isInitial ||
+      windowDays !== prevRefill.windowDays ||
+      refreshNonce !== prevRefill.refreshNonce;
+    refillKeyRef.current = { windowDays, refreshNonce };
+
+    void machinery
+      .reload(isInitial ? "top" : "recover", false, true)
       .then(() => {
-        if (qidAtKick === queryRef.current) {
-          void machinery.reload("current", false, false);
-        }
-      })
-      .catch(() => {});
+        if (!needsRefill) return;
+        const qid = queryRef.current;
+        recentCommits(paramsRef.current.windowDays)
+          .then(() => {
+            if (qid === queryRef.current) {
+              void machinery.reload("current", false, false);
+            }
+          })
+          .catch(() => {});
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey]);
 

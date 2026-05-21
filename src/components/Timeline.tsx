@@ -246,7 +246,7 @@ export function Timeline({ commits, branches }: Props) {
       const target = e.target as HTMLElement | null;
       if (target && ["INPUT", "TEXTAREA"].includes(target.tagName)) return;
       if (e.key === "j" || e.key === "ArrowDown") {
-        setSelected((s) => Math.min(s + 1, total - 1));
+        setSelected((s) => Math.min(s + 1, Math.max(0, total - 1)));
         e.preventDefault();
       } else if (e.key === "k" || e.key === "ArrowUp") {
         setSelected((s) => Math.max(s - 1, 0));

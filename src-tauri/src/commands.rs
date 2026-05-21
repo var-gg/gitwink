@@ -756,12 +756,14 @@ pub struct UpdateStatePayload {
 /// plus whether this is a Scoop install.
 #[tauri::command]
 pub fn update_get_state(app: AppHandle) -> UpdateStatePayload {
+    // Never panic the IPC command on a poisoned mutex — a poisoned lock
+    // still carries the last value; fall back to "no update" otherwise.
     let available = app
         .state::<update::UpdateState>()
         .available
         .lock()
-        .unwrap()
-        .clone();
+        .map(|g| g.clone())
+        .unwrap_or(None);
     UpdateStatePayload {
         available,
         scoop: update::installed_via_scoop(),
