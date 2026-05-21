@@ -1,0 +1,25 @@
+{
+  "publisher": "CN=327A9DCD-418C-44BC-86AF-641282E81095",
+  "publisherDisplayName": "var-gg",
+  "capabilities": {
+    "general": [
+      "internetClient"
+    ],
+    "restricted": [
+      "broadFileSystemAccess"
+    ]
+  },
+  "extensions": {
+    "shareTarget": false,
+    "fileAssociations": [],
+    "protocolHandlers": []
+  },
+  "signing": {
+    "pfx": null,
+    "pfxPassword": null
+  },
+  "resourceIndex": {
+    "enabled": false,
+    "keepConfig": false
+  }
+}

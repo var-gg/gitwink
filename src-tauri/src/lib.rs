@@ -66,7 +66,8 @@ pub fn run() {
 
             // Self-update: managed state + background check loop (one
             // check on startup, then every 24h). update::start is a
-            // no-op for Scoop installs — Scoop owns those updates.
+            // no-op for Scoop and Microsoft Store (MSIX) installs — those
+            // channels manage their own updates.
             app.manage(update::UpdateState::default());
             update::start(app.handle().clone());
 

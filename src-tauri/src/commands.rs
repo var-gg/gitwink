@@ -559,6 +559,9 @@ pub async fn update_install(app: AppHandle) -> Result<(), String> {
     if update::installed_via_scoop() {
         return Err("Installed via Scoop — run `scoop update gitwink` instead.".into());
     }
+    if update::installed_via_msix() {
+        return Err("Installed from the Microsoft Store — the Store manages updates.".into());
+    }
     let updater = app.updater().map_err(|e| e.to_string())?;
     let pending = updater
         .check()

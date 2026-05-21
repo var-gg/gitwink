@@ -44,8 +44,6 @@ pub fn setup(app: &App) -> tauri::Result<()> {
 /// rebuilt wholesale (rather than toggling item visibility) whenever the
 /// update state changes — see `set_update_indicator`.
 fn build_menu(app: &AppHandle, update_version: Option<&str>) -> tauri::Result<Menu<Wry>> {
-    let check =
-        MenuItem::with_id(app, "check_updates", "Check for updates", true, None::<&str>)?;
     let reset = MenuItem::with_id(
         app,
         "reset_position",
@@ -63,6 +61,15 @@ fn build_menu(app: &AppHandle, update_version: Option<&str>) -> tauri::Result<Me
     let quit = MenuItem::with_id(app, "quit", "Quit gitwink", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
 
+    // Microsoft Store installs update via the Store itself — gitwink shows
+    // no in-app updater UI. Scoop and direct installs keep the
+    // "Check for updates" item.
+    if update::installed_via_msix() {
+        return Menu::with_items(app, &[&reset, &open_settings, &sep, &quit]);
+    }
+
+    let check =
+        MenuItem::with_id(app, "check_updates", "Check for updates", true, None::<&str>)?;
     match update_version {
         Some(v) => {
             let update_item = MenuItem::with_id(

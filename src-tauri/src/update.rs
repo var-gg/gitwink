@@ -56,11 +56,26 @@ pub fn installed_via_scoop() -> bool {
         .unwrap_or(false)
 }
 
+/// True when this binary runs as an installed MSIX package — a Microsoft
+/// Store install lives under `…\WindowsApps\`. The Store owns updates for
+/// Store installs, so the in-app updater and its tray UI are disabled
+/// entirely for MSIX, exactly as they are for Scoop.
+pub fn installed_via_msix() -> bool {
+    std::env::current_exe()
+        .map(|p| {
+            p.to_string_lossy()
+                .to_lowercase()
+                .replace('/', "\\")
+                .contains("\\windowsapps\\")
+        })
+        .unwrap_or(false)
+}
+
 /// Spawn the background check loop: one check on startup, then every 24h.
 /// The `update_check` mode is re-read each iteration so a `settings.json`
 /// edit takes effect without a restart.
 pub fn start(app: AppHandle) {
-    if installed_via_scoop() {
+    if installed_via_scoop() || installed_via_msix() {
         return;
     }
     std::thread::spawn(move || loop {
