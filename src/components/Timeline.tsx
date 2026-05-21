@@ -278,7 +278,13 @@ export function Timeline({
   // an inline expansion is added or collapsed — synchronous measurement
   // via useLayoutEffect alone was racing with React's commit/layout cycle
   // when the expansion li mounted.
+  //
+  // Single-repo mode only: `rowYs` feeds the LaneGraph, which never renders
+  // in all-repos mode. Measuring every row's offsetTop there is an O(n)
+  // forced reflow on mount and on every ResizeObserver fire (incl. each
+  // inline expand/collapse) producing output nothing consumes.
   useLayoutEffect(() => {
+    if (mode !== "single") return;
     const list = listRef.current;
     if (!list) return;
 
