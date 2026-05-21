@@ -1,7 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { BranchInfo } from "../types";
 import { ChipDropdown } from "./ChipDropdown";
+import { VirtualChipList, type VirtualChipRow } from "./VirtualChipList";
+
+// Virtualised-row heights (px) — mirror the box heights in styles.css.
+const ITEM_H = 26; // .chip-item — one-line branch entry
+const HEADER_H = 25; // .chip-section-header — "Local" / "Remote tracking"
+const EMPTY_H = 34; // .chip-empty — "No branches match."
 
 interface Props {
   open: boolean;
@@ -72,46 +78,106 @@ export function BranchChip({
     return `${selected.length} branches`;
   }, [selected, branches]);
 
-  function toggle(refName: string) {
-    if (selected === "all") {
-      // GitLens / IDE sidebar pattern: clicking a branch from the "all"
-      // state means "focus on THIS one". The previous "everything except
-      // this one" behaviour was a multi-select-with-checkboxes mental
-      // model that doesn't match what users expect from a branch filter.
-      onChange([refName]);
-      return;
-    }
-    const set = new Set(selected);
-    if (set.has(refName)) set.delete(refName);
-    else set.add(refName);
-    const next = Array.from(set);
-    onChange(next.length === branches.length ? "all" : next);
-  }
+  const toggle = useCallback(
+    (refName: string) => {
+      if (selected === "all") {
+        // GitLens / IDE sidebar pattern: clicking a branch from the "all"
+        // state means "focus on THIS one". The previous "everything except
+        // this one" behaviour was a multi-select-with-checkboxes mental
+        // model that doesn't match what users expect from a branch filter.
+        onChange([refName]);
+        return;
+      }
+      const set = new Set(selected);
+      if (set.has(refName)) set.delete(refName);
+      else set.add(refName);
+      const next = Array.from(set);
+      onChange(next.length === branches.length ? "all" : next);
+    },
+    [selected, branches, onChange],
+  );
 
-  function renderItem(b: BranchInfo) {
-    // In the "all" meta-state the All branches row at the top carries the
-    // highlight — individual items shouldn't ALSO look "checked", or a
-    // user clicking a row to "uncheck it" is met with the GitLens focus
-    // behaviour and it feels like a different row got deselected. So: no
-    // per-item ✓ until the user makes an explicit selection.
-    const isSelected =
-      selected !== "all" && (selected as string[]).includes(b.refName);
-    return (
-      <button
-        key={b.refName}
-        type="button"
-        className={"chip-item" + (isSelected ? " checked" : "")}
-        onClick={() => toggle(b.refName)}
-      >
-        <span className="chip-check">{isSelected ? "✓" : ""}</span>
-        <span className="chip-item-name">
-          {b.name}
-          {b.isHead && <span className="chip-item-head"> · HEAD</span>}
-        </span>
-        <span className="chip-item-count">{b.commitCount}</span>
-      </button>
-    );
-  }
+  // Flatten the two sections into one virtual-row list. The Local / Remote
+  // headers and the empty-state line are known-height special rows
+  // interleaved with the branch rows.
+  const rows = useMemo<VirtualChipRow[]>(() => {
+    const branchRow = (b: BranchInfo): VirtualChipRow => {
+      // In the "all" meta-state the All branches row at the top carries the
+      // highlight — individual items shouldn't ALSO look "checked", or a
+      // user clicking a row to "uncheck it" is met with the GitLens focus
+      // behaviour and it feels like a different row got deselected. So: no
+      // per-item ✓ until the user makes an explicit selection.
+      const isSelected =
+        selected !== "all" && (selected as string[]).includes(b.refName);
+      return {
+        key: "branch:" + b.refName,
+        height: ITEM_H,
+        render: () => (
+          <button
+            type="button"
+            className={"chip-item" + (isSelected ? " checked" : "")}
+            onClick={() => toggle(b.refName)}
+          >
+            <span className="chip-check">{isSelected ? "✓" : ""}</span>
+            <span className="chip-item-name">
+              {b.name}
+              {b.isHead && <span className="chip-item-head"> · HEAD</span>}
+            </span>
+            <span className="chip-item-count">{b.commitCount}</span>
+          </button>
+        ),
+      };
+    };
+
+    const out: VirtualChipRow[] = [];
+    out.push({
+      key: "__all",
+      height: ITEM_H,
+      render: () => (
+        <button
+          type="button"
+          className={"chip-item" + (selected === "all" ? " active" : "")}
+          onClick={() => {
+            onChange("all");
+            onClose();
+          }}
+        >
+          <span className="chip-item-name">All branches</span>
+        </button>
+      ),
+    });
+    if (localBranches.length > 0) {
+      out.push({
+        key: "__local",
+        height: HEADER_H,
+        render: () => <div className="chip-section-header">Local</div>,
+      });
+      for (const b of localBranches) out.push(branchRow(b));
+    }
+    if (remoteBranches.length > 0) {
+      out.push({
+        key: "__remote",
+        height: HEADER_H,
+        render: () => (
+          <div
+            className="chip-section-header"
+            title="Remote-tracking refs are local — gitwink never calls git fetch. Updated by your IDE / CLI."
+          >
+            Remote tracking
+          </div>
+        ),
+      });
+      for (const b of remoteBranches) out.push(branchRow(b));
+    }
+    if (localBranches.length === 0 && remoteBranches.length === 0) {
+      out.push({
+        key: "__empty",
+        height: EMPTY_H,
+        render: () => <div className="chip-empty">No branches match.</div>,
+      });
+    }
+    return out;
+  }, [localBranches, remoteBranches, selected, onChange, onClose, toggle]);
 
   return (
     <ChipDropdown
@@ -129,41 +195,7 @@ export function BranchChip({
           placeholder="Search branches…"
         />
       </div>
-      <div className="chip-list">
-        <button
-          type="button"
-          className={"chip-item" + (selected === "all" ? " active" : "")}
-          onClick={() => {
-            onChange("all");
-            onClose();
-          }}
-        >
-          <span className="chip-item-name">All branches</span>
-        </button>
-
-        {localBranches.length > 0 && (
-          <>
-            <div className="chip-section-header">Local</div>
-            {localBranches.map(renderItem)}
-          </>
-        )}
-
-        {remoteBranches.length > 0 && (
-          <>
-            <div
-              className="chip-section-header"
-              title="Remote-tracking refs are local — gitwink never calls git fetch. Updated by your IDE / CLI."
-            >
-              Remote tracking
-            </div>
-            {remoteBranches.map(renderItem)}
-          </>
-        )}
-
-        {localBranches.length === 0 && remoteBranches.length === 0 && (
-          <div className="chip-empty">No branches match.</div>
-        )}
-      </div>
+      <VirtualChipList rows={rows} resetKey={query} />
     </ChipDropdown>
   );
 }

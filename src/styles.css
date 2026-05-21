@@ -334,6 +334,26 @@ body,
   overflow-x: hidden;
 }
 
+/* Virtualised chip dropdown: the height is set inline to the computed
+ * viewport, and flex:none stops the flex column from shrinking it. */
+.chip-vlist {
+  flex: none;
+}
+
+/* Full-height spacer track — its height is the sum of every row, so the
+ * native scrollbar reflects the true list length. */
+.chip-vtrack {
+  position: relative;
+  width: 100%;
+}
+
+/* One virtual row, absolutely placed at its prefix-sum offset. */
+.chip-vrow {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
 .chip-section {
   padding: 6px 10px 2px;
   font-size: 10px;
@@ -581,9 +601,6 @@ body,
   opacity: 0.45;
   user-select: none;
   cursor: default;
-}
-.chip-section-header:first-child {
-  padding-top: 4px;
 }
 
 .chip-empty {

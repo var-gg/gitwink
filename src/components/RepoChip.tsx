@@ -2,6 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { Repo } from "../types";
 import { ChipDropdown } from "./ChipDropdown";
+import { VirtualChipList, type VirtualChipRow } from "./VirtualChipList";
+
+// Virtualised-row heights (px) — mirror the box heights in styles.css.
+const REPO_ROW_H = 40; // .chip-item-row — two-line repo entry
+const SECTION_H = 21; // .chip-section — "📌 Pinned" label
+const ALL_H = 23; // .chip-section-all — "All repos" reset button
+const EMPTY_H = 34; // .chip-empty — "No repos match."
 
 interface Props {
   open: boolean;
@@ -149,6 +156,95 @@ export function RepoChip({
     </>
   );
 
+  // Flatten the two sections into one virtual-row list. The Pinned header,
+  // the "All repos" button and the empty-state line are known-height
+  // special rows interleaved with the repo rows.
+  const rows = useMemo<VirtualChipRow[]>(() => {
+    const repoRow = (r: Repo, withCount: boolean): VirtualChipRow => ({
+      key: "repo:" + r.path,
+      height: REPO_ROW_H,
+      render: () => (
+        <RepoItem
+          repo={r}
+          count={withCount ? repoCounts.get(r.id) : undefined}
+          pinned={livePinned.has(r.path)}
+          active={selectedPath === r.path}
+          selected={
+            Array.isArray(selectedPaths) && selectedPaths.includes(r.path)
+          }
+          checkboxReadonly={singleRepoMode}
+          onSelect={() => {
+            onSelect(r.path);
+            onClose();
+          }}
+          onToggleSelect={() => {
+            const current = Array.isArray(selectedPaths) ? selectedPaths : [];
+            const next = current.includes(r.path)
+              ? current.filter((p) => p !== r.path)
+              : [...current, r.path];
+            onSelectMulti(next.length === 0 ? "all" : next);
+          }}
+          onPin={() => onTogglePin(r.path)}
+          onHide={() => onHide(r.path)}
+        />
+      ),
+    });
+
+    const out: VirtualChipRow[] = [];
+    if (pinnedRepos.length > 0) {
+      out.push({
+        key: "__pinned",
+        height: SECTION_H,
+        render: () => <div className="chip-section">📌 Pinned</div>,
+      });
+      // Pinned repos carry the commit-count facet badge; the (unbounded)
+      // All section does not — keeps the long list visually quiet.
+      for (const r of pinnedRepos) out.push(repoRow(r, true));
+    }
+    out.push({
+      key: "__all",
+      height: ALL_H,
+      render: () => (
+        <button
+          type="button"
+          className={
+            "chip-section-all" +
+            (selectedPath == null && selectedPaths === "all" ? " active" : "")
+          }
+          onClick={() => {
+            onSelect(null);
+            onSelectMulti("all");
+            onClose();
+          }}
+        >
+          All repos
+        </button>
+      ),
+    });
+    for (const r of otherRepos) out.push(repoRow(r, false));
+    if (pinnedRepos.length === 0 && otherRepos.length === 0) {
+      out.push({
+        key: "__empty",
+        height: EMPTY_H,
+        render: () => <div className="chip-empty">No repos match.</div>,
+      });
+    }
+    return out;
+  }, [
+    pinnedRepos,
+    otherRepos,
+    repoCounts,
+    livePinned,
+    selectedPath,
+    selectedPaths,
+    singleRepoMode,
+    onSelect,
+    onSelectMulti,
+    onTogglePin,
+    onHide,
+    onClose,
+  ]);
+
   return (
     <ChipDropdown
       id="repo"
@@ -165,77 +261,7 @@ export function RepoChip({
           placeholder="Search repos…"
         />
       </div>
-      <div className="chip-list">
-        {pinnedRepos.length > 0 && (
-          <>
-            <div className="chip-section">📌 Pinned</div>
-            {pinnedRepos.map((r) => (
-              <RepoItem
-                key={r.path}
-                repo={r}
-                count={repoCounts.get(r.id)}
-                pinned={livePinned.has(r.path)}
-                active={selectedPath === r.path}
-                selected={Array.isArray(selectedPaths) && selectedPaths.includes(r.path)}
-                checkboxReadonly={singleRepoMode}
-                onSelect={() => {
-                  onSelect(r.path);
-                  onClose();
-                }}
-                onToggleSelect={() => {
-                  const current = Array.isArray(selectedPaths) ? selectedPaths : [];
-                  const next = current.includes(r.path)
-                    ? current.filter((p) => p !== r.path)
-                    : [...current, r.path];
-                  onSelectMulti(next.length === 0 ? "all" : next);
-                }}
-                onPin={() => onTogglePin(r.path)}
-                onHide={() => onHide(r.path)}
-              />
-            ))}
-          </>
-        )}
-        <button
-          type="button"
-          className={
-            "chip-section-all" +
-            (selectedPath == null && selectedPaths === "all" ? " active" : "")
-          }
-          onClick={() => {
-            onSelect(null);
-            onSelectMulti("all");
-            onClose();
-          }}
-        >
-          All repos
-        </button>
-        {otherRepos.map((r) => (
-          <RepoItem
-            key={r.path}
-            repo={r}
-            pinned={livePinned.has(r.path)}
-            active={selectedPath === r.path}
-            selected={Array.isArray(selectedPaths) && selectedPaths.includes(r.path)}
-            checkboxReadonly={singleRepoMode}
-            onSelect={() => {
-              onSelect(r.path);
-              onClose();
-            }}
-            onToggleSelect={() => {
-              const current = Array.isArray(selectedPaths) ? selectedPaths : [];
-              const next = current.includes(r.path)
-                ? current.filter((p) => p !== r.path)
-                : [...current, r.path];
-              onSelectMulti(next.length === 0 ? "all" : next);
-            }}
-            onPin={() => onTogglePin(r.path)}
-            onHide={() => onHide(r.path)}
-          />
-        ))}
-        {pinnedRepos.length === 0 && otherRepos.length === 0 && (
-          <div className="chip-empty">No repos match.</div>
-        )}
-      </div>
+      <VirtualChipList rows={rows} resetKey={query} />
     </ChipDropdown>
   );
 }
