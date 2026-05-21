@@ -800,6 +800,29 @@ body,
   list-style: none;
 }
 
+/* All-repos windowed timeline — `.timeline-scroll` is the scroll viewport
+   (fills the panel body below the header, scrolls internally), and
+   `.timeline-windowed-list` is the spacer-padded inner list: only the rows
+   in view are mounted, top/bottom padding stands in for the rest. */
+.timeline-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.timeline-windowed-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline-loading-more {
+  padding: 6px 12px;
+  font-size: 11px;
+  text-align: center;
+  opacity: 0.45;
+}
+
 /* All-repos mode: marker · time · repo · summary · author */
 .timeline-all .timeline-row {
   display: grid;
@@ -811,6 +834,10 @@ body,
   line-height: 1.5;
   cursor: default;
   border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  /* Fixed height — the windowed timeline's virtualization math relies on
+     every all-repos row being exactly this tall. */
+  height: 31px;
+  box-sizing: border-box;
 }
 
 /* Single-repo mode: lane area (SVG DAG) · time · summary · author.

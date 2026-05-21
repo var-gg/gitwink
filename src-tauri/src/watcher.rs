@@ -9,7 +9,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
-use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::{cache, git};
@@ -19,12 +18,6 @@ use crate::{cache, git};
 const REFRESH_WINDOW_DAYS: i64 = 7;
 const REFRESH_MAX_PER_REPO: usize = 10;
 const DEBOUNCE_MS: u64 = 500;
-
-#[derive(Serialize, Clone)]
-struct RepoFillPayload {
-    commits: Vec<git::CommitSummary>,
-    fresh: bool,
-}
 
 /// Per-repo trailing-edge debounce state. `generation` ticks on every
 /// event; the worker reads it after sleeping and only fires if no new
@@ -242,16 +235,8 @@ fn refresh_repo(app: &AppHandle, repo_path: &Path) {
         .ok()
         .and_then(|mut conn| cache::upsert_commits(&mut conn, &commits).ok());
 
-    let _ = app.emit(
-        "timeline://repo-fill",
-        RepoFillPayload { commits, fresh: true },
-    );
-
-    // Phase 2: the lightweight windowed-pull signal. The `repo-fill` event
-    // above still ships the commit array for the current (pre-windowed)
-    // frontend; once Phase 3 moves the UI to windowed pull, this
-    // `invalidated` event — generation + affected repo, no payload arrays —
-    // becomes the only thing the scanner emits.
+    // Lightweight windowed-pull signal: tell the UI a new generation landed
+    // for this repo so it re-pulls the affected windows from the cache.
     if let Some(o) = outcome {
         let _ = app.emit(
             "timeline://invalidated",

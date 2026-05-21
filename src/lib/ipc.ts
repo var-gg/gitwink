@@ -2,18 +2,23 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type {
+  AuthorTally,
   BranchInfo,
   ChangedFile,
   CommitFileBlobs,
   CommitSummary,
+  CommitWindow,
+  Cursor,
   DiscoveredRepo,
   OrchestratorScanProgress,
   Repo,
   ScanComplete,
   ScanProgress,
-  TimelineRepoFill,
+  TimelineFilters,
+  TimelineInvalidated,
   UpdateStatePayload,
   UpstreamStatus,
+  WindowDirection,
 } from "../types";
 
 export async function ping(): Promise<string> {
@@ -232,10 +237,53 @@ export async function onRepoDiscovered(
   return listen<DiscoveredRepo>("timeline://repo-discovered", (e) => cb(e.payload));
 }
 
-export async function onTimelineRepoFill(
-  cb: (p: TimelineRepoFill) => void,
+// ----- windowed-pull timeline (Phase 1-3) -----
+
+/** One keyset-paginated page of the all-repos timeline. `cursor` null reads
+ * from the top (newest); `direction` walks "older" (down) or "newer" (up). */
+export async function listCommitsWindow(
+  filters: TimelineFilters,
+  cursor: Cursor | null,
+  direction: WindowDirection,
+  limit: number,
+): Promise<CommitWindow> {
+  return invoke<CommitWindow>("list_commits_window", {
+    filters,
+    cursor,
+    direction,
+    limit,
+  });
+}
+
+/** Total commits under `filters` — the timeline's count label. */
+export async function countCommits(filters: TimelineFilters): Promise<number> {
+  return invoke<number>("count_commits", { filters });
+}
+
+/** The current commit generation. The windowed timeline pins this as its
+ * `viewGeneration` so the scanner's later inserts don't disturb the page
+ * sequence it is showing. */
+export async function getTimelineGeneration(): Promise<number> {
+  return invoke<number>("get_timeline_generation");
+}
+
+/** Distinct authors under `filters` — the AuthorsChip facet. The windowed
+ * timeline no longer holds a full client-side array to tally itself. */
+export async function listTimelineAuthors(
+  filters: TimelineFilters,
+): Promise<AuthorTally[]> {
+  return invoke<AuthorTally[]>("list_timeline_authors", { filters });
+}
+
+/** Lightweight scanner→UI signal: a new generation landed (a `git commit`
+ * in a watched repo, a discovery sweep, …). The windowed timeline re-pulls
+ * the affected windows from the cache rather than receiving commit arrays. */
+export async function onTimelineInvalidated(
+  cb: (p: TimelineInvalidated) => void,
 ): Promise<UnlistenFn> {
-  return listen<TimelineRepoFill>("timeline://repo-fill", (e) => cb(e.payload));
+  return listen<TimelineInvalidated>("timeline://invalidated", (e) =>
+    cb(e.payload),
+  );
 }
 
 /** Fires when the panel is summoned (tray click / global hotkey). The

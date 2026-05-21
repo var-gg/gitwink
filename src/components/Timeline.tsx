@@ -1,13 +1,10 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { colorForBranch } from "../lib/colors";
+import { buildCommitMenuItems, copyCommitAiContext } from "../lib/commitClipboard";
 import { computeLanes } from "../lib/lanes";
+import { openDiff, prefetchCommit } from "../lib/ipc";
 import type { BranchInfo, CommitSummary } from "../types";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-
-import { buildAiContext } from "../lib/copy";
-import { changedFiles, fileDiff, openDiff, prefetchCommit } from "../lib/ipc";
-import { refLine, refLineWithFile } from "../lib/smartcopy";
 import { ChangedFiles } from "./ChangedFiles";
 import { CommitDetail } from "./CommitDetail";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
@@ -96,35 +93,9 @@ export function Timeline({
   );
 
   const copyAiContext = useCallback(async (commit: CommitSummary) => {
-    try {
-      const files = await changedFiles(commit.repoPath, commit.hash);
-      let diffText: string | null = null;
-      const TOTAL_LINES = files.reduce(
-        (a, f) => a + (f.isBinary ? 0 : f.insertions + f.deletions),
-        0,
-      );
-      // Pull full diff only when it's small enough to be useful in a chat
-      // prompt; bigger commits get a file list summary only.
-      if (!files.some((f) => f.isBinary) && TOTAL_LINES <= 800) {
-        try {
-          const parts: string[] = [];
-          for (const f of files) {
-            const t = await fileDiff(commit.repoPath, commit.hash, f.path);
-            parts.push(`--- ${f.path}\n${t}`);
-          }
-          diffText = parts.join("\n");
-        } catch {
-          diffText = null;
-        }
-      }
-      const md = buildAiContext(commit, files, diffText);
-      await writeText(md);
-      setCopyStatus("copied");
-      setTimeout(() => setCopyStatus("idle"), 1500);
-    } catch {
-      setCopyStatus("error");
-      setTimeout(() => setCopyStatus("idle"), 2000);
-    }
+    const result = await copyCommitAiContext(commit);
+    setCopyStatus(result);
+    setTimeout(() => setCopyStatus("idle"), result === "copied" ? 1500 : 2000);
   }, []);
 
   useEffect(() => {
@@ -208,60 +179,12 @@ export function Timeline({
     const filePath = fileEl?.dataset.filePath ?? null;
 
     const selection = window.getSelection()?.toString() ?? "";
-    const items: MenuItem[] = [];
-
-    if (selection) {
-      items.push({
-        label: "Copy",
-        onClick: () => void writeText(selection),
-      });
-      if (commit) {
-        const ref = filePath
-          ? refLineWithFile(
-              commit.repoName,
-              commit.shortHash,
-              filePath,
-              null,
-              null,
-            )
-          : refLine(commit.repoName, commit.shortHash);
-        items.push({
-          label: "Copy with reference",
-          onClick: () => void writeText(`${ref}\n${selection}`),
-        });
-      }
-      items.push({ divider: true });
-    }
-
-    if (filePath) {
-      items.push({
-        label: "Copy file path",
-        onClick: () => void writeText(filePath),
-      });
-    }
-
-    if (commit) {
-      items.push({
-        label: "Copy as AI context",
-        onClick: () => void copyAiContext(commit),
-      });
-      const messageText = (commit.message || commit.summary).trim();
-      if (messageText) {
-        items.push({
-          label: "Copy commit message",
-          onClick: () => void writeText(messageText),
-        });
-      }
-      items.push({
-        label: "Copy short hash",
-        onClick: () => void writeText(commit.shortHash),
-      });
-      items.push({
-        label: "Copy full hash",
-        onClick: () => void writeText(commit.hash),
-      });
-    }
-
+    const items = buildCommitMenuItems({
+      commit,
+      filePath,
+      selection,
+      onCopyAiContext: (c) => void copyAiContext(c),
+    });
     if (items.length === 0) return;
     setContextMenu({ x: e.clientX, y: e.clientY, items });
   }

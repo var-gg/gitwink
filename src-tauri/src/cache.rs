@@ -11,6 +11,12 @@ use crate::git::CommitSummary;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Repo {
+    /// `repos.rowid` — the integer the `commits` cache stores as `repo_id`.
+    /// The windowed timeline filters by these ids (`TimelineFilters`). 0 for
+    /// a `Repo` value that did not come from `list_repos` (the legacy
+    /// `discover_repos` upsert path, whose values never reach the UI).
+    #[serde(default)]
+    pub id: i64,
     pub path: String,
     pub name: String,
     /// Lifecycle status: "active" | "missing" | "removed". Frontend
@@ -360,7 +366,7 @@ pub fn list_repos(conn: &Connection) -> Result<Vec<Repo>> {
     // through — the UI greys them out so the user can decide.
     let mut stmt = conn.prepare(
         r#"
-        SELECT path, name, status
+        SELECT rowid, path, name, status
         FROM repos
         WHERE user_state != 'removed'
         ORDER BY name COLLATE NOCASE
@@ -369,9 +375,10 @@ pub fn list_repos(conn: &Connection) -> Result<Vec<Repo>> {
     let rows = stmt
         .query_map([], |row| {
             Ok(Repo {
-                path: row.get(0)?,
-                name: row.get(1)?,
-                status: row.get(2)?,
+                id: row.get(0)?,
+                path: row.get(1)?,
+                name: row.get(2)?,
+                status: row.get(3)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -858,6 +865,44 @@ pub fn count_commits(conn: &Connection, filters: &TimelineFilters) -> Result<i64
     let sql = format!("SELECT COUNT(*) FROM commits WHERE 1=1{filter_sql}");
     let n: i64 = conn.query_row(&sql, rusqlite::params_from_iter(bind.iter()), |r| r.get(0))?;
     Ok(n)
+}
+
+/// One author's commit tally under the active filters — the AuthorsChip
+/// facet. Mirrors the frontend `AuthorTally`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthorTally {
+    pub name: String,
+    pub count: i64,
+    pub last_activity: i64,
+}
+
+/// Distinct commit authors under `filters`, most-recent activity first.
+/// Phase 3's windowed timeline drops the full client-side commit array,
+/// so the AuthorsChip can no longer tally authors itself — this is its
+/// facet source. Callers pass the time-window (`since`) + generation pin
+/// but leave `authors` unset, so the list covers every selectable author.
+pub fn list_timeline_authors(
+    conn: &Connection,
+    filters: &TimelineFilters,
+) -> Result<Vec<AuthorTally>> {
+    let (filter_sql, bind) = build_filter_sql(filters);
+    let sql = format!(
+        "SELECT author, COUNT(*) AS cnt, MAX(timestamp) AS last \
+         FROM commits WHERE 1=1{filter_sql} \
+         GROUP BY author ORDER BY last DESC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(bind.iter()), |r| {
+            Ok(AuthorTally {
+                name: r.get(0)?,
+                count: r.get(1)?,
+                last_activity: r.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
 }
 
 /// Rows centred on an anchor cursor — `before` rows newer + the anchor row

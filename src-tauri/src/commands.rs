@@ -79,15 +79,6 @@ struct ScanComplete {
     count: usize,
 }
 
-#[derive(Clone, Serialize)]
-struct TimelineRepoFill {
-    commits: Vec<git::CommitSummary>,
-    /// True when these commits were just observed by the file watcher
-    /// (i.e. they're genuinely new since the user last looked). False on
-    /// initial discovery sweeps — those rows are pre-existing history.
-    fresh: bool,
-}
-
 #[tauri::command]
 pub async fn list_recent_commits_cached(
     app: AppHandle,
@@ -196,6 +187,25 @@ pub async fn get_timeline_generation(app: AppHandle) -> Result<i64, String> {
         let conn = cache::open(&app).map_err(|e| e.to_string())?;
         cache::current_generation(&conn).map_err(|e| e.to_string())
     })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Phase 3 windowed-pull API: distinct authors under `filters`, for the
+/// AuthorsChip facet list. The windowed timeline no longer holds a full
+/// client-side commit array to tally, so the author list is a backend
+/// facet query.
+#[tauri::command]
+pub async fn list_timeline_authors(
+    app: AppHandle,
+    filters: cache::TimelineFilters,
+) -> Result<Vec<cache::AuthorTally>, String> {
+    tauri::async_runtime::spawn_blocking(
+        move || -> Result<Vec<cache::AuthorTally>, String> {
+            let conn = cache::open(&app).map_err(|e| e.to_string())?;
+            cache::list_timeline_authors(&conn, &filters).map_err(|e| e.to_string())
+        },
+    )
     .await
     .map_err(|e| e.to_string())?
 }
@@ -666,6 +676,7 @@ pub async fn discover_repos(app: AppHandle) -> Result<usize, String> {
                     .unwrap_or_default();
                 let path_str = path.to_string_lossy().into_owned();
                 let repo = cache::Repo {
+                    id: 0,
                     path: path_str.clone(),
                     name: name.clone(),
                     status: "active".to_string(),
@@ -695,11 +706,8 @@ pub async fn discover_repos(app: AppHandle) -> Result<usize, String> {
                     let outcome = cache::open(&app)
                         .ok()
                         .and_then(|mut conn| cache::upsert_commits(&mut conn, &commits).ok());
-                    let _ = app.emit(
-                        "timeline://repo-fill",
-                        TimelineRepoFill { commits, fresh: false },
-                    );
-                    // Phase 2: also emit the lightweight windowed-pull signal.
+                    // Lightweight windowed-pull signal — the frontend
+                    // re-pulls the affected windows from the cache.
                     if let Some(o) = outcome {
                         let _ = app.emit(
                             "timeline://invalidated",
