@@ -384,20 +384,30 @@ body,
   padding-left: 6px;
   min-width: 0;
   max-width: 100%;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
-.chip-item-row.active {
-  background: rgba(80, 130, 240, 0.14);
-}
-
+/* Checked into the multi-repo filter — kept subtle: the filled checkbox is
+   the primary signal. Declared before `.active` so that an active row
+   which is ALSO checked still reads as active (equal specificity). */
 .chip-item-row.selected {
-  background: linear-gradient(90deg, rgba(80, 130, 240, 0.08), rgba(80, 130, 240, 0.12));
+  background: rgba(80, 130, 240, 0.07);
+}
+
+/* Single-repo mode: the repo you've drilled into. A left accent bar plus a
+   firmer fill set it clearly apart from a merely checked row — the two
+   were near-identical blue tints before. */
+.chip-item-row.active {
+  background: rgba(80, 130, 240, 0.16);
+  box-shadow: inset 3px 0 0 #5082f0;
 }
 
 @media (prefers-color-scheme: dark) {
   .chip-item-row.selected {
-    background: linear-gradient(90deg, rgba(80, 130, 240, 0.15), rgba(80, 130, 240, 0.2));
+    background: rgba(80, 130, 240, 0.13);
+  }
+  .chip-item-row.active {
+    background: rgba(80, 130, 240, 0.28);
   }
 }
 
