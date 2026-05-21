@@ -136,6 +136,56 @@ pub async fn recent_commits(
     .map_err(|e| e.to_string())?
 }
 
+/// Phase 1 windowed-pull API: one keyset-paginated page of the timeline.
+#[tauri::command]
+pub async fn list_commits_window(
+    app: AppHandle,
+    filters: cache::TimelineFilters,
+    cursor: Option<cache::Cursor>,
+    direction: cache::WindowDirection,
+    limit: usize,
+) -> Result<cache::CommitWindow, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<cache::CommitWindow, String> {
+        let conn = cache::open(&app).map_err(|e| e.to_string())?;
+        cache::list_commits_window(&conn, &filters, cursor.as_ref(), direction, limit)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Phase 1 windowed-pull API: rows centred on an anchor cursor.
+#[tauri::command]
+pub async fn list_commits_around_anchor(
+    app: AppHandle,
+    filters: cache::TimelineFilters,
+    anchor: cache::Cursor,
+    before: usize,
+    after: usize,
+) -> Result<cache::CommitAround, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<cache::CommitAround, String> {
+        let conn = cache::open(&app).map_err(|e| e.to_string())?;
+        cache::list_commits_around_anchor(&conn, &filters, &anchor, before, after)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Phase 1 windowed-pull API: filtered total commit count for the scrollbar.
+#[tauri::command]
+pub async fn count_commits(
+    app: AppHandle,
+    filters: cache::TimelineFilters,
+) -> Result<i64, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<i64, String> {
+        let conn = cache::open(&app).map_err(|e| e.to_string())?;
+        cache::count_commits(&conn, &filters).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn list_branches(repo_path: String) -> Result<Vec<git::BranchInfo>, String> {
     tauri::async_runtime::spawn_blocking(move || {
