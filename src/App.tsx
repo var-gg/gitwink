@@ -650,18 +650,24 @@ function App() {
     return commits.filter((c) => set.has(c.author));
   }, [commits, selectedAuthors]);
 
+  // repoPath → backend repo id (`Repo.id`). Shared by the multi-repo filter
+  // resolution and the windowed timeline's filter-change cursor recovery.
+  const repoIdByPath = useMemo(
+    () => new Map(allRepos.map((r) => [r.path, r.id])),
+    [allRepos],
+  );
+
   // Resolve the multi-repo path filter to backend repo ids for the
   // windowed timeline. id 0 (a just-discovered repo not yet refreshed via
   // listRepos) is dropped; a selection that resolves to no usable ids
   // falls back to "all repos" rather than showing nothing.
   const repoIds = useMemo<number[] | null>(() => {
     if (selectedRepoPaths === "all") return null;
-    const byPath = new Map(allRepos.map((r) => [r.path, r.id]));
     const ids = selectedRepoPaths
-      .map((p) => byPath.get(p))
+      .map((p) => repoIdByPath.get(p))
       .filter((id): id is number => id != null && id > 0);
     return ids.length > 0 ? ids : null;
-  }, [selectedRepoPaths, allRepos]);
+  }, [selectedRepoPaths, repoIdByPath]);
 
   function togglePin(path: string) {
     setPinnedRepos((prev) => {
@@ -783,6 +789,7 @@ function App() {
             authors={selectedAuthors === "all" ? null : selectedAuthors}
             windowDays={toWindowParam(windowDays)}
             refreshNonce={refreshNonce}
+            repoIdByPath={repoIdByPath}
             onSelectRepo={setSelectedRepoPath}
           />
         )}

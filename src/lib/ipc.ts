@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   BranchInfo,
   ChangedFile,
+  CommitAround,
   CommitFileBlobs,
   CommitSummary,
   CommitWindow,
@@ -265,6 +266,40 @@ export async function listCommitsWindow(
     cursor,
     direction,
     limit,
+  });
+}
+
+/** A window of commits centred on an anchor cursor — filter-change viewport
+ * recovery. The anchor need not survive the new filter; `anchorFound` says
+ * whether it did, and the rows centre on where it sits (or would sit). */
+export async function listCommitsAroundAnchor(
+  filters: TimelineFilters,
+  anchor: Cursor,
+  before: number,
+  after: number,
+): Promise<CommitAround> {
+  return invoke<CommitAround>("list_commits_around_anchor", {
+    filters,
+    anchor,
+    before,
+    after,
+  });
+}
+
+/** A window of commits centred on a 0-based rank — the random-access
+ * scrollbar's jump-load. `baseIndex` in the result places it in the
+ * `count`-tall virtual scroll space. */
+export async function listCommitsAtRank(
+  filters: TimelineFilters,
+  rank: number,
+  before: number,
+  after: number,
+): Promise<CommitAround> {
+  return invoke<CommitAround>("list_commits_at_rank", {
+    filters,
+    rank,
+    before,
+    after,
   });
 }
 

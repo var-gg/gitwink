@@ -209,6 +209,21 @@ export interface CommitWindow {
   hasOlder: boolean;
 }
 
+/** A window of commits centred on an anchor, plus where it sits in the
+ * filtered total order — mirrors `cache::CommitAround`. `rows` is
+ * newest-first; `baseIndex` is the global rank (0-based) of `rows[0]`, so
+ * the UI can drop the window into a `count`-tall virtual scroll space. */
+export interface CommitAround {
+  rows: CommitSummary[];
+  /** whether the anchor commit itself survived the filter */
+  anchorFound: boolean;
+  baseIndex: number;
+  startCursor: Cursor | null;
+  endCursor: Cursor | null;
+  hasNewer: boolean;
+  hasOlder: boolean;
+}
+
 /** Lightweight scanner→UI invalidation signal — mirrors
  * `cache::TimelineInvalidated`. The windowed timeline re-pulls affected
  * windows from the cache instead of receiving commit arrays. */

@@ -867,6 +867,27 @@ pub fn count_commits(conn: &Connection, filters: &TimelineFilters) -> Result<i64
     Ok(n)
 }
 
+/// Count of commits strictly newer than `cursor` under `filters` — i.e. the
+/// 0-based global rank `cursor`'s row holds (or would hold) in the filtered
+/// total order. O(rank); only on the discrete filter-change recovery path.
+fn count_newer_than(
+    conn: &Connection,
+    filters: &TimelineFilters,
+    cursor: &Cursor,
+) -> Result<i64> {
+    let (filter_sql, mut bind) = build_filter_sql(filters);
+    let sql = format!(
+        "SELECT COUNT(*) FROM commits WHERE 1=1{filter_sql} \
+         AND (sort_ts, repo_id, hash) < (?, ?, ?)"
+    );
+    bind.push(Box::new(cursor.sort_ts));
+    bind.push(Box::new(cursor.repo_id));
+    bind.push(Box::new(cursor.hash.clone()));
+    let n: i64 =
+        conn.query_row(&sql, rusqlite::params_from_iter(bind.iter()), |r| r.get(0))?;
+    Ok(n)
+}
+
 /// One author's commit tally under the active filters — the AuthorsChip
 /// facet. Mirrors the frontend `AuthorTally`.
 #[derive(Debug, Serialize)]
@@ -949,6 +970,10 @@ pub fn list_filter_facets(
 pub struct CommitAround {
     pub rows: Vec<CommitSummary>,
     pub anchor_found: bool,
+    /// 0-based global rank of `rows[0]` in the filtered total order — lets
+    /// the UI drop the loaded window into a `count`-tall virtual scroll
+    /// space. 0 when `rows` is empty.
+    pub base_index: i64,
     pub start_cursor: Option<Cursor>,
     pub end_cursor: Option<Cursor>,
     pub has_newer: bool,
@@ -1007,14 +1032,76 @@ pub fn list_commits_around_anchor(
         .or(if anchor_found { Some(anchor.clone()) } else { None })
         .or(newer.end_cursor);
 
+    // `rows[0]`'s rank = the count of commits ahead of it in the total
+    // order. Lets the UI drop this window into a `count`-tall scroll space.
+    let base_index = match &start_cursor {
+        Some(c) => count_newer_than(conn, filters, c)?,
+        None => 0,
+    };
+
     Ok(CommitAround {
         rows,
         anchor_found,
+        base_index,
         start_cursor,
         end_cursor,
         has_newer: newer.has_newer,
         has_older: older.has_older,
     })
+}
+
+/// The keyset cursor of the row at 0-based `rank` in the filtered total
+/// order, or `None` when `rank` is past the end. Backs the random-access
+/// scrollbar: the UI turns a scrollbar position into a rank, this resolves
+/// the anchor `list_commits_at_rank` then centres a window on. The `OFFSET`
+/// scan is O(rank) — fine for a discrete jump, never on the scroll path.
+pub fn cursor_at_rank(
+    conn: &Connection,
+    filters: &TimelineFilters,
+    rank: i64,
+) -> Result<Option<Cursor>> {
+    let (filter_sql, mut bind) = build_filter_sql(filters);
+    let sql = format!(
+        "SELECT sort_ts, repo_id, hash FROM commits WHERE 1=1{filter_sql} \
+         ORDER BY sort_ts ASC, repo_id ASC, hash ASC LIMIT 1 OFFSET ?"
+    );
+    bind.push(Box::new(rank.max(0)));
+    match conn.query_row(&sql, rusqlite::params_from_iter(bind.iter()), |r| {
+        Ok(Cursor {
+            sort_ts: r.get(0)?,
+            repo_id: r.get(1)?,
+            hash: r.get(2)?,
+        })
+    }) {
+        Ok(c) => Ok(Some(c)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// A window centred on the row at 0-based `rank` — the random-access
+/// scrollbar's jump-load. Resolves the anchor by rank, then defers to
+/// `list_commits_around_anchor` (so `base_index` lands at ≈ `rank - before`).
+/// An out-of-range `rank` yields an empty window pinned at the end.
+pub fn list_commits_at_rank(
+    conn: &Connection,
+    filters: &TimelineFilters,
+    rank: i64,
+    before: usize,
+    after: usize,
+) -> Result<CommitAround> {
+    match cursor_at_rank(conn, filters, rank)? {
+        Some(anchor) => list_commits_around_anchor(conn, filters, &anchor, before, after),
+        None => Ok(CommitAround {
+            rows: Vec::new(),
+            anchor_found: false,
+            base_index: count_commits(conn, filters)?,
+            start_cursor: None,
+            end_cursor: None,
+            has_newer: false,
+            has_older: false,
+        }),
+    }
 }
 
 // ----- diffs -----
@@ -1323,6 +1410,58 @@ mod tests {
             list_commits_around_anchor(&conn, &TimelineFilters::default(), &anchor, 3, 3).unwrap();
         assert!(!around.anchor_found);
         assert_eq!(around.rows.len(), 6, "3 newer + 3 older, no anchor row");
+    }
+
+    #[test]
+    fn cursor_at_rank_resolves_positions() {
+        let conn = test_db();
+        for i in 0..30 {
+            insert(&conn, 1, &format!("e{i:02}"), 4_000 + i, "alice");
+        }
+        let f = TimelineFilters::default();
+        // rank 0 = newest (e29); rank 29 = oldest (e00).
+        assert_eq!(cursor_at_rank(&conn, &f, 0).unwrap().unwrap().hash, "e29");
+        assert_eq!(cursor_at_rank(&conn, &f, 29).unwrap().unwrap().hash, "e00");
+        // Past the end → None.
+        assert!(cursor_at_rank(&conn, &f, 30).unwrap().is_none());
+    }
+
+    #[test]
+    fn at_rank_centres_a_window_and_reports_base_index() {
+        let conn = test_db();
+        for i in 0..40 {
+            insert(&conn, 1, &format!("f{i:02}"), 5_000 + i, "alice");
+        }
+        let f = TimelineFilters::default();
+        // rank 0 = f39 (newest), so rank 20 = f19.
+        let w = list_commits_at_rank(&conn, &f, 20, 5, 5).unwrap();
+        assert!(w.anchor_found);
+        assert_eq!(w.rows.len(), 11, "5 newer + anchor + 5 older");
+        assert_eq!(w.base_index, 15, "rows[0] sits at rank 20 - 5");
+        assert_eq!(w.rows[0].hash, "f24", "rank 15 = f24");
+        assert_eq!(w.rows[5].hash, "f19", "anchor at the requested rank");
+        // A rank past the end → empty window pinned at the count.
+        let end = list_commits_at_rank(&conn, &f, 999, 5, 5).unwrap();
+        assert!(end.rows.is_empty());
+        assert_eq!(end.base_index, 40);
+    }
+
+    #[test]
+    fn around_anchor_reports_base_index() {
+        let conn = test_db();
+        for i in 0..40 {
+            insert(&conn, 1, &format!("g{i:02}"), 6_000 + i, "alice");
+        }
+        // g20 sits at rank 19 (g39 = rank 0); window rows[0] = g25 at rank 14.
+        let anchor = Cursor {
+            sort_ts: -6_020,
+            repo_id: 1,
+            hash: "g20".to_string(),
+        };
+        let around =
+            list_commits_around_anchor(&conn, &TimelineFilters::default(), &anchor, 5, 5).unwrap();
+        assert_eq!(around.base_index, 14);
+        assert_eq!(around.rows[0].hash, "g25");
     }
 
     #[test]

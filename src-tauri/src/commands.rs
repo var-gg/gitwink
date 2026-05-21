@@ -163,6 +163,25 @@ pub async fn list_commits_around_anchor(
     .map_err(|e| e.to_string())?
 }
 
+/// Phase 9 windowed-pull API: a window centred on a 0-based rank — the
+/// random-access scrollbar's jump-load.
+#[tauri::command]
+pub async fn list_commits_at_rank(
+    app: AppHandle,
+    filters: cache::TimelineFilters,
+    rank: i64,
+    before: usize,
+    after: usize,
+) -> Result<cache::CommitAround, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<cache::CommitAround, String> {
+        let conn = cache::open(&app).map_err(|e| e.to_string())?;
+        cache::list_commits_at_rank(&conn, &filters, rank, before, after)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Phase 1 windowed-pull API: filtered total commit count for the scrollbar.
 #[tauri::command]
 pub async fn count_commits(

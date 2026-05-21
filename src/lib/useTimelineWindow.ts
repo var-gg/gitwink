@@ -1,34 +1,48 @@
 // Windowed-pull data layer for the all-repos timeline.
 //
 // The all-repos timeline can span an unbounded number of commits, so the
-// frontend never holds the full set. This hook keeps a contiguous slice
-// loaded from the newest commit downward, fetched one keyset page at a
-// time as the user scrolls. It pins a `viewGeneration` so the background
-// scanner's concurrent inserts never disturb the page sequence, and tags
-// every fetch with a query id so stale IPC responses (from a superseded
-// filter / reload) are discarded.
-//
-// Phase 4 adds: `freshHashes` (commits that arrived during a live reload,
-// for the "new" marker) and `countNew` (how many commits exist beyond the
-// pinned snapshot, for the "N new" pill).
+// frontend never holds the full set. This hook keeps ONE contiguous window
+// loaded — tracked by `baseIndex`, the global rank of `rows[0]` — inside a
+// `count`-tall virtual scroll space. The window is:
+//   • extended a keyset page at a time as the user wheel-scrolls past an
+//     edge (`extendOlder` / `extendNewer`),
+//   • replaced wholesale when the user drags the scrollbar far — a
+//     debounced jump via `list_commits_at_rank`, and
+//   • re-anchored around the previously-focused commit on a filter change
+//     (`list_commits_around_anchor`), so the viewport recovers instead of
+//     snapping back to the top.
+// A pinned `viewGeneration` keeps the scanner's concurrent inserts from
+// disturbing the page sequence; a monotonic query id drops stale responses.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { CommitSummary, Cursor, TimelineFilters } from "../types";
 import {
   countCommits,
   getTimelineGeneration,
+  listCommitsAroundAnchor,
+  listCommitsAtRank,
   listCommitsWindow,
   recentCommits,
 } from "./ipc";
 
-/** Rows fetched per keyset page — a few panel-heights so a fast scroll
- * doesn't outrun the loader. */
+/** Rows fetched per keyset extend page. */
 const PAGE_SIZE = 60;
+/** A jump / recovery loads this many rows newer + older of the anchor — a
+ *  cushion so scrolling around the landing spot stays smooth. */
+const ANCHOR_BEFORE = 60;
+const ANCHOR_AFTER = 150;
+/** Viewport-to-window gap (rows) at or under which an extend beats a jump. */
+const EXTEND_GAP = 120;
+/** Collapse a flurry of scroll events (a scrollbar drag) into one jump. */
+const JUMP_DEBOUNCE_MS = 100;
 
 /** Stable identity for a commit across reloads. */
 function commitKey(c: { repoPath: string; hash: string }): string {
   return `${c.repoPath}:${c.hash}`;
+}
+function nowSec(): number {
+  return Math.floor(Date.now() / 1000);
 }
 
 export interface TimelineWindowParams {
@@ -38,46 +52,47 @@ export interface TimelineWindowParams {
   authors: string[] | null;
   /** time window in days, or null for all time */
   windowDays: number | null;
-  /** bumped by the caller to force a full reload (panel re-summoned) */
+  /** bumped by the caller to force a reload (panel re-summoned) */
   refreshNonce: number;
+  /** repoPath → `Repo.id`, to rebuild a focused commit's keyset cursor for
+   *  filter-change recovery (a CommitSummary carries no repo id). */
+  repoIdByPath: Map<string, number>;
 }
 
 export interface TimelineWindowState {
-  /** the contiguous slice loaded from the newest commit downward */
+  /** the loaded window — a contiguous slice of the filtered timeline */
   rows: CommitSummary[];
-  /** total commits under the filters — drives the count label */
+  /** global rank of `rows[0]` in the filtered total order */
+  baseIndex: number;
+  /** total filtered commits (pinned snapshot) — the scroll track size */
   count: number;
-  /** another keyset page exists below the loaded rows */
-  hasMore: boolean;
   status: "loading" | "ready" | "error";
-  /** a `loadMore` page fetch is in flight */
-  loadingMore: boolean;
-  /** `repoPath:hash` keys of commits that arrived during a live reload
-   * since the user last looked — rendered with the "new" marker. */
+  /** `repoPath:hash` keys of commits that arrived during a live reload —
+   *  rendered with the "new" marker. */
   freshHashes: Set<string>;
-  /** append the next keyset page (no-op while loading / exhausted) */
-  loadMore: () => void;
-  /** re-pin the generation and reload from the top, WITHOUT a git refill —
-   * for `timeline://invalidated` events (the watcher already wrote the
-   * cache) and the "N new" pill. Commits not in the prior view are flagged
-   * fresh. */
-  reloadSoft: () => void;
-  /** how many commits now exist beyond the pinned snapshot under the
-   * current filters — drives the "N new" pill. */
+  /** scroll-to signal — when `nonce` changes, the timeline scrolls global
+   *  row `index` to the viewport top (initial load / filter recovery /
+   *  reload-to-latest). */
+  recovery: { index: number; nonce: number };
+  /** the timeline reports its viewport's global row span whenever it
+   *  changes; the hook extends or jump-loads the window to cover it. */
+  requestRange: (firstGlobal: number, lastGlobal: number) => void;
+  /** re-pin the generation and reload from the newest commit — the "N new"
+   *  pill and at-top invalidation; diffs freshly-arrived commits. */
+  reloadLatest: () => void;
+  /** commits beyond the pinned snapshot — the "N new" pill count. */
   countNew: () => Promise<number>;
 }
 
-function nowSec(): number {
-  return Math.floor(Date.now() / 1000);
-}
-
-/** Live pagination cursor, mirrored out of React state so `loadMore` /
- * `countNew` read the current values without being re-created per render. */
-interface PageRef {
+/** The loaded window, mirrored out of React state so the async machinery
+ *  reads live values without being re-created per render. */
+interface WindowRef {
+  rows: CommitSummary[];
+  baseIndex: number;
+  startCursor: Cursor | null;
   endCursor: Cursor | null;
   filter: TimelineFilters | null;
-  hasMore: boolean;
-  loadingMore: boolean;
+  count: number;
 }
 
 export function useTimelineWindow(
@@ -86,56 +101,229 @@ export function useTimelineWindow(
   const { repoIds, authors, windowDays, refreshNonce } = params;
 
   const [rows, setRows] = useState<CommitSummary[]>([]);
+  const [baseIndex, setBaseIndex] = useState(0);
   const [count, setCount] = useState(0);
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
     "loading",
   );
-  const [hasMore, setHasMore] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [freshHashes, setFreshHashes] = useState<Set<string>>(() => new Set());
+  const [recovery, setRecovery] = useState({ index: 0, nonce: 0 });
 
-  const pageRef = useRef<PageRef>({
+  const windowRef = useRef<WindowRef>({
+    rows: [],
+    baseIndex: 0,
+    startCursor: null,
     endCursor: null,
     filter: null,
-    hasMore: false,
-    loadingMore: false,
+    count: 0,
   });
-  // `rows` mirrored as a ref so a soft reload can diff the new top page
-  // against the previously-loaded rows without `doLoad` capturing stale
-  // state. `count` mirrored so `countNew` reads the live pinned count.
-  const rowsRef = useRef<CommitSummary[]>([]);
-  const countRef = useRef(0);
-
-  // Monotonic query id. Every (re)load bumps it; an in-flight response
-  // whose id is stale is dropped — the stale-IPC-response guard.
+  // Monotonic query id — every reload / jump bumps it; an in-flight
+  // response whose id is stale is dropped.
   const queryRef = useRef(0);
-
-  // Latest params, so the stable `doLoad` closure reads current values.
+  // qid of an in-flight full reload or jump, or 0 — `reconcile` stands
+  // down while one of those is replacing the window out from under it.
+  const loadQidRef = useRef(0);
   const paramsRef = useRef(params);
   paramsRef.current = params;
+  // Latest viewport span the timeline asked to see (global row indices).
+  const lastRangeRef = useRef<{ first: number; last: number }>({
+    first: 0,
+    last: 0,
+  });
+  const loadingNewerRef = useRef(false);
+  const loadingOlderRef = useRef(false);
+  const jumpTimerRef = useRef<number | null>(null);
+  const jumpTargetRef = useRef(0);
 
-  /** (Re)load the timeline from the top. `kickRefill` also fires a
-   * background git→cache refill; `softReload` diffs the new top page
-   * against the prior rows to flag freshly-arrived commits (a full reload
-   * instead clears the fresh set — it's a new view, nothing is "new"). */
-  const doLoad = useCallback(
-    async (kickRefill: boolean, softReload: boolean) => {
+  // All the async windowing machinery. Built once — every function reads
+  // refs + the stable state setters, never render-scoped values, so a
+  // single construction stays correct for the hook's lifetime.
+  const machinery = useMemo(() => {
+    function cancelPendingJump() {
+      if (jumpTimerRef.current != null) {
+        window.clearTimeout(jumpTimerRef.current);
+        jumpTimerRef.current = null;
+      }
+    }
+
+    function scheduleJump(rank: number) {
+      jumpTargetRef.current = rank;
+      if (jumpTimerRef.current != null) {
+        window.clearTimeout(jumpTimerRef.current);
+      }
+      jumpTimerRef.current = window.setTimeout(() => {
+        jumpTimerRef.current = null;
+        void doJump(jumpTargetRef.current);
+      }, JUMP_DEBOUNCE_MS);
+    }
+
+    /** Decide how to cover the latest requested viewport range: it is
+     *  already loaded (no-op), one keyset page or two away (extend), or
+     *  far (debounced jump). Re-runs after each extend, to chase. */
+    function reconcile() {
+      // A reload / jump is replacing the window — leave coverage to it.
+      if (loadQidRef.current !== 0) return;
+      const w = windowRef.current;
+      if (!w.filter) return;
+      const cnt = w.count;
+      if (cnt <= 0) {
+        cancelPendingJump();
+        return;
+      }
+      const { first, last } = lastRangeRef.current;
+      const winTop = w.baseIndex;
+      const winBot = w.baseIndex + w.rows.length;
+      const needFirst = Math.max(0, Math.min(first, cnt - 1));
+      const needLast = Math.max(needFirst + 1, Math.min(last, cnt));
+
+      if (needFirst >= winTop && needLast <= winBot) {
+        cancelPendingJump();
+        return;
+      }
+      if (needFirst < winTop) {
+        if (winTop - needFirst <= EXTEND_GAP) {
+          cancelPendingJump();
+          extendNewer();
+        } else {
+          scheduleJump(needFirst);
+        }
+        return;
+      }
+      // needLast > winBot — the viewport runs off the bottom of the window.
+      if (needLast - winBot <= EXTEND_GAP && winBot < cnt) {
+        cancelPendingJump();
+        extendOlder();
+      } else {
+        scheduleJump(needFirst);
+      }
+    }
+
+    function extendOlder() {
+      const w = windowRef.current;
+      if (loadingOlderRef.current || !w.filter || !w.endCursor) return;
+      if (w.baseIndex + w.rows.length >= w.count) return;
+      loadingOlderRef.current = true;
+      const qid = queryRef.current;
+      const { filter, endCursor } = w;
+      listCommitsWindow(filter, endCursor, "older", PAGE_SIZE)
+        .then((win) => {
+          if (qid !== queryRef.current) return;
+          const cur = windowRef.current;
+          const merged = [...cur.rows, ...win.rows];
+          windowRef.current = {
+            ...cur,
+            rows: merged,
+            endCursor: win.endCursor ?? cur.endCursor,
+          };
+          setRows(merged);
+        })
+        .catch(() => {})
+        .finally(() => {
+          loadingOlderRef.current = false;
+          if (qid === queryRef.current) reconcile();
+        });
+    }
+
+    function extendNewer() {
+      const w = windowRef.current;
+      if (loadingNewerRef.current || !w.filter || !w.startCursor) return;
+      if (w.baseIndex <= 0) return;
+      loadingNewerRef.current = true;
+      const qid = queryRef.current;
+      const { filter, startCursor } = w;
+      listCommitsWindow(filter, startCursor, "newer", PAGE_SIZE)
+        .then((win) => {
+          if (qid !== queryRef.current) return;
+          const cur = windowRef.current;
+          const merged = [...win.rows, ...cur.rows];
+          const newBase = Math.max(0, cur.baseIndex - win.rows.length);
+          windowRef.current = {
+            ...cur,
+            rows: merged,
+            baseIndex: newBase,
+            startCursor: win.startCursor ?? cur.startCursor,
+          };
+          setRows(merged);
+          setBaseIndex(newBase);
+        })
+        .catch(() => {})
+        .finally(() => {
+          loadingNewerRef.current = false;
+          if (qid === queryRef.current) reconcile();
+        });
+    }
+
+    /** Random-access jump: discard the window, load a fresh one centred on
+     *  `rank`. Supersedes any in-flight extend; `reconcile` stands down
+     *  until it lands, so no extend races against the swap. */
+    async function doJump(rank: number) {
+      const w = windowRef.current;
+      if (!w.filter) return;
+      const qid = ++queryRef.current;
+      loadQidRef.current = qid;
+      loadingNewerRef.current = false;
+      loadingOlderRef.current = false;
+      try {
+        const around = await listCommitsAtRank(
+          w.filter,
+          rank,
+          ANCHOR_BEFORE,
+          ANCHOR_AFTER,
+        );
+        if (qid !== queryRef.current) return;
+        windowRef.current = {
+          ...windowRef.current,
+          rows: around.rows,
+          baseIndex: around.baseIndex,
+          startCursor: around.startCursor,
+          endCursor: around.endCursor,
+        };
+        setRows(around.rows);
+        setBaseIndex(around.baseIndex);
+      } catch {
+        /* leave the window in place; a later scroll retries */
+      } finally {
+        if (loadQidRef.current === qid) loadQidRef.current = 0;
+      }
+      reconcile();
+    }
+
+    /** Full (re)load: re-pin the generation, refetch the count, and load a
+     *  window — from the top, around the previously-focused commit, or at
+     *  the current viewport rank (a quiet in-place re-pull). */
+    async function reload(
+      anchorMode: "top" | "recover" | "current",
+      soft: boolean,
+      emitRecovery: boolean,
+    ) {
       const p = paramsRef.current;
       const qid = ++queryRef.current;
-      const priorKeys = softReload
-        ? new Set(rowsRef.current.map(commitKey))
-        : null;
+      loadQidRef.current = qid;
+      loadingNewerRef.current = false;
+      loadingOlderRef.current = false;
+      cancelPendingJump();
       setStatus("loading");
 
-      if (kickRefill) {
-        // Background git→cache refill. When it lands, reload once more (no
-        // second refill) so the freshly-pinned generation sees its commits.
-        recentCommits(p.windowDays)
-          .then(() => {
-            if (qid === queryRef.current) void doLoad(false, false);
-          })
-          .catch(() => {});
+      // Capture the focus anchor from the OLD window before it is replaced.
+      const currentRank = Math.max(0, lastRangeRef.current.first);
+      let anchorCursor: Cursor | null = null;
+      let focusedHash: string | null = null;
+      if (anchorMode === "recover") {
+        const w = windowRef.current;
+        const li = currentRank - w.baseIndex;
+        if (li >= 0 && li < w.rows.length) {
+          const c = w.rows[li];
+          focusedHash = c.hash;
+          anchorCursor = {
+            sortTs: -c.timestamp,
+            repoId: p.repoIdByPath.get(c.repoPath) ?? 0,
+            hash: c.hash,
+          };
+        }
       }
+      const priorKeys = soft
+        ? new Set(windowRef.current.rows.map(commitKey))
+        : null;
 
       try {
         const generation = await getTimelineGeneration();
@@ -148,27 +336,76 @@ export function useTimelineWindow(
           since,
           viewGeneration: generation,
         };
-        const [cnt, win] = await Promise.all([
-          countCommits(filter),
-          listCommitsWindow(filter, null, "older", PAGE_SIZE),
-        ]);
+        const cnt = await countCommits(filter);
         if (qid !== queryRef.current) return;
-        pageRef.current = {
-          endCursor: win.endCursor,
+
+        let resRows: CommitSummary[];
+        let resBase: number;
+        let resStart: Cursor | null;
+        let resEnd: Cursor | null;
+        if (anchorMode === "recover" && anchorCursor) {
+          const a = await listCommitsAroundAnchor(
+            filter,
+            anchorCursor,
+            ANCHOR_BEFORE,
+            ANCHOR_AFTER,
+          );
+          resRows = a.rows;
+          resBase = a.baseIndex;
+          resStart = a.startCursor;
+          resEnd = a.endCursor;
+        } else if (anchorMode === "current") {
+          const a = await listCommitsAtRank(
+            filter,
+            currentRank,
+            ANCHOR_BEFORE,
+            ANCHOR_AFTER,
+          );
+          resRows = a.rows;
+          resBase = a.baseIndex;
+          resStart = a.startCursor;
+          resEnd = a.endCursor;
+        } else {
+          const win = await listCommitsWindow(filter, null, "older", PAGE_SIZE);
+          resRows = win.rows;
+          resBase = 0;
+          resStart = win.startCursor;
+          resEnd = win.endCursor;
+        }
+        if (qid !== queryRef.current) return;
+
+        windowRef.current = {
+          rows: resRows,
+          baseIndex: resBase,
+          startCursor: resStart,
+          endCursor: resEnd,
           filter,
-          hasMore: win.hasOlder,
-          loadingMore: false,
+          count: cnt,
         };
-        rowsRef.current = win.rows;
-        countRef.current = cnt;
+        setRows(resRows);
+        setBaseIndex(resBase);
         setCount(cnt);
-        setRows(win.rows);
-        setHasMore(win.hasOlder);
-        setLoadingMore(false);
         setStatus("ready");
+
+        if (emitRecovery) {
+          let idx = 0;
+          if (anchorMode === "recover" && anchorCursor) {
+            const li = focusedHash
+              ? resRows.findIndex((r) => r.hash === focusedHash)
+              : -1;
+            // Anchor survived the filter → land on it; gone → land where it
+            // would have been (the newer half is `ANCHOR_BEFORE` rows).
+            idx =
+              li >= 0
+                ? resBase + li
+                : resBase + Math.min(ANCHOR_BEFORE, resRows.length);
+          }
+          idx = Math.max(0, Math.min(idx, Math.max(0, cnt - 1)));
+          setRecovery((r) => ({ index: idx, nonce: r.nonce + 1 }));
+        }
+
         if (priorKeys) {
-          // Soft reload: any row not in the prior view is freshly arrived.
-          const added = win.rows
+          const added = resRows
             .map(commitKey)
             .filter((k) => !priorKeys.has(k));
           if (added.length > 0) {
@@ -179,65 +416,63 @@ export function useTimelineWindow(
             });
           }
         } else {
-          // Full reload — a fresh view, nothing is "new".
           setFreshHashes(new Set());
         }
       } catch {
         if (qid === queryRef.current) setStatus("error");
+      } finally {
+        if (loadQidRef.current === qid) loadQidRef.current = 0;
       }
+    }
+
+    async function countNew(): Promise<number> {
+      const w = windowRef.current;
+      if (!w.filter) return 0;
+      try {
+        // viewGeneration null = no snapshot pin = the live total.
+        const latest = await countCommits({
+          ...w.filter,
+          viewGeneration: null,
+        });
+        return Math.max(0, latest - w.count);
+      } catch {
+        return 0;
+      }
+    }
+
+    return { reconcile, reload, countNew, cancelPendingJump };
+  }, []);
+
+  const requestRange = useCallback(
+    (first: number, last: number) => {
+      lastRangeRef.current = { first, last };
+      machinery.reconcile();
     },
-    [],
+    [machinery],
   );
 
-  const loadMore = useCallback(() => {
-    const pg = pageRef.current;
-    if (pg.loadingMore || !pg.hasMore || !pg.endCursor || !pg.filter) return;
-    pg.loadingMore = true;
-    setLoadingMore(true);
-    const qid = queryRef.current;
-    const cursor = pg.endCursor;
-    const filter = pg.filter;
-    void (async () => {
-      try {
-        const win = await listCommitsWindow(filter, cursor, "older", PAGE_SIZE);
-        if (qid !== queryRef.current) return; // a reload superseded this page
-        pageRef.current.endCursor = win.endCursor ?? pageRef.current.endCursor;
-        pageRef.current.hasMore = win.hasOlder;
-        rowsRef.current = [...rowsRef.current, ...win.rows];
-        setRows(rowsRef.current);
-        setHasMore(win.hasOlder);
-      } catch {
-        // Transient — leave hasMore set so a later scroll retries.
-      } finally {
-        if (qid === queryRef.current) {
-          pageRef.current.loadingMore = false;
-          setLoadingMore(false);
-        }
-      }
-    })();
-  }, []);
+  const reloadLatest = useCallback(() => {
+    void machinery.reload("top", true, true);
+  }, [machinery]);
 
-  const reloadSoft = useCallback(() => {
-    void doLoad(false, true);
-  }, [doLoad]);
+  const countNew = useCallback(() => machinery.countNew(), [machinery]);
 
-  const countNew = useCallback(async (): Promise<number> => {
-    const filter = pageRef.current.filter;
-    if (!filter) return 0;
-    try {
-      // viewGeneration null = no snapshot pin = the live total.
-      const latest = await countCommits({ ...filter, viewGeneration: null });
-      return Math.max(0, latest - countRef.current);
-    } catch {
-      return 0;
-    }
-  }, []);
-
-  // (Re)load from the top whenever the filters or refreshNonce change.
-  // The key string absorbs the referential instability of the array props.
+  // (Re)load whenever the filters or refreshNonce change. The first load
+  // starts at the top; later ones recover around the focused commit. A
+  // background git→cache refill follows, then a quiet in-place re-pull so
+  // anything the live watcher missed still lands.
   const filterKey = JSON.stringify([repoIds, authors, windowDays, refreshNonce]);
   useEffect(() => {
-    void doLoad(true, false);
+    const isInitial = windowRef.current.filter == null;
+    void machinery.reload(isInitial ? "top" : "recover", false, true);
+    const qidAtKick = queryRef.current;
+    recentCommits(paramsRef.current.windowDays)
+      .then(() => {
+        if (qidAtKick === queryRef.current) {
+          void machinery.reload("current", false, false);
+        }
+      })
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey]);
 
@@ -254,15 +489,20 @@ export function useTimelineWindow(
     return () => window.removeEventListener("blur", onBlur);
   }, []);
 
+  // Drop a pending jump timer on unmount.
+  useEffect(() => {
+    return () => machinery.cancelPendingJump();
+  }, [machinery]);
+
   return {
     rows,
+    baseIndex,
     count,
-    hasMore,
     status,
-    loadingMore,
     freshHashes,
-    loadMore,
-    reloadSoft,
+    recovery,
+    requestRange,
+    reloadLatest,
     countNew,
   };
 }
