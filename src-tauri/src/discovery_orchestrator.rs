@@ -129,15 +129,6 @@ impl Default for ScanState {
     }
 }
 
-/// Payload for `timeline://repo-fill`. A local mirror of the structs in
-/// `commands.rs` / `watcher.rs` — kept here to avoid a cross-module
-/// dependency for a two-field DTO.
-#[derive(Debug, Clone, Serialize)]
-struct RepoFillPayload {
-    commits: Vec<git::CommitSummary>,
-    fresh: bool,
-}
-
 /// Spin up the discovery prewarm task. Fire-and-forget: the task runs
 /// to completion or until cancelled, logging summary lines to scan.log.
 pub fn start(app: AppHandle) -> OrchestratorHandle {
@@ -255,16 +246,21 @@ fn announce_registered_repo(
         })
         .collect::<Vec<_>>();
     if !commits.is_empty() {
-        if let Ok(mut conn) = cache::open(app) {
-            let _ = cache::upsert_commits(&mut conn, &commits);
+        let outcome = cache::open(app)
+            .ok()
+            .and_then(|mut conn| cache::upsert_commits(&mut conn, &commits).ok());
+        // Lightweight windowed-pull signal — the frontend re-pulls the
+        // affected windows from the cache.
+        if let Some(o) = outcome {
+            let _ = app.emit(
+                "timeline://invalidated",
+                cache::TimelineInvalidated {
+                    generation: o.generation,
+                    inserted: o.inserted,
+                    repo_path: repo.canonical_path.clone(),
+                },
+            );
         }
-        let _ = app.emit(
-            "timeline://repo-fill",
-            RepoFillPayload {
-                commits,
-                fresh: false,
-            },
-        );
     }
 
     if let Some(w) = app.try_state::<watcher::RepoWatcher>() {

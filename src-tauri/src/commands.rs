@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_updater::UpdaterExt;
 
@@ -79,15 +79,6 @@ struct ScanComplete {
     count: usize,
 }
 
-#[derive(Clone, Serialize)]
-struct TimelineRepoFill {
-    commits: Vec<git::CommitSummary>,
-    /// True when these commits were just observed by the file watcher
-    /// (i.e. they're genuinely new since the user last looked). False on
-    /// initial discovery sweeps — those rows are pre-existing history.
-    fresh: bool,
-}
-
 #[tauri::command]
 pub async fn list_recent_commits_cached(
     app: AppHandle,
@@ -129,9 +120,110 @@ pub async fn recent_commits(
         all.truncate(total);
 
         let mut conn = cache::open(&app).map_err(|e| e.to_string())?;
-        cache::upsert_commits(&mut conn, &all).map_err(|e| e.to_string())?;
+        let _ = cache::upsert_commits(&mut conn, &all).map_err(|e| e.to_string())?;
         Ok(all)
     })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Phase 1 windowed-pull API: one keyset-paginated page of the timeline.
+#[tauri::command]
+pub async fn list_commits_window(
+    app: AppHandle,
+    filters: cache::TimelineFilters,
+    cursor: Option<cache::Cursor>,
+    direction: cache::WindowDirection,
+    limit: usize,
+) -> Result<cache::CommitWindow, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<cache::CommitWindow, String> {
+        let conn = cache::open(&app).map_err(|e| e.to_string())?;
+        cache::list_commits_window(&conn, &filters, cursor.as_ref(), direction, limit)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Phase 1 windowed-pull API: rows centred on an anchor cursor.
+#[tauri::command]
+pub async fn list_commits_around_anchor(
+    app: AppHandle,
+    filters: cache::TimelineFilters,
+    anchor: cache::Cursor,
+    before: usize,
+    after: usize,
+) -> Result<cache::CommitAround, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<cache::CommitAround, String> {
+        let conn = cache::open(&app).map_err(|e| e.to_string())?;
+        cache::list_commits_around_anchor(&conn, &filters, &anchor, before, after, None)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Phase 9 windowed-pull API: a window centred on a 0-based rank — the
+/// random-access scrollbar's jump-load.
+#[tauri::command]
+pub async fn list_commits_at_rank(
+    app: AppHandle,
+    filters: cache::TimelineFilters,
+    rank: i64,
+    before: usize,
+    after: usize,
+) -> Result<cache::CommitAround, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<cache::CommitAround, String> {
+        let conn = cache::open(&app).map_err(|e| e.to_string())?;
+        cache::list_commits_at_rank(&conn, &filters, rank, before, after)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Phase 1 windowed-pull API: filtered total commit count for the scrollbar.
+#[tauri::command]
+pub async fn count_commits(
+    app: AppHandle,
+    filters: cache::TimelineFilters,
+) -> Result<i64, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<i64, String> {
+        let conn = cache::open(&app).map_err(|e| e.to_string())?;
+        cache::count_commits(&conn, &filters).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Phase 2 windowed-pull API: the current commit generation. The frontend
+/// reads this once and pins it as its `view_generation` (a field on
+/// `TimelineFilters`) so the background scanner's later inserts never
+/// disturb the page sequence it is showing.
+#[tauri::command]
+pub async fn get_timeline_generation(app: AppHandle) -> Result<i64, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<i64, String> {
+        let conn = cache::open(&app).map_err(|e| e.to_string())?;
+        cache::current_generation(&conn).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Phase 3/7 windowed-pull API: the AuthorsChip + RepoChip filter facets
+/// (author tallies + per-repo commit counts) under `filters`. The windowed
+/// timeline holds no full client-side commit array to tally from.
+#[tauri::command]
+pub async fn list_filter_facets(
+    app: AppHandle,
+    filters: cache::TimelineFilters,
+) -> Result<cache::FilterFacets, String> {
+    tauri::async_runtime::spawn_blocking(
+        move || -> Result<cache::FilterFacets, String> {
+            let conn = cache::open(&app).map_err(|e| e.to_string())?;
+            cache::list_filter_facets(&conn, &filters).map_err(|e| e.to_string())
+        },
+    )
     .await
     .map_err(|e| e.to_string())?
 }
@@ -195,16 +287,144 @@ pub async fn hide_repo(
     .map_err(|e| e.to_string())?
 }
 
+/// Phase 6 detail-tier cache: an in-memory LRU of `changed_files` results,
+/// so expanding (or re-expanding) a commit doesn't recompute the git diff.
+/// Bounded by entry count; the file list of a very large commit is skipped
+/// (rare, and recomputing it on demand is fine). Lost on restart — it is a
+/// pure cache. Managed in `lib.rs` and shared by `changed_files` +
+/// `changed_files_batch`.
+pub struct ChangedFilesCache(std::sync::Mutex<ChangedFilesLru>);
+
+struct ChangedFilesLru {
+    /// key (`repo_path\0hash`) → (file list, last-access tick)
+    entries: std::collections::HashMap<String, (Vec<git::ChangedFile>, u64)>,
+    tick: u64,
+}
+
+/// Max cached commits before LRU eviction kicks in.
+const CHANGED_FILES_CACHE_CAP: usize = 256;
+/// Skip caching a commit whose changed-file list exceeds this — one huge
+/// entry would dominate the cache; recomputing it on demand is fine.
+const CHANGED_FILES_CACHE_MAX_FILES: usize = 1_000;
+/// Upper bound on commits one `changed_files_batch` call will process.
+const CHANGED_FILES_PREFETCH_CAP: usize = 100;
+
+impl Default for ChangedFilesCache {
+    fn default() -> Self {
+        Self(std::sync::Mutex::new(ChangedFilesLru {
+            entries: std::collections::HashMap::new(),
+            tick: 0,
+        }))
+    }
+}
+
+impl ChangedFilesCache {
+    fn key(repo_path: &str, hash: &str) -> String {
+        format!("{repo_path}\0{hash}")
+    }
+
+    fn get(&self, repo_path: &str, hash: &str) -> Option<Vec<git::ChangedFile>> {
+        let mut lru = self.0.lock().ok()?;
+        lru.tick += 1;
+        let tick = lru.tick;
+        let entry = lru.entries.get_mut(&Self::key(repo_path, hash))?;
+        entry.1 = tick;
+        Some(entry.0.clone())
+    }
+
+    fn contains(&self, repo_path: &str, hash: &str) -> bool {
+        self.0
+            .lock()
+            .map(|lru| lru.entries.contains_key(&Self::key(repo_path, hash)))
+            .unwrap_or(false)
+    }
+
+    fn put(&self, repo_path: &str, hash: &str, files: &[git::ChangedFile]) {
+        if files.len() > CHANGED_FILES_CACHE_MAX_FILES {
+            return;
+        }
+        let Ok(mut lru) = self.0.lock() else {
+            return;
+        };
+        lru.tick += 1;
+        let tick = lru.tick;
+        lru.entries
+            .insert(Self::key(repo_path, hash), (files.to_vec(), tick));
+        // Evict least-recently-used entries down to the cap.
+        while lru.entries.len() > CHANGED_FILES_CACHE_CAP {
+            let victim = lru
+                .entries
+                .iter()
+                .min_by_key(|(_, (_, t))| *t)
+                .map(|(k, _)| k.clone());
+            match victim {
+                Some(k) => {
+                    lru.entries.remove(&k);
+                }
+                None => break,
+            }
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn changed_files(
+    app: AppHandle,
     repo_path: String,
     hash: String,
 ) -> Result<Vec<git::ChangedFile>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        git::changed_files(Path::new(&repo_path), &hash).map_err(|e| e.to_string())
-    })
+    tauri::async_runtime::spawn_blocking(
+        move || -> Result<Vec<git::ChangedFile>, String> {
+            if let Some(cache) = app.try_state::<ChangedFilesCache>() {
+                if let Some(hit) = cache.get(&repo_path, &hash) {
+                    return Ok(hit);
+                }
+            }
+            let files = git::changed_files(Path::new(&repo_path), &hash)
+                .map_err(|e| e.to_string())?;
+            if let Some(cache) = app.try_state::<ChangedFilesCache>() {
+                cache.put(&repo_path, &hash, &files);
+            }
+            Ok(files)
+        },
+    )
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// One commit reference for `changed_files_batch`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitRef {
+    pub repo_path: String,
+    pub hash: String,
+}
+
+/// Phase 6 detail-tier prefetch: warm the `changed_files` cache for a set
+/// of commits — the rows in/near the timeline viewport — so expanding one
+/// is instant. Already-cached commits are skipped; the batch is capped so
+/// a huge request can't run unbounded git work.
+#[tauri::command]
+pub async fn changed_files_batch(
+    app: AppHandle,
+    commits: Vec<CommitRef>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(cache) = app.try_state::<ChangedFilesCache>() else {
+            return;
+        };
+        for c in commits.into_iter().take(CHANGED_FILES_PREFETCH_CAP) {
+            if cache.contains(&c.repo_path, &c.hash) {
+                continue;
+            }
+            if let Ok(files) = git::changed_files(Path::new(&c.repo_path), &c.hash) {
+                cache.put(&c.repo_path, &c.hash, &files);
+            }
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -377,12 +597,11 @@ pub async fn open_diff(
 
     eprintln!("open_diff: building new diff window");
     let saved = settings::load(&app).diff_window;
-    let (init_w, init_h) = match saved {
-        Some(s) if monitor_can_contain(&app, s.x, s.y, s.w, s.h) => {
-            (s.w as f64, s.h as f64)
-        }
-        _ => default_diff_size(&app),
-    };
+    // Always open at the modest default size. A remembered window size
+    // restored across DPI scale factors was bloating the window (saved in
+    // physical px, re-applied as logical); the user resizes from here.
+    // Position + maximized state are still restored below.
+    let (init_w, init_h) = default_diff_size(&app);
 
     let mut builder = tauri::WebviewWindowBuilder::new(
         &app,
@@ -421,24 +640,22 @@ pub async fn open_diff(
     Ok(())
 }
 
-/// Pick a sensible default diff-window size based on the user's primary
-/// monitor — ~70% of its dimensions, clamped to [800x600 .. 1400x900] so
-/// it doesn't sprawl across multiple monitors on the first open.
+/// The diff window's default size — a modest fixed size the user resizes
+/// from. Returned in logical pixels (the window builder's `inner_size`
+/// unit). Clamped to fit the primary monitor so it never opens larger than
+/// the screen on a small display.
 fn default_diff_size(app: &AppHandle) -> (f64, f64) {
-    const MIN_W: f64 = 800.0;
-    const MIN_H: f64 = 600.0;
-    const MAX_W: f64 = 1400.0;
-    const MAX_H: f64 = 900.0;
+    const WANT_W: f64 = 1024.0;
+    const WANT_H: f64 = 720.0;
     if let Ok(Some(monitor)) = app.primary_monitor() {
-        let size = monitor.size();
         let scale = monitor.scale_factor();
-        let logical_w = size.width as f64 / scale;
-        let logical_h = size.height as f64 / scale;
-        let w = (logical_w * 0.70).clamp(MIN_W, MAX_W);
-        let h = (logical_h * 0.70).clamp(MIN_H, MAX_H);
+        let logical_w = monitor.size().width as f64 / scale;
+        let logical_h = monitor.size().height as f64 / scale;
+        let w = WANT_W.min(logical_w - 80.0).max(640.0);
+        let h = WANT_H.min(logical_h - 80.0).max(480.0);
         return (w, h);
     }
-    (1100.0, 750.0)
+    (WANT_W, WANT_H)
 }
 
 /// Sanity-check a saved (x, y, w, h) against the current monitor layout —
@@ -539,12 +756,14 @@ pub struct UpdateStatePayload {
 /// plus whether this is a Scoop install.
 #[tauri::command]
 pub fn update_get_state(app: AppHandle) -> UpdateStatePayload {
+    // Never panic the IPC command on a poisoned mutex — a poisoned lock
+    // still carries the last value; fall back to "no update" otherwise.
     let available = app
         .state::<update::UpdateState>()
         .available
         .lock()
-        .unwrap()
-        .clone();
+        .map(|g| g.clone())
+        .unwrap_or(None);
     UpdateStatePayload {
         available,
         scoop: update::installed_via_scoop(),
@@ -605,6 +824,7 @@ pub async fn discover_repos(app: AppHandle) -> Result<usize, String> {
                     .unwrap_or_default();
                 let path_str = path.to_string_lossy().into_owned();
                 let repo = cache::Repo {
+                    id: 0,
                     path: path_str.clone(),
                     name: name.clone(),
                     status: "active".to_string(),
@@ -631,13 +851,25 @@ pub async fn discover_repos(app: AppHandle) -> Result<usize, String> {
                     .collect::<Vec<_>>();
 
                 if !commits.is_empty() {
-                    if let Ok(mut conn) = cache::open(&app) {
-                        let _ = cache::upsert_commits(&mut conn, &commits);
+                    let outcome = cache::open(&app).ok().and_then(|mut conn| {
+                        // Upsert the repo row FIRST so upsert_commits can
+                        // resolve a real repo_id — its COALESCE falls back
+                        // to 0 when the repos row does not exist yet.
+                        cache::upsert_repos(&mut conn, std::slice::from_ref(&repo)).ok()?;
+                        cache::upsert_commits(&mut conn, &commits).ok()
+                    });
+                    // Lightweight windowed-pull signal — the frontend
+                    // re-pulls the affected windows from the cache.
+                    if let Some(o) = outcome {
+                        let _ = app.emit(
+                            "timeline://invalidated",
+                            cache::TimelineInvalidated {
+                                generation: o.generation,
+                                inserted: o.inserted,
+                                repo_path: path_str.clone(),
+                            },
+                        );
                     }
-                    let _ = app.emit(
-                        "timeline://repo-fill",
-                        TimelineRepoFill { commits, fresh: false },
-                    );
                 }
 
                 // Attach the file watcher to this newly-discovered repo.

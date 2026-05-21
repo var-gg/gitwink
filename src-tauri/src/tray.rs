@@ -10,6 +10,17 @@ use crate::{settings, update, window};
 
 const TRAY_ID: &str = "main";
 
+/// Tray tooltip base. Debug builds (`tauri dev` or any from-source build)
+/// carry a "(dev)" tag so a review build is distinguishable from an
+/// installed release in the tray — both are otherwise just "gitwink".
+fn tray_tooltip_base() -> &'static str {
+    if cfg!(debug_assertions) {
+        "gitwink (dev)"
+    } else {
+        "gitwink"
+    }
+}
+
 pub fn setup(app: &App) -> tauri::Result<()> {
     let menu = build_menu(app.handle(), None)?;
 
@@ -20,7 +31,7 @@ pub fn setup(app: &App) -> tauri::Result<()> {
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
-        .tooltip("gitwink")
+        .tooltip(tray_tooltip_base())
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(handle_menu_event)
@@ -129,11 +140,12 @@ pub fn set_update_indicator(app: &AppHandle, version: Option<String>) {
             };
             let _ = tray.set_icon(Some(icon));
         }
-        let _ = tray.set_tooltip(Some(if version.is_some() {
-            "gitwink — update available"
+        let tip = if version.is_some() {
+            format!("{} — update available", tray_tooltip_base())
         } else {
-            "gitwink"
-        }));
+            tray_tooltip_base().to_string()
+        };
+        let _ = tray.set_tooltip(Some(tip));
     });
 }
 

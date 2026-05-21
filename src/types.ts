@@ -2,6 +2,11 @@
 // Keep this file in lock-step with the serde structs on the Rust side.
 
 export interface Repo {
+  /** `repos.rowid` — the integer the windowed timeline filters by
+   * (`TimelineFilters.repoIds`). 0 for a repo not yet resolved via
+   * `listRepos` (e.g. one just optimistically added from a discovery
+   * event); a `listRepos` refresh backfills the real id. */
+  id: number;
   path: string;
   name: string;
   /** Lifecycle status. "active" = on disk and validates as a git repo,
@@ -39,12 +44,6 @@ export interface DiscoveredRepo {
   name: string;
   source: string;
   confidence: number;
-}
-
-export interface TimelineRepoFill {
-  commits: CommitSummary[];
-  /** True when these commits were just observed by the file watcher. */
-  fresh: boolean;
 }
 
 export interface CommitSummary {
@@ -115,6 +114,20 @@ export interface AuthorTally {
   lastActivity: number;
 }
 
+/** Per-repo commit count under the active filters — mirrors
+ * `cache::RepoCommitCount`. */
+export interface RepoCommitCount {
+  repoId: number;
+  count: number;
+}
+
+/** The timeline's filter facets (author tallies + per-repo commit counts)
+ * — mirrors `cache::FilterFacets`. */
+export interface FilterFacets {
+  authors: AuthorTally[];
+  repos: RepoCommitCount[];
+}
+
 export type ChangedFileStatus =
   | "modified"
   | "new"
@@ -155,4 +168,67 @@ export interface UpdateStatePayload {
   /** True for Scoop installs — the modal shows a `scoop update` hint
    * instead of an in-app "Update now" button. */
   scoop: boolean;
+}
+
+// ----- windowed-pull timeline (mirrors the Rust cache.rs structs) -----
+
+/** A keyset cursor into the timeline's total order. Opaque to the UI —
+ * obtained from a `CommitWindow` and handed back to fetch adjacent pages.
+ * Mirrors `cache::Cursor`. */
+export interface Cursor {
+  sortTs: number;
+  repoPath: string;
+  hash: string;
+}
+
+/** Which way a window query reads from its cursor. */
+export type WindowDirection = "older" | "newer";
+
+/** Server-side timeline filters — mirrors `cache::TimelineFilters`. An
+ * absent / null field means "no restriction". */
+export interface TimelineFilters {
+  /** Restrict to these repo ids (`Repo.id`). null/absent = all repos. */
+  repoIds?: number[] | null;
+  /** Restrict to these author names. null/absent = all authors. */
+  authors?: string[] | null;
+  /** Only commits at/after this unix-seconds timestamp. null = all time. */
+  since?: number | null;
+  /** MVCC-lite snapshot pin: only commits first seen at/before this
+   * generation are visible, so the scanner's later inserts don't disturb
+   * the page sequence. null = no pin. */
+  viewGeneration?: number | null;
+}
+
+/** One keyset-paginated page of the timeline — mirrors `cache::CommitWindow`.
+ * `rows` is always newest-first. */
+export interface CommitWindow {
+  rows: CommitSummary[];
+  startCursor: Cursor | null;
+  endCursor: Cursor | null;
+  hasNewer: boolean;
+  hasOlder: boolean;
+}
+
+/** A window of commits centred on an anchor, plus where it sits in the
+ * filtered total order — mirrors `cache::CommitAround`. `rows` is
+ * newest-first; `baseIndex` is the global rank (0-based) of `rows[0]`, so
+ * the UI can drop the window into a `count`-tall virtual scroll space. */
+export interface CommitAround {
+  rows: CommitSummary[];
+  /** whether the anchor commit itself survived the filter */
+  anchorFound: boolean;
+  baseIndex: number;
+  startCursor: Cursor | null;
+  endCursor: Cursor | null;
+  hasNewer: boolean;
+  hasOlder: boolean;
+}
+
+/** Lightweight scanner→UI invalidation signal — mirrors
+ * `cache::TimelineInvalidated`. The windowed timeline re-pulls affected
+ * windows from the cache instead of receiving commit arrays. */
+export interface TimelineInvalidated {
+  generation: number;
+  inserted: number;
+  repoPath: string;
 }

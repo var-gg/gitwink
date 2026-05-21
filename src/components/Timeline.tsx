@@ -1,42 +1,66 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+// Single-repo timeline — virtualized DAG (lane graph).
+//
+// The repo's full commit list is held in memory (the lane algorithm has to
+// thread parent links through the whole history), but only the rows in —
+// and just around — the viewport are mounted as DOM; a top/bottom spacer
+// stands in for the rest. The lane SVG is windowed the same way: only the
+// nodes/edges intersecting the visible band are emitted. So a 100k-commit
+// repo never puts 100k <li> + ~200k SVG nodes in the document.
+//
+// Lane geometry is COMPUTED from a fixed row height (plus the one measured
+// inline expansion), never measured back from the DOM — the old per-row
+// offsetTop sweep was an O(n) forced reflow on every layout change.
+
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { colorForBranch } from "../lib/colors";
-import { computeLanes } from "../lib/lanes";
+import {
+  buildCommitMenuItems,
+  copyCommitAiContext,
+} from "../lib/commitClipboard";
+import { computeLanes, type LaneEdge } from "../lib/lanes";
+import { openDiff, prefetchCommit } from "../lib/ipc";
 import type { BranchInfo, CommitSummary } from "../types";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-
-import { buildAiContext } from "../lib/copy";
-import { changedFiles, fileDiff, openDiff, prefetchCommit } from "../lib/ipc";
-import { refLine, refLineWithFile } from "../lib/smartcopy";
 import { ChangedFiles } from "./ChangedFiles";
 import { CommitDetail } from "./CommitDetail";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { LaneGraph } from "./LaneGraph";
 
+/** Fixed single-repo row height — mirrors `.timeline-single .timeline-row`
+ * in styles.css. The virtualization math depends on this being exact. */
+const ROW_H = 31;
+/** Extra rows rendered above/below the viewport for scroll smoothness. */
+const OVERSCAN = 8;
+/** Row-index chunk size for the edge bucket index. The visible-edge query
+ * then touches only the one or two chunks the viewport spans, keeping it
+ * sub-linear in the repo's commit count. */
+const EDGE_CHUNK = 512;
+
 interface Props {
+  /** The repo's full commit list, newest-first. */
   commits: CommitSummary[];
-  mode: "all" | "single";
-  /** In "all" mode, clicking the repo cell jumps to single-repo mode. */
-  onSelectRepo?: (repoPath: string) => void;
-  /** Single-repo mode: list of branches so we can color by branch identity. */
+  /** Branch list — colors the DAG lanes by branch identity. */
   branches?: BranchInfo[];
-  /** SHAs (formatted "repoPath:hash") that arrived via the file watcher
-   * since the user last closed the panel — render with a fresh marker. */
-  freshHashes?: Set<string>;
 }
 
 function timeAgo(unixSeconds: number): string {
-  const now = Math.floor(Date.now() / 1000);
-  const diff = Math.max(0, now - unixSeconds);
+  const diff = Math.max(0, Math.floor(Date.now() / 1000) - unixSeconds);
   if (diff < 60) return `${diff}s`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m`;
   if (diff < 86_400) return `${Math.floor(diff / 3600)}h`;
   return `${Math.floor(diff / 86_400)}d`;
 }
 
-/** Full ISO-ish local datetime for hover tooltips. Uses 24-hour
- * 2-digit components in the user's locale so it's unambiguous
- * regardless of region (no AM/PM, no DD/MM vs MM/DD guessing). */
+/** Full local datetime for hover tooltips — 24-hour, 2-digit components in
+ * the user's locale so it's unambiguous regardless of region. */
 function formatFullTime(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toLocaleString(undefined, {
     year: "numeric",
@@ -49,90 +73,180 @@ function formatFullTime(unixSeconds: number): string {
   });
 }
 
-function marker(c: CommitSummary): { glyph: string; cls: string; title: string } {
-  if (c.isTagged) return { glyph: "★", cls: "marker-tag", title: "Tagged commit" };
-  if (c.isMerge) return { glyph: "◆", cls: "marker-merge", title: "Merge commit" };
-  return { glyph: "●", cls: "marker-dot", title: "Commit" };
-}
-
-export function Timeline({
-  commits,
-  mode,
-  onSelectRepo,
-  branches,
-  freshHashes,
-}: Props) {
+export function Timeline({ commits, branches }: Props) {
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportH, setViewportH] = useState(0);
   const [selected, setSelected] = useState(0);
   const [expandedHash, setExpandedHash] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">(
     "idle",
   );
-  const listRef = useRef<HTMLUListElement | null>(null);
-  const rowRefs = useRef<(HTMLLIElement | null)[]>([]);
-  const [rowYs, setRowYs] = useState<number[]>([]);
-  const hoverTimers = useRef(new Map<string, number>());
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
     items: MenuItem[];
   } | null>(null);
+  // Measured pixel height of the one open inline expansion (0 = none) —
+  // folded into the virtualization so the expanded row's extra height is
+  // exact and the expansion survives scrolling.
+  const [expansionH, setExpansionH] = useState(0);
 
-  rowRefs.current.length = commits.length;
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const expansionObserver = useRef<ResizeObserver | null>(null);
+  const hoverTimers = useRef(new Map<string, number>());
 
-  useEffect(() => {
-    if (selected > commits.length - 1) setSelected(Math.max(0, commits.length - 1));
-  }, [commits.length, selected]);
+  const total = commits.length;
 
-  // Reset expansion when the commit list itself changes (e.g. filter swap).
-  useEffect(() => {
-    setExpandedHash(null);
-  }, [commits]);
-
-  const toggleExpand = useCallback(
-    (hash: string) => {
-      setExpandedHash((cur) => (cur === hash ? null : hash));
-    },
-    [],
+  // ----- lane layout: precomputed once over the full history -----
+  const headBranch = branches?.find((b) => b.isHead)?.name ?? null;
+  const graph = useMemo(
+    () =>
+      computeLanes(commits, (c) => colorForBranch(c.branchLabel ?? headBranch)),
+    [commits, headBranch],
   );
 
-  const copyAiContext = useCallback(async (commit: CommitSummary) => {
-    try {
-      const files = await changedFiles(commit.repoPath, commit.hash);
-      let diffText: string | null = null;
-      const TOTAL_LINES = files.reduce(
-        (a, f) => a + (f.isBinary ? 0 : f.insertions + f.deletions),
-        0,
-      );
-      // Pull full diff only when it's small enough to be useful in a chat
-      // prompt; bigger commits get a file list summary only.
-      if (!files.some((f) => f.isBinary) && TOTAL_LINES <= 800) {
-        try {
-          const parts: string[] = [];
-          for (const f of files) {
-            const t = await fileDiff(commit.repoPath, commit.hash, f.path);
-            parts.push(`--- ${f.path}\n${t}`);
-          }
-          diffText = parts.join("\n");
-        } catch {
-          diffText = null;
-        }
+  // Edge bucket index — each edge is filed under every row-index chunk it
+  // spans. The visible-edge query then reads just the chunk(s) the viewport
+  // covers instead of scanning every edge in the repo. Rebuilt only when the
+  // commit list changes (the spans are index-space, expansion-independent).
+  const edgeChunks = useMemo(() => {
+    const chunks: number[][] = [];
+    graph.edges.forEach((e, ei) => {
+      const a = e.fromIdx;
+      const b = e.toIdx >= 0 ? e.toIdx : total; // off-window parent → bottom
+      const c0 = Math.floor(Math.min(a, b) / EDGE_CHUNK);
+      const c1 = Math.floor(Math.max(a, b) / EDGE_CHUNK);
+      for (let c = c0; c <= c1; c++) (chunks[c] ??= []).push(ei);
+    });
+    return chunks;
+  }, [graph, total]);
+
+  // ----- virtual range (the one open expansion folded into the geometry) ---
+  // Global index of the open expansion's row, or -1 when nothing is open /
+  // the expanded commit is no longer in the list. Memoized: with the full
+  // commit array in hand this findIndex is O(n) — it must not re-run on
+  // every scroll frame.
+  const expandedIndex = useMemo(
+    () =>
+      expandedHash ? commits.findIndex((c) => c.hash === expandedHash) : -1,
+    [commits, expandedHash],
+  );
+  const expH = expandedIndex >= 0 ? expansionH : 0;
+  // content-Y of the top of row `i` — rows below the expansion sit `expH`
+  // lower than their bare row-height position.
+  const offsetOfRow = (i: number) =>
+    i * ROW_H + (expandedIndex >= 0 && i > expandedIndex ? expH : 0);
+  // inverse: the row index whose slot contains content-y `y`.
+  const rowAtOffset = (y: number) => {
+    if (expandedIndex < 0 || expH === 0) return Math.floor(y / ROW_H);
+    const expTop = (expandedIndex + 1) * ROW_H;
+    if (y < expTop) return Math.floor(y / ROW_H);
+    if (y < expTop + expH) return expandedIndex;
+    return expandedIndex + 1 + Math.floor((y - expTop - expH) / ROW_H);
+  };
+  const totalHeight = total * ROW_H + (expandedIndex >= 0 ? expH : 0);
+  const first = Math.max(0, rowAtOffset(scrollTop) - OVERSCAN);
+  const last = Math.min(
+    total,
+    rowAtOffset(scrollTop + viewportH) + OVERSCAN + 1,
+  );
+  const visible = commits.slice(first, last);
+  const padTop = offsetOfRow(first);
+  const padBottom = Math.max(0, totalHeight - offsetOfRow(last));
+  const bandHeight = Math.max(0, offsetOfRow(last) - padTop);
+  // content-Y centre of row `idx` — the lane SVG's node/edge anchor.
+  const cy = (idx: number) => offsetOfRow(idx) + ROW_H / 2;
+  // Ref mirror so the selection-scroll effect reads the live geometry
+  // without depending on (and re-firing for) every expansion resize.
+  const offsetOfRowRef = useRef(offsetOfRow);
+  offsetOfRowRef.current = offsetOfRow;
+
+  // Edges whose row span intersects the visible band — read from the bucket
+  // index, then precisely re-tested (a chunk is coarser than the band).
+  const visibleEdges = useMemo<LaneEdge[]>(() => {
+    if (last <= first) return [];
+    const c0 = Math.floor(first / EDGE_CHUNK);
+    const c1 = Math.floor((last - 1) / EDGE_CHUNK);
+    const seen = new Set<number>();
+    const out: LaneEdge[] = [];
+    for (let c = c0; c <= c1; c++) {
+      const bucket = edgeChunks[c];
+      if (!bucket) continue;
+      for (const ei of bucket) {
+        if (seen.has(ei)) continue;
+        seen.add(ei);
+        const e = graph.edges[ei];
+        const a = e.fromIdx;
+        const b = e.toIdx >= 0 ? e.toIdx : total;
+        if (Math.min(a, b) < last && Math.max(a, b) >= first) out.push(e);
       }
-      const md = buildAiContext(commit, files, diffText);
-      await writeText(md);
-      setCopyStatus("copied");
-      setTimeout(() => setCopyStatus("idle"), 1500);
-    } catch {
-      setCopyStatus("error");
-      setTimeout(() => setCopyStatus("idle"), 2000);
     }
+    return out;
+  }, [edgeChunks, graph, total, first, last]);
+
+  // ----- viewport height (fixed panel, but observe to stay robust) -----
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () => setViewportH(el.clientHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
+  // Fresh commit list (repo / branch / window / author swap, or a re-pull)
+  // — reset selection, expansion, and scroll back to the newest commit.
+  useEffect(() => {
+    setSelected(0);
+    setExpandedHash(null);
+    setScrollTop(0);
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [commits]);
+
+  // Keep `selected` in range as the commit list changes.
+  useEffect(() => {
+    if (selected > total - 1) setSelected(Math.max(0, total - 1));
+  }, [total, selected]);
+
+  const copyAiContext = useCallback(async (commit: CommitSummary) => {
+    const result = await copyCommitAiContext(commit);
+    setCopyStatus(result);
+    setTimeout(() => setCopyStatus("idle"), result === "copied" ? 1500 : 2000);
+  }, []);
+
+  const toggleExpand = useCallback((hash: string) => {
+    setExpandedHash((cur) => (cur === hash ? null : hash));
+  }, []);
+
+  // `ref` for the open expansion's <li>: measure its height (it grows as
+  // ChangedFiles loads in) and keep `expansionH` current. Called with null
+  // when the expansion unmounts (collapsed, or scrolled out of the band).
+  const measureExpansion = useCallback((el: HTMLLIElement | null) => {
+    expansionObserver.current?.disconnect();
+    expansionObserver.current = null;
+    if (!el) {
+      setExpansionH(0);
+      return;
+    }
+    setExpansionH(el.offsetHeight);
+    const observer = new ResizeObserver(() => setExpansionH(el.offsetHeight));
+    observer.observe(el);
+    expansionObserver.current = observer;
+  }, []);
+
+  const onScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (el) setScrollTop(el.scrollTop);
+  }, []);
+
+  // ----- keyboard nav (j / k / Enter / c / Esc) -----
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
       if (target && ["INPUT", "TEXTAREA"].includes(target.tagName)) return;
       if (e.key === "j" || e.key === "ArrowDown") {
-        setSelected((s) => Math.min(s + 1, commits.length - 1));
+        setSelected((s) => Math.min(s + 1, Math.max(0, total - 1)));
         e.preventDefault();
       } else if (e.key === "k" || e.key === "ArrowUp") {
         setSelected((s) => Math.max(s - 1, 0));
@@ -150,25 +264,36 @@ export function Timeline({
       } else if (e.key === "Escape" && expandedHash != null) {
         setExpandedHash(null);
         e.preventDefault();
-        // Block other Esc handlers (App-level panel hide) from firing
-        // when we've consumed the keystroke to collapse the expansion.
+        // Block App's panel-hide Esc handler when we've consumed the key.
         e.stopImmediatePropagation();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [commits, selected, toggleExpand, expandedHash, copyAiContext]);
+  }, [commits, selected, total, toggleExpand, expandedHash, copyAiContext]);
 
-  // Clean up any pending hover timers when the commit list changes.
+  // Bring the selected row into view. Uses the live row geometry so a
+  // selection below the open expansion still lands right.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const top = offsetOfRowRef.current(selected);
+    if (top < el.scrollTop) {
+      el.scrollTop = top;
+    } else if (top + ROW_H > el.scrollTop + el.clientHeight) {
+      el.scrollTop = top + ROW_H - el.clientHeight;
+    }
+  }, [selected]);
+
+  // Clean up pending hover-prefetch timers + the expansion observer on unmount.
   useEffect(() => {
     const timers = hoverTimers.current;
     return () => {
-      for (const id of timers.values()) {
-        window.clearTimeout(id);
-      }
+      for (const id of timers.values()) window.clearTimeout(id);
       timers.clear();
+      expansionObserver.current?.disconnect();
     };
-  }, [commits]);
+  }, []);
 
   function onRowEnter(c: CommitSummary) {
     const key = `${c.repoPath}:${c.hash}`;
@@ -194,132 +319,35 @@ export function Timeline({
     if (target.closest('input, textarea, [contenteditable="true"]')) return;
     e.preventDefault();
 
-    // Identify the commit this click is on. Direct hit on a timeline row
-    // wins; otherwise inherit from the currently-expanded commit (the
-    // user is clicking inside its expansion: commit detail or file list).
+    // Direct hit on a timeline row wins; otherwise inherit from the
+    // currently-expanded commit (the click is inside its expansion).
     const row = target.closest<HTMLLIElement>("[data-row]");
     const idx = row ? parseInt(row.dataset.row ?? "-1", 10) : -1;
-    let commit: CommitSummary | null = idx >= 0 ? commits[idx] : null;
+    let commit: CommitSummary | null = idx >= 0 ? commits[idx] ?? null : null;
     if (!commit && expandedHash) {
       commit = commits.find((c) => c.hash === expandedHash) ?? null;
     }
-
     const fileEl = target.closest<HTMLElement>("[data-file-path]");
     const filePath = fileEl?.dataset.filePath ?? null;
-
     const selection = window.getSelection()?.toString() ?? "";
-    const items: MenuItem[] = [];
 
-    if (selection) {
-      items.push({
-        label: "Copy",
-        onClick: () => void writeText(selection),
-      });
-      if (commit) {
-        const ref = filePath
-          ? refLineWithFile(
-              commit.repoName,
-              commit.shortHash,
-              filePath,
-              null,
-              null,
-            )
-          : refLine(commit.repoName, commit.shortHash);
-        items.push({
-          label: "Copy with reference",
-          onClick: () => void writeText(`${ref}\n${selection}`),
-        });
-      }
-      items.push({ divider: true });
-    }
-
-    if (filePath) {
-      items.push({
-        label: "Copy file path",
-        onClick: () => void writeText(filePath),
-      });
-    }
-
-    if (commit) {
-      items.push({
-        label: "Copy as AI context",
-        onClick: () => void copyAiContext(commit),
-      });
-      const messageText = (commit.message || commit.summary).trim();
-      if (messageText) {
-        items.push({
-          label: "Copy commit message",
-          onClick: () => void writeText(messageText),
-        });
-      }
-      items.push({
-        label: "Copy short hash",
-        onClick: () => void writeText(commit.shortHash),
-      });
-      items.push({
-        label: "Copy full hash",
-        onClick: () => void writeText(commit.hash),
-      });
-    }
-
+    const items = buildCommitMenuItems({
+      commit,
+      filePath,
+      selection,
+      onCopyAiContext: (c) => void copyAiContext(c),
+    });
     if (items.length === 0) return;
     setContextMenu({ x: e.clientX, y: e.clientY, items });
   }
 
-  useEffect(() => {
-    const row = listRef.current?.querySelector<HTMLLIElement>(
-      `[data-row="${selected}"]`,
-    );
-    row?.scrollIntoView({ block: "nearest" });
-  }, [selected]);
-
-  // Measure each commit row's vertical center for the lane SVG. We watch
-  // the list itself with a ResizeObserver so the DAG re-aligns whenever
-  // an inline expansion is added or collapsed — synchronous measurement
-  // via useLayoutEffect alone was racing with React's commit/layout cycle
-  // when the expansion li mounted.
-  useLayoutEffect(() => {
-    const list = listRef.current;
-    if (!list) return;
-
-    function measure() {
-      const ys: number[] = [];
-      for (let i = 0; i < rowRefs.current.length; i++) {
-        const el = rowRefs.current[i];
-        if (el) ys[i] = el.offsetTop + el.offsetHeight / 2;
-      }
-      setRowYs(ys);
-    }
-
-    measure();
-    const observer = new ResizeObserver(() => measure());
-    observer.observe(list);
-    return () => observer.disconnect();
-  }, [commits, mode]);
-
-  const showRepo = mode === "all";
-  const headBranch = branches?.find((b) => b.isHead)?.name ?? null;
-
-  const laneGraph = useMemo(() => {
-    if (mode !== "single") return null;
-    return computeLanes(commits, (c) =>
-      colorForBranch(c.branchLabel ?? headBranch),
-    );
-  }, [commits, mode, headBranch]);
-
-  if (commits.length === 0) {
-    return <p className="panel-empty">No commits match.</p>;
-  }
-
   return (
-    <ul
-      className={"timeline timeline-" + mode}
-      ref={listRef}
+    <div
+      className="timeline-scroll"
+      ref={scrollRef}
+      onScroll={onScroll}
       onContextMenu={onTimelineContextMenu}
     >
-      {laneGraph && rowYs.length === commits.length && (
-        <LaneGraph graph={laneGraph} rowYs={rowYs} />
-      )}
       {contextMenu && (
         <ContextMenu
           items={contextMenu.items}
@@ -328,126 +356,115 @@ export function Timeline({
           onClose={() => setContextMenu(null)}
         />
       )}
-      {commits.map((c, i) => {
-        const m = marker(c);
-        return (
-          <Fragment key={`${c.repoPath}:${c.hash}`}>
-            <li
-              data-row={i}
-              ref={(el) => {
-                rowRefs.current[i] = el;
-              }}
-              className={
-                "timeline-row" +
-                (i === selected ? " selected" : "") +
-                (expandedHash === c.hash ? " expanded" : "")
-              }
-              onClick={() => {
-                setSelected(i);
-                toggleExpand(c.hash);
-              }}
-              onMouseEnter={() => onRowEnter(c)}
-              onMouseLeave={() => onRowLeave(c)}
-            >
-              {mode === "single" ? (
-                <span className="timeline-lane-spacer" aria-hidden="true" />
-              ) : (
-                <span
+      {total === 0 ? (
+        <p className="panel-empty">No commits match.</p>
+      ) : (
+        <ul
+          className="timeline-windowed-list timeline-single"
+          style={{ paddingTop: padTop, paddingBottom: padBottom }}
+        >
+          <LaneGraph
+            laneCommits={graph.laneCommits}
+            edges={visibleEdges}
+            totalLanes={graph.totalLanes}
+            first={first}
+            last={last}
+            cy={cy}
+            bottomY={totalHeight}
+            bandTop={padTop}
+            bandHeight={bandHeight}
+          />
+          {visible.map((c, i) => {
+            const idx = first + i;
+            return (
+              <Fragment key={`${c.repoPath}:${c.hash}`}>
+                <li
+                  data-row={idx}
                   className={
-                    "timeline-marker " +
-                    m.cls +
-                    (freshHashes?.has(`${c.repoPath}:${c.hash}`) ? " fresh" : "")
+                    "timeline-row" +
+                    (idx === selected ? " selected" : "") +
+                    (expandedHash === c.hash ? " expanded" : "")
                   }
-                  title={
-                    freshHashes?.has(`${c.repoPath}:${c.hash}`)
-                      ? `${m.title} (new)`
-                      : m.title
-                  }
-                >
-                  {m.glyph}
-                </span>
-              )}
-              <span
-                className="timeline-time"
-                title={formatFullTime(c.timestamp)}
-              >
-                {timeAgo(c.timestamp)}
-              </span>
-              {showRepo && (
-                <span
-                  className={
-                    "timeline-repo" +
-                    (onSelectRepo ? " timeline-repo-clickable" : "")
-                  }
-                  title={`${c.repoPath} (click to filter)`}
-                  onClick={(e) => {
-                    if (!onSelectRepo) return;
-                    e.stopPropagation();
-                    onSelectRepo(c.repoPath);
+                  onClick={() => {
+                    setSelected(idx);
+                    toggleExpand(c.hash);
                   }}
+                  onMouseEnter={() => onRowEnter(c)}
+                  onMouseLeave={() => onRowLeave(c)}
                 >
-                  {c.repoName}
-                </span>
-              )}
-              <span className="timeline-summary" title={c.summary}>
-                {c.branchLabel && (
-                  <span className="timeline-branch">[{c.branchLabel}]</span>
-                )}
-                {c.summary}
-                {c.remoteTipLabel && (
+                  <span className="timeline-lane-spacer" aria-hidden="true" />
                   <span
-                    className="timeline-remote-tip"
-                    title={
-                      c.remoteTipExtraCount > 0
-                        ? `Remote tracking refs at this commit (read-only, from your last git fetch). +${c.remoteTipExtraCount} more.`
-                        : "Remote tracking ref at this commit (read-only, from your last git fetch)."
-                    }
+                    className="timeline-time"
+                    title={formatFullTime(c.timestamp)}
                   >
-                    {c.remoteTipLabel}
-                    {c.remoteTipExtraCount > 0 && ` +${c.remoteTipExtraCount}`}
+                    {timeAgo(c.timestamp)}
                   </span>
-                )}
-              </span>
-              <span className="timeline-author" title={c.email}>
-                {c.author}
-              </span>
-            </li>
-            {expandedHash === c.hash && (
-              <li className="timeline-expansion" onClick={(e) => e.stopPropagation()}>
-                <CommitDetail commit={c} />
-                <div className="commit-actions">
-                  <button
-                    type="button"
-                    className="commit-copy-btn"
-                    onClick={() => void copyAiContext(c)}
-                    title="Copy as AI context (c)"
+                  <span className="timeline-summary" title={c.summary}>
+                    {c.branchLabel && (
+                      <span className="timeline-branch">[{c.branchLabel}]</span>
+                    )}
+                    {c.summary}
+                    {c.remoteTipLabel && (
+                      <span
+                        className="timeline-remote-tip"
+                        title={
+                          c.remoteTipExtraCount > 0
+                            ? `Remote tracking refs at this commit (read-only, from your last git fetch). +${c.remoteTipExtraCount} more.`
+                            : "Remote tracking ref at this commit (read-only, from your last git fetch)."
+                        }
+                      >
+                        {c.remoteTipLabel}
+                        {c.remoteTipExtraCount > 0 &&
+                          ` +${c.remoteTipExtraCount}`}
+                      </span>
+                    )}
+                  </span>
+                  <span className="timeline-author" title={c.email}>
+                    {c.author}
+                  </span>
+                </li>
+                {expandedHash === c.hash && (
+                  <li
+                    className="timeline-expansion"
+                    ref={measureExpansion}
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    {copyStatus === "copied"
-                      ? "Copied ✓"
-                      : copyStatus === "error"
-                        ? "Copy failed"
-                        : "Copy as AI context"}
-                  </button>
-                </div>
-                <ChangedFiles
-                  repoPath={c.repoPath}
-                  hash={c.hash}
-                  onOpenDiff={(f) => {
-                    void openDiff(
-                      c.repoPath,
-                      c.repoName,
-                      c.hash,
-                      c.shortHash,
-                      c.summary,
-                      f.path,
-                    );
-                  }}
-                />
-              </li>
-            )}
-          </Fragment>
-        );
-      })}
-    </ul>
+                    <CommitDetail commit={c} />
+                    <div className="commit-actions">
+                      <button
+                        type="button"
+                        className="commit-copy-btn"
+                        onClick={() => void copyAiContext(c)}
+                        title="Copy as AI context (c)"
+                      >
+                        {copyStatus === "copied"
+                          ? "Copied ✓"
+                          : copyStatus === "error"
+                            ? "Copy failed"
+                            : "Copy as AI context"}
+                      </button>
+                    </div>
+                    <ChangedFiles
+                      repoPath={c.repoPath}
+                      hash={c.hash}
+                      onOpenDiff={(f) => {
+                        void openDiff(
+                          c.repoPath,
+                          c.repoName,
+                          c.hash,
+                          c.shortHash,
+                          c.summary,
+                          f.path,
+                        );
+                      }}
+                    />
+                  </li>
+                )}
+              </Fragment>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }

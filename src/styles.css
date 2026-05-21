@@ -334,6 +334,26 @@ body,
   overflow-x: hidden;
 }
 
+/* Virtualised chip dropdown: the height is set inline to the computed
+ * viewport, and flex:none stops the flex column from shrinking it. */
+.chip-vlist {
+  flex: none;
+}
+
+/* Full-height spacer track — its height is the sum of every row, so the
+ * native scrollbar reflects the true list length. */
+.chip-vtrack {
+  position: relative;
+  width: 100%;
+}
+
+/* One virtual row, absolutely placed at its prefix-sum offset. */
+.chip-vrow {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
 .chip-section {
   padding: 6px 10px 2px;
   font-size: 10px;
@@ -384,20 +404,30 @@ body,
   padding-left: 6px;
   min-width: 0;
   max-width: 100%;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
-.chip-item-row.active {
-  background: rgba(80, 130, 240, 0.14);
-}
-
+/* Checked into the multi-repo filter — kept subtle: the filled checkbox is
+   the primary signal. Declared before `.active` so that an active row
+   which is ALSO checked still reads as active (equal specificity). */
 .chip-item-row.selected {
-  background: linear-gradient(90deg, rgba(80, 130, 240, 0.08), rgba(80, 130, 240, 0.12));
+  background: rgba(80, 130, 240, 0.07);
+}
+
+/* Single-repo mode: the repo you've drilled into. A left accent bar plus a
+   firmer fill set it clearly apart from a merely checked row — the two
+   were near-identical blue tints before. */
+.chip-item-row.active {
+  background: rgba(80, 130, 240, 0.16);
+  box-shadow: inset 3px 0 0 #5082f0;
 }
 
 @media (prefers-color-scheme: dark) {
   .chip-item-row.selected {
-    background: linear-gradient(90deg, rgba(80, 130, 240, 0.15), rgba(80, 130, 240, 0.2));
+    background: rgba(80, 130, 240, 0.13);
+  }
+  .chip-item-row.active {
+    background: rgba(80, 130, 240, 0.28);
   }
 }
 
@@ -533,6 +563,20 @@ body,
   opacity: 0.6;
 }
 
+/* RepoChip item title row — repo name + commit-count facet on one line,
+   the path renders on the line below. */
+.chip-item-titleline {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+.chip-item-titleline .chip-item-name {
+  flex: 1;
+  min-width: 0;
+}
+
 .chip-check {
   display: inline-block;
   width: 12px;
@@ -557,9 +601,6 @@ body,
   opacity: 0.45;
   user-select: none;
   cursor: default;
-}
-.chip-section-header:first-child {
-  padding-top: 4px;
 }
 
 .chip-empty {
@@ -800,6 +841,61 @@ body,
   list-style: none;
 }
 
+/* All-repos windowed timeline — `.timeline-scroll` is the scroll viewport
+   (fills the panel body below the header, scrolls internally), and
+   `.timeline-windowed-list` is the spacer-padded inner list: only the rows
+   in view are mounted, top/bottom padding stands in for the rest. */
+.timeline-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.timeline-windowed-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline-loading-more {
+  padding: 6px 12px;
+  font-size: 11px;
+  text-align: center;
+  opacity: 0.45;
+}
+
+/* "N new commits" pill — floats at the top of the timeline viewport when
+   the scanner reports commits beyond the pinned snapshot and the reader is
+   scrolled away from the top. The anchor is a zero-height sticky element so
+   the pill overlays without disturbing the virtualization math. */
+.timeline-new-pill-anchor {
+  position: sticky;
+  top: 0;
+  height: 0;
+  z-index: 5;
+}
+
+.timeline-new-pill {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 12px;
+  border: none;
+  border-radius: 11px;
+  background: #5b5df0;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+}
+
+.timeline-new-pill:hover {
+  background: #6f71f3;
+}
+
 /* All-repos mode: marker · time · repo · summary · author */
 .timeline-all .timeline-row {
   display: grid;
@@ -811,6 +907,38 @@ body,
   line-height: 1.5;
   cursor: default;
   border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  /* Fixed height — the windowed timeline's virtualization math relies on
+     every all-repos row being exactly this tall. */
+  height: 31px;
+  box-sizing: border-box;
+}
+
+/* Placeholder for an all-repos row whose commit is not loaded yet — a
+   random-access jump-load in flight. Light pulsing skeleton bar; inert. */
+.timeline-row-blank {
+  pointer-events: none;
+}
+.timeline-skeleton {
+  grid-column: 2 / 5;
+  align-self: center;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.07);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  .timeline-skeleton {
+    background: rgba(255, 255, 255, 0.08);
+  }
 }
 
 /* Single-repo mode: lane area (SVG DAG) · time · summary · author.
@@ -838,9 +966,10 @@ body,
   /* placeholder so the grid keeps the lane column free for the absolute SVG */
 }
 
+/* Single-repo lane SVG. Windowed: `top` is set inline to the visible
+   band's content-Y; only band-intersecting nodes/edges are emitted. */
 .lane-graph {
   position: absolute;
-  top: 0;
   left: 12px; /* matches timeline-row padding-left */
   pointer-events: none;
   display: block;

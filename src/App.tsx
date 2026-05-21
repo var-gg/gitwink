@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { UnlistenFn } from "@tauri-apps/api/event";
@@ -7,6 +7,7 @@ import { AuthorsChip } from "./components/AuthorsChip";
 import { BranchChip } from "./components/BranchChip";
 import { RepoChip } from "./components/RepoChip";
 import { Timeline } from "./components/Timeline";
+import { TimelineWindowed } from "./components/TimelineWindowed";
 import { TimeRangeChip } from "./components/TimeRangeChip";
 import {
   currentUpstreamStatus,
@@ -17,15 +18,13 @@ import {
   getScanState,
   hideRepo,
   listBranches,
-  listRecentCommitsCached,
+  listFilterFacets,
   listRepos,
   onOrchestratorProgress,
   onPanelShown,
   onRepoDiscovered,
-  onTimelineRepoFill,
   onUpdateNone,
   onUpdateShowModal,
-  recentCommits,
   repoCommits,
   setBranchSelection as saveBranchSelection,
   setPanelSticky,
@@ -43,8 +42,6 @@ import type {
   WindowDays,
 } from "./types";
 import "./styles.css";
-
-const TIMELINE_MAX = 50;
 
 function startDrag(e: React.PointerEvent<HTMLElement>) {
   if (e.button !== 0) return;
@@ -114,18 +111,6 @@ function UpstreamBadge({ status }: UpstreamBadgeProps) {
   );
 }
 
-function mergeCommits(
-  prev: CommitSummary[],
-  incoming: CommitSummary[],
-): CommitSummary[] {
-  const map = new Map<string, CommitSummary>();
-  for (const c of prev) map.set(`${c.repoPath}:${c.hash}`, c);
-  for (const c of incoming) map.set(`${c.repoPath}:${c.hash}`, c);
-  return Array.from(map.values())
-    .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, TIMELINE_MAX);
-}
-
 function toWindowParam(w: WindowDays): number | null {
   return w === "all" ? null : (w as number);
 }
@@ -136,6 +121,13 @@ function App() {
   const [allRepos, setAllRepos] = useState<Repo[]>([]);
   const [discoveredCount, setDiscoveredCount] = useState<number | null>(null);
   const [pinnedRepos, setPinnedRepos] = useState<string[]>([]);
+  // All-repos filter facets — the windowed timeline keeps no full client-
+  // side commit array, so the AuthorsChip list + the RepoChip per-repo
+  // counts come from a backend facet.
+  const [authorsAll, setAuthorsAll] = useState<AuthorTally[]>([]);
+  const [repoCounts, setRepoCounts] = useState<Map<number, number>>(
+    () => new Map(),
+  );
 
   const [windowDays, setWindowDays] = useState<WindowDays>(7);
   const [selectedRepoPath, setSelectedRepoPath] = useState<string | null>(null);
@@ -153,13 +145,9 @@ function App() {
   );
   const [upstream, setUpstream] = useState<UpstreamStatus | null>(null);
 
-  // Fresh-commit tracking — populated by file-watcher pushes, cleared on
-  // panel blur (i.e. "the user has seen this, mark as read on close").
-  const [freshHashes, setFreshHashes] = useState<Set<string>>(() => new Set());
-
-  // Bumped each time the panel is summoned. Both commit-fetching effects
-  // depend on it, so re-showing the panel re-pulls commits — covering
-  // anything the live file-watcher missed (see onPanelShown).
+  // Bumped each time the panel is summoned — the windowed timeline, the
+  // author facet, and the single-repo commits effect all depend on it, so
+  // re-showing the panel re-pulls (covering anything the watcher missed).
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const [openChip, setOpenChip] = useState<
@@ -186,31 +174,17 @@ function App() {
 
   const singleMode = selectedRepoPath != null;
 
-  // Mirror selectedRepoPath into a ref so the file-watcher listener — set up
-  // once in the bootstrap effect — can read the *current* value instead of
-  // the null it captured at mount.
-  const selectedRepoPathRef = useRef<string | null>(null);
-  useEffect(() => {
-    selectedRepoPathRef.current = selectedRepoPath;
-  }, [selectedRepoPath]);
-
-  // ----- bootstrap (All-repos timeline) -----
+  // ----- bootstrap -----
   useEffect(() => {
     let mounted = true;
     let unProgress: UnlistenFn | undefined;
     let unDiscovered: UnlistenFn | undefined;
-    let unFill: UnlistenFn | undefined;
     let unStatus: UnlistenFn | undefined;
     let unShown: UnlistenFn | undefined;
     let unUpdateModal: UnlistenFn | undefined;
     let unUpdateNone: UnlistenFn | undefined;
 
     (async () => {
-      try {
-        const cached = await listRecentCommitsCached(toWindowParam(windowDays));
-        if (mounted) setCommits(cached);
-      } catch {}
-
       try {
         const repos = await listRepos();
         if (mounted) {
@@ -243,6 +217,20 @@ function App() {
         if (!mounted) return;
         setDiscoveredCount(p.reposFound);
         setScanning(p.state === "scanning");
+        // Scan finished — refresh the repo list so newly-found repos carry
+        // their real ids (needed to filter the windowed timeline by repo)
+        // and bump the nonce so the timeline + author facet re-pull.
+        if (p.state === "complete") {
+          void listRepos()
+            .then((repos) => {
+              if (mounted) {
+                setAllRepos(repos);
+                setDiscoveredCount(repos.length);
+              }
+            })
+            .catch(() => {});
+          setRefreshNonce((n) => n + 1);
+        }
       });
 
       // Panel summoned — re-pull commits as a fallback for anything the
@@ -272,28 +260,23 @@ function App() {
       // dropdown lights up as repos are validated. Refresh cached
       // commits opportunistically so the timeline picks up rows from
       // the newly-discovered repo without a manual reload.
-      unDiscovered = await onRepoDiscovered(async (p) => {
+      unDiscovered = await onRepoDiscovered((p) => {
         if (!mounted) return;
         setAllRepos((prev) => {
           if (prev.some((r) => r.path === p.path)) return prev;
           // Orchestrator only emits for validated repos, so status='active'
-          // is correct on insert. Status transitions later flip this via
-          // the repo-status listener.
+          // is correct on insert. The id is unknown until the scan-complete
+          // listRepos() refresh backfills it — harmless, the windowed
+          // timeline's repo filter ignores id 0.
           const next = [
             ...prev,
-            { path: p.path, name: p.name, status: "active" as const },
+            { id: 0, path: p.path, name: p.name, status: "active" as const },
           ];
           // Keep stable display order to avoid jitter in the chip dropdown.
           next.sort((a, b) => a.name.localeCompare(b.name));
           return next;
         });
         setDiscoveredCount((prev) => (prev ?? 0) + 1);
-        try {
-          const refreshed = await listRecentCommitsCached(
-            toWindowParam(windowDays),
-          );
-          if (mounted) setCommits(refreshed);
-        } catch {}
       });
 
       // Repo status transitions (active ↔ missing ↔ removed) — backend
@@ -325,31 +308,12 @@ function App() {
         },
       );
 
-      unFill = await onTimelineRepoFill((p) => {
-        if (!mounted) return;
-        // Only merge into the All-repos timeline; ignore while in single mode.
-        // Read the *current* selectedRepoPath via ref — the value captured in
-        // this closure at mount time is permanently null.
-        setCommits((prev) =>
-          selectedRepoPathRef.current
-            ? prev
-            : mergeCommits(prev ?? [], p.commits),
-        );
-        if (p.fresh && p.commits.length > 0) {
-          setFreshHashes((prev) => {
-            const next = new Set(prev);
-            for (const c of p.commits) next.add(`${c.repoPath}:${c.hash}`);
-            return next;
-          });
-        }
-      });
     })();
 
     return () => {
       mounted = false;
       unProgress?.();
       unDiscovered?.();
-      unFill?.();
       unStatus?.();
       unShown?.();
       unUpdateModal?.();
@@ -358,24 +322,29 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ----- refresh All-repos commits when time window changes -----
+  // ----- all-repos mode: filter facets (authors + per-repo counts) -----
+  // The windowed timeline drops the full client-side commit array, so the
+  // AuthorsChip list + RepoChip counts come from a backend facet.
+  // Refreshed on time-window change and on panel re-summon.
   useEffect(() => {
     if (singleMode) return;
     let cancelled = false;
+    const since =
+      windowDays === "all"
+        ? null
+        : Math.floor(Date.now() / 1000) - windowDays * 86_400;
     (async () => {
       try {
-        const cached = await listRecentCommitsCached(toWindowParam(windowDays));
-        if (!cancelled) setCommits(cached);
-      } catch {}
-      try {
-        const fresh = await recentCommits(toWindowParam(windowDays));
-        if (!cancelled) setCommits(fresh);
+        const facets = await listFilterFacets({ since });
+        if (cancelled) return;
+        setAuthorsAll(facets.authors);
+        setRepoCounts(new Map(facets.repos.map((r) => [r.repoId, r.count])));
       } catch {}
     })();
     return () => {
       cancelled = true;
     };
-  }, [windowDays, singleMode, refreshNonce]);
+  }, [singleMode, windowDays, refreshNonce]);
 
   // ----- single-repo mode: branch list + saved selection -----
   // Both depend ONLY on the repo — the branch set is window-independent,
@@ -512,11 +481,16 @@ function App() {
         if (prev.some((r) => r.path === repo.path)) return prev;
         const next = [
           ...prev,
-          { path: repo.path, name: repo.name, status: "active" as const },
+          { id: 0, path: repo.path, name: repo.name, status: "active" as const },
         ];
         next.sort((a, b) => a.name.localeCompare(b.name));
         return next;
       });
+      // Refresh so the new repo carries its real id — the windowed timeline
+      // filters by id, not path.
+      void listRepos()
+        .then((repos) => setAllRepos(repos))
+        .catch(() => {});
       setAddError(null);
       return true;
     } catch (err) {
@@ -616,20 +590,6 @@ function App() {
     return () => window.removeEventListener("paste", onPaste);
   }, [tryAddPath]);
 
-  // Clear fresh-commit markers whenever the panel loses focus (= the user
-  // has "seen" what was new). They re-populate as new commits arrive.
-  useEffect(() => {
-    function onBlur() {
-      // Small delay so a tray-context-menu blur or a chip-dropdown click
-      // doesn't wipe everything mid-interaction.
-      window.setTimeout(() => {
-        if (!document.hasFocus()) setFreshHashes(new Set());
-      }, 200);
-    }
-    window.addEventListener("blur", onBlur);
-    return () => window.removeEventListener("blur", onBlur);
-  }, []);
-
   // ----- ESC layer cascade: chip → expansion (in Timeline) → single-repo → hide panel -----
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -657,7 +617,9 @@ function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [openChip, singleMode, updateModal]);
 
-  const authors: AuthorTally[] = useMemo(() => {
+  // Single-repo mode tallies authors from its (bounded) loaded commits;
+  // all-repos mode uses the backend facet (`authorsAll`).
+  const authorsSingle: AuthorTally[] = useMemo(() => {
     const m = new Map<string, { count: number; lastActivity: number }>();
     for (const c of commits ?? []) {
       const cur = m.get(c.author);
@@ -676,20 +638,30 @@ function App() {
       }))
       .sort((a, b) => b.lastActivity - a.lastActivity);
   }, [commits]);
+  const authors = singleMode ? authorsSingle : authorsAll;
 
+  // Single-repo mode only — the all-repos timeline filters server-side.
+  // The repo filter doesn't apply here (you're inside one repo already);
+  // just narrow the loaded commits by the author selection.
   const filteredCommits = useMemo(() => {
     if (!commits) return null;
-    let result = commits;
-    if (selectedAuthors !== "all") {
-      const set = new Set(selectedAuthors);
-      result = result.filter((c) => set.has(c.author));
-    }
-    if (!singleMode && selectedRepoPaths !== "all") {
-      const repoSet = new Set(selectedRepoPaths);
-      result = result.filter((c) => repoSet.has(c.repoPath));
-    }
-    return result;
-  }, [commits, selectedAuthors, selectedRepoPaths, singleMode]);
+    if (selectedAuthors === "all") return commits;
+    const set = new Set(selectedAuthors);
+    return commits.filter((c) => set.has(c.author));
+  }, [commits, selectedAuthors]);
+
+  // Resolve the multi-repo path filter to backend repo ids for the
+  // windowed timeline. id 0 (a just-discovered repo not yet refreshed via
+  // listRepos) is dropped; a selection that resolves to no usable ids
+  // falls back to "all repos" rather than showing nothing.
+  const repoIds = useMemo<number[] | null>(() => {
+    if (selectedRepoPaths === "all") return null;
+    const byPath = new Map(allRepos.map((r) => [r.path, r.id]));
+    const ids = selectedRepoPaths
+      .map((p) => byPath.get(p))
+      .filter((id): id is number => id != null && id > 0);
+    return ids.length > 0 ? ids : null;
+  }, [selectedRepoPaths, allRepos]);
 
   function togglePin(path: string) {
     setPinnedRepos((prev) => {
@@ -719,6 +691,7 @@ function App() {
             onToggle={() => setOpenChip(openChip === "repo" ? null : "repo")}
             onClose={() => setOpenChip(null)}
             repos={allRepos}
+            repoCounts={repoCounts}
             pinned={pinnedRepos}
             selectedPath={selectedRepoPath}
             selectedPaths={selectedRepoPaths}
@@ -788,22 +761,29 @@ function App() {
         </button>
       </header>
       <section className="panel-body">
-        {filteredCommits == null ? (
-          <p className="panel-empty">Loading commits…</p>
-        ) : allRepos.length === 0 && !singleMode ? (
+        {allRepos.length === 0 && !singleMode ? (
           <EmptyDropPanel
             scanning={scanning}
             addError={addError}
             onBrowse={() => void handleAddRepo()}
           />
+        ) : singleMode ? (
+          filteredCommits == null ? (
+            <p className="panel-empty">Loading commits…</p>
+          ) : (
+            <Timeline
+              key={`single:${selectedRepoPath}`}
+              commits={filteredCommits}
+              branches={branches}
+            />
+          )
         ) : (
-          <Timeline
-            key={singleMode ? `single:${selectedRepoPath}` : "all"}
-            commits={filteredCommits}
-            mode={singleMode ? "single" : "all"}
-            onSelectRepo={singleMode ? undefined : setSelectedRepoPath}
-            branches={singleMode ? branches : undefined}
-            freshHashes={freshHashes}
+          <TimelineWindowed
+            repoIds={repoIds}
+            authors={selectedAuthors === "all" ? null : selectedAuthors}
+            windowDays={toWindowParam(windowDays)}
+            refreshNonce={refreshNonce}
+            onSelectRepo={setSelectedRepoPath}
           />
         )}
         {allRepos.length > 0 && (

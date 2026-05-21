@@ -4,16 +4,22 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   BranchInfo,
   ChangedFile,
+  CommitAround,
   CommitFileBlobs,
   CommitSummary,
+  CommitWindow,
+  Cursor,
   DiscoveredRepo,
+  FilterFacets,
   OrchestratorScanProgress,
   Repo,
   ScanComplete,
   ScanProgress,
-  TimelineRepoFill,
+  TimelineFilters,
+  TimelineInvalidated,
   UpdateStatePayload,
   UpstreamStatus,
+  WindowDirection,
 } from "../types";
 
 export async function ping(): Promise<string> {
@@ -100,6 +106,19 @@ export async function prefetchCommit(
 ): Promise<void> {
   try {
     await invoke("changed_files", { repoPath, hash });
+  } catch {
+    /* swallow */
+  }
+}
+
+/** Phase 6 detail-tier prefetch — warm the changed-files cache for a set of
+ * commits (the rows in/near the timeline viewport) so expanding one is
+ * instant. Fire-and-forget; the backend skips already-cached commits. */
+export async function changedFilesBatch(
+  commits: { repoPath: string; hash: string }[],
+): Promise<void> {
+  try {
+    await invoke("changed_files_batch", { commits });
   } catch {
     /* swallow */
   }
@@ -232,10 +251,88 @@ export async function onRepoDiscovered(
   return listen<DiscoveredRepo>("timeline://repo-discovered", (e) => cb(e.payload));
 }
 
-export async function onTimelineRepoFill(
-  cb: (p: TimelineRepoFill) => void,
+// ----- windowed-pull timeline (Phase 1-3) -----
+
+/** One keyset-paginated page of the all-repos timeline. `cursor` null reads
+ * from the top (newest); `direction` walks "older" (down) or "newer" (up). */
+export async function listCommitsWindow(
+  filters: TimelineFilters,
+  cursor: Cursor | null,
+  direction: WindowDirection,
+  limit: number,
+): Promise<CommitWindow> {
+  return invoke<CommitWindow>("list_commits_window", {
+    filters,
+    cursor,
+    direction,
+    limit,
+  });
+}
+
+/** A window of commits centred on an anchor cursor — filter-change viewport
+ * recovery. The anchor need not survive the new filter; `anchorFound` says
+ * whether it did, and the rows centre on where it sits (or would sit). */
+export async function listCommitsAroundAnchor(
+  filters: TimelineFilters,
+  anchor: Cursor,
+  before: number,
+  after: number,
+): Promise<CommitAround> {
+  return invoke<CommitAround>("list_commits_around_anchor", {
+    filters,
+    anchor,
+    before,
+    after,
+  });
+}
+
+/** A window of commits centred on a 0-based rank — the random-access
+ * scrollbar's jump-load. `baseIndex` in the result places it in the
+ * `count`-tall virtual scroll space. */
+export async function listCommitsAtRank(
+  filters: TimelineFilters,
+  rank: number,
+  before: number,
+  after: number,
+): Promise<CommitAround> {
+  return invoke<CommitAround>("list_commits_at_rank", {
+    filters,
+    rank,
+    before,
+    after,
+  });
+}
+
+/** Total commits under `filters` — the timeline's count label. */
+export async function countCommits(filters: TimelineFilters): Promise<number> {
+  return invoke<number>("count_commits", { filters });
+}
+
+/** The current commit generation. The windowed timeline pins this as its
+ * `viewGeneration` so the scanner's later inserts don't disturb the page
+ * sequence it is showing. */
+export async function getTimelineGeneration(): Promise<number> {
+  return invoke<number>("get_timeline_generation");
+}
+
+/** The timeline's filter facets (author tallies + per-repo commit counts)
+ * under `filters` — the AuthorsChip + RepoChip count sources. The windowed
+ * timeline holds no full client-side commit array to tally itself. */
+export async function listFilterFacets(
+  filters: TimelineFilters,
+): Promise<FilterFacets> {
+  return invoke<FilterFacets>("list_filter_facets", { filters });
+}
+
+/** Lightweight scanner→UI signal: a new generation landed (a `git commit`
+ * in a watched repo, a discovery sweep, …). The windowed timeline re-pulls
+ * the affected windows from the cache rather than receiving commit arrays. */
+export async function onTimelineInvalidated(
+  cb: (p: TimelineInvalidated) => void,
 ): Promise<UnlistenFn> {
-  return listen<TimelineRepoFill>("timeline://repo-fill", (e) => cb(e.payload));
+  return listen<TimelineInvalidated>("timeline://invalidated", (e) =>
+    cb(e.payload),
+  );
 }
 
 /** Fires when the panel is summoned (tray click / global hotkey). The

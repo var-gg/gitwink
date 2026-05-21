@@ -1,10 +1,25 @@
-import type { LaneGraphData } from "../lib/lanes";
+import type { LaneCommit, LaneEdge } from "../lib/lanes";
 import type { CommitSummary } from "../types";
 
 interface Props {
-  graph: LaneGraphData;
-  /** Centre-y for each commit row in panel-body local coordinates. */
-  rowYs: number[];
+  /** Full lane-commit list (newest-first) — sliced to the visible band. */
+  laneCommits: LaneCommit[];
+  /** Edges already filtered to those intersecting the visible band. */
+  edges: LaneEdge[];
+  /** Lane count — sets the SVG width. */
+  totalLanes: number;
+  /** First visible commit index (inclusive, overscan included). */
+  first: number;
+  /** One past the last visible commit index. */
+  last: number;
+  /** Content-Y centre of commit row `idx`. */
+  cy: (idx: number) => number;
+  /** Content-Y an off-window parent edge runs down to (the list bottom). */
+  bottomY: number;
+  /** Content-Y of the SVG's top edge — band coords are content − bandTop. */
+  bandTop: number;
+  /** SVG height in px. */
+  bandHeight: number;
 }
 
 const LANE_WIDTH = 12;
@@ -26,17 +41,26 @@ function commitTooltip(commit: CommitSummary): string {
   return `${glyph} ${label} · ${commit.shortHash}\n${summary}`;
 }
 
-export function LaneGraph({ graph, rowYs }: Props) {
-  const width = Math.max(graph.totalLanes * LANE_WIDTH, LANE_WIDTH);
-  const lastY = rowYs.length > 0 ? rowYs[rowYs.length - 1] : 0;
-  const height = lastY + 24;
-
-  function cx(lane: number): number {
-    return lane * LANE_WIDTH + LANE_WIDTH / 2;
-  }
-  function cy(idx: number): number {
-    return rowYs[idx] ?? 0;
-  }
+/** The single-repo DAG, windowed: only the nodes + edges intersecting the
+ * visible band are emitted as SVG, and coordinates are local to the band
+ * (content-Y − bandTop) so they stay small + precise no matter how deep
+ * the repo's history runs. The SVG viewport clips the off-band tails of
+ * edges that merely cross the band. */
+export function LaneGraph({
+  laneCommits,
+  edges,
+  totalLanes,
+  first,
+  last,
+  cy,
+  bottomY,
+  bandTop,
+  bandHeight,
+}: Props) {
+  const width = Math.max(totalLanes * LANE_WIDTH, LANE_WIDTH);
+  const height = Math.max(bandHeight, 0);
+  const cx = (lane: number) => lane * LANE_WIDTH + LANE_WIDTH / 2;
+  const localY = (contentY: number) => contentY - bandTop;
 
   return (
     <svg
@@ -44,10 +68,11 @@ export function LaneGraph({ graph, rowYs }: Props) {
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
+      style={{ top: bandTop }}
     >
-      {graph.edges.map((e, i) => {
-        const fromY = cy(e.fromIdx);
-        const toY = e.toIdx >= 0 ? cy(e.toIdx) : height;
+      {edges.map((e, i) => {
+        const fromY = localY(cy(e.fromIdx));
+        const toY = localY(e.toIdx >= 0 ? cy(e.toIdx) : bottomY);
         const fromX = cx(e.fromLane);
         const toX = cx(e.toLane);
         const d =
@@ -65,19 +90,22 @@ export function LaneGraph({ graph, rowYs }: Props) {
           />
         );
       })}
-      {graph.laneCommits.map((lc, i) => (
-        <circle
-          key={i}
-          cx={cx(lc.lane)}
-          cy={cy(i)}
-          r={CIRCLE_R}
-          fill={lc.color}
-          stroke="rgba(0,0,0,0.22)"
-          strokeWidth={0.5}
-        >
-          <title>{commitTooltip(lc.commit)}</title>
-        </circle>
-      ))}
+      {laneCommits.slice(first, last).map((lc, i) => {
+        const idx = first + i;
+        return (
+          <circle
+            key={idx}
+            cx={cx(lc.lane)}
+            cy={localY(cy(idx))}
+            r={CIRCLE_R}
+            fill={lc.color}
+            stroke="rgba(0,0,0,0.22)"
+            strokeWidth={0.5}
+          >
+            <title>{commitTooltip(lc.commit)}</title>
+          </circle>
+        );
+      })}
     </svg>
   );
 }

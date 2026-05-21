@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
@@ -11,6 +11,12 @@ use crate::git::CommitSummary;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Repo {
+    /// `repos.rowid` — the integer the `commits` cache stores as `repo_id`.
+    /// The windowed timeline filters by these ids (`TimelineFilters`). 0 for
+    /// a `Repo` value that did not come from `list_repos` (the legacy
+    /// `discover_repos` upsert path, whose values never reach the UI).
+    #[serde(default)]
+    pub id: i64,
     pub path: String,
     pub name: String,
     /// Lifecycle status: "active" | "missing" | "removed". Frontend
@@ -29,6 +35,51 @@ fn default_status() -> String {
 /// half the cap.
 pub const DIFF_CACHE_MAX_BYTES: i64 = 500 * 1024 * 1024;
 
+/// DDL for the `commits` table and its indexes (schema v4). Shared by the
+/// `open()` migration and the test fixtures so the two never drift.
+///
+/// `repo_id`, `sort_ts` and `first_seen_generation` are `NOT NULL DEFAULT 0`
+/// so the table tolerates writes from older builds during the rollout — the
+/// shared cache.db is also opened by pre-v4 releases, which omit those
+/// columns rather than hitting a constraint error. v4's own `upsert_commits`
+/// always supplies real values.
+///
+/// `first_seen_generation` records the generation counter (see
+/// `next_generation`) in effect when the row was first inserted, and is
+/// never rewritten by a later conflict-update. A reader pinned to generation
+/// N filters `first_seen_generation <= N` for an MVCC-lite snapshot the
+/// background scanner's subsequent inserts cannot disturb.
+const COMMITS_SCHEMA_V5: &str = r#"
+CREATE TABLE commits (
+    repo_path TEXT NOT NULL,
+    hash TEXT NOT NULL,
+    repo_id INTEGER NOT NULL DEFAULT 0,
+    repo_name TEXT NOT NULL,
+    short_hash TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    author TEXT NOT NULL,
+    email TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    sort_ts INTEGER NOT NULL DEFAULT 0,
+    branch_label TEXT,
+    is_merge INTEGER NOT NULL DEFAULT 0,
+    is_tagged INTEGER NOT NULL DEFAULT 0,
+    parents TEXT NOT NULL DEFAULT '[]',
+    message TEXT NOT NULL DEFAULT '',
+    remote_tip_label TEXT,
+    remote_tip_extra_count INTEGER NOT NULL DEFAULT 0,
+    first_seen_generation INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (repo_path, hash)
+);
+-- Total-order index for keyset window queries. Newest-first = ascending on
+-- sort_ts (= -timestamp). (repo_path, hash) is the table's primary key, so
+-- (sort_ts, repo_path, hash) is a genuinely unique + stable total order —
+-- repo_id is denormalised and mutable, so it must not key the cursor.
+CREATE INDEX idx_commits_timeline ON commits(sort_ts, repo_path, hash);
+-- Retained for the legacy since-filtered list_recent_commits.
+CREATE INDEX idx_commits_ts ON commits(timestamp);
+"#;
+
 fn db_path(app: &AppHandle) -> Result<PathBuf> {
     let dir = app
         .path()
@@ -40,7 +91,16 @@ fn db_path(app: &AppHandle) -> Result<PathBuf> {
 
 pub fn open(app: &AppHandle) -> Result<Connection> {
     let path = db_path(app)?;
-    let conn = Connection::open(&path).with_context(|| format!("open {}", path.display()))?;
+    let mut conn =
+        Connection::open(&path).with_context(|| format!("open {}", path.display()))?;
+    // The cache is opened on separate connections from several threads — the
+    // file watcher, command spawn_blocking tasks, the discovery orchestrator.
+    // Without a busy timeout a concurrent writer fails immediately with
+    // SQLITE_BUSY; 5s lets the short upsert transactions queue instead.
+    // Phase 2's per-batch generation bump makes every `upsert_commits` a
+    // (slightly longer) write transaction, so this keeps that contention
+    // invisible.
+    let _ = conn.busy_timeout(Duration::from_secs(5));
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS repos (
@@ -50,24 +110,6 @@ pub fn open(app: &AppHandle) -> Result<Connection> {
             last_seen_at INTEGER NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_repos_last_seen ON repos(last_seen_at);
-
-        CREATE TABLE IF NOT EXISTS commits (
-            repo_path TEXT NOT NULL,
-            hash TEXT NOT NULL,
-            repo_name TEXT NOT NULL,
-            short_hash TEXT NOT NULL,
-            summary TEXT NOT NULL,
-            author TEXT NOT NULL,
-            email TEXT NOT NULL,
-            timestamp INTEGER NOT NULL,
-            branch_label TEXT,
-            is_merge INTEGER NOT NULL DEFAULT 0,
-            is_tagged INTEGER NOT NULL DEFAULT 0,
-            parents TEXT NOT NULL DEFAULT '[]',
-            message TEXT NOT NULL DEFAULT '',
-            PRIMARY KEY (repo_path, hash)
-        );
-        CREATE INDEX IF NOT EXISTS idx_commits_ts ON commits(timestamp);
 
         CREATE TABLE IF NOT EXISTS diffs (
             repo_path TEXT NOT NULL,
@@ -83,28 +125,8 @@ pub fn open(app: &AppHandle) -> Result<Connection> {
     )?;
     // Migrations: idempotent ALTERs for columns added after the original
     // schema. SQLite raises "duplicate column" on a fresh DB; ignored.
-    let _ = conn.execute("ALTER TABLE commits ADD COLUMN branch_label TEXT", []);
-    let _ = conn.execute(
-        "ALTER TABLE commits ADD COLUMN is_merge INTEGER NOT NULL DEFAULT 0",
-        [],
-    );
-    let _ = conn.execute(
-        "ALTER TABLE commits ADD COLUMN is_tagged INTEGER NOT NULL DEFAULT 0",
-        [],
-    );
-    let _ = conn.execute(
-        "ALTER TABLE commits ADD COLUMN parents TEXT NOT NULL DEFAULT '[]'",
-        [],
-    );
-    let _ = conn.execute(
-        "ALTER TABLE commits ADD COLUMN message TEXT NOT NULL DEFAULT ''",
-        [],
-    );
-    let _ = conn.execute("ALTER TABLE commits ADD COLUMN remote_tip_label TEXT", []);
-    let _ = conn.execute(
-        "ALTER TABLE commits ADD COLUMN remote_tip_extra_count INTEGER NOT NULL DEFAULT 0",
-        [],
-    );
+    // (The `commits` table is a pure cache recreated by the schema-v3
+    // block below — its columns all live in that CREATE, no ALTERs here.)
 
     // v0.1.1 discovery lifecycle migration. `repos` gains identity +
     // status + provenance fields so the tiered scanner can express
@@ -238,9 +260,34 @@ pub fn open(app: &AppHandle) -> Result<Connection> {
         "#,
     )?;
 
-    // PRAGMA user_version = 2 marks schema generation 2 (post v0.1.0).
-    // We don't gate behaviour on this yet, but future migrations can.
-    let _ = conn.pragma_update(None, "user_version", 2_i64);
+    // Schema v3 gave `commits` `repo_id` + `sort_ts`; v4 added
+    // `first_seen_generation`; v5 re-keys the timeline index to
+    // `(sort_ts, repo_path, hash)` — `(repo_path, hash)` is the table's
+    // primary key, a genuinely unique + stable total order (`repo_id` can
+    // be 0 mid-discovery and is mutable, so it must not key the cursor).
+    // `commits` is a pure cache the scanner refills, so each step drops &
+    // recreates it; `repos` / `meta` (user state, the generation counter)
+    // are untouched.
+    //
+    // The whole migration runs inside an IMMEDIATE transaction so that
+    // concurrent `open()` calls (file watcher, orchestrator, IPC workers)
+    // serialize: the first takes the write lock and migrates, the rest
+    // block then re-read `user_version` inside their own transaction and
+    // skip. Without it two opens could both see `user_version < 5` and
+    // race the DROP / CREATE.
+    {
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let schema_ver: i64 = tx
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap_or(0);
+        if schema_ver < 5 {
+            tx.execute_batch("DROP TABLE IF EXISTS commits;")?;
+            tx.execute_batch(COMMITS_SCHEMA_V5)?;
+            tx.pragma_update(None, "user_version", 5_i64)?;
+        }
+        tx.commit()?;
+    }
 
     // v0.1.2 cleanup: the v0.1.1 orchestrator used `fs::canonicalize`
     // and stored its `\\?\…` Windows extended-length output as
@@ -335,7 +382,7 @@ pub fn list_repos(conn: &Connection) -> Result<Vec<Repo>> {
     // through — the UI greys them out so the user can decide.
     let mut stmt = conn.prepare(
         r#"
-        SELECT path, name, status
+        SELECT rowid, path, name, status
         FROM repos
         WHERE user_state != 'removed'
         ORDER BY name COLLATE NOCASE
@@ -344,9 +391,10 @@ pub fn list_repos(conn: &Connection) -> Result<Vec<Repo>> {
     let rows = stmt
         .query_map([], |row| {
             Ok(Repo {
-                path: row.get(0)?,
-                name: row.get(1)?,
-                status: row.get(2)?,
+                id: row.get(0)?,
+                path: row.get(1)?,
+                name: row.get(2)?,
+                status: row.get(3)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -419,19 +467,103 @@ pub fn meta_set(conn: &Connection, key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+// ----- commit generation (Phase 2: MVCC-lite snapshot) -----
+
+/// `meta` key holding the monotonic commit-generation counter.
+const GENERATION_KEY: &str = "commit_generation";
+
+/// Atomically bump the commit generation and return the new value.
+///
+/// The generation is a counter the scanner advances exactly once per write
+/// batch (see `upsert_commits`); every commit a batch newly inserts is
+/// stamped with the generation then in effect. A reader that pins
+/// `view_generation = N` then sees a stable snapshot — later batches insert
+/// at a generation > N and stay invisible until the reader re-pins.
+///
+/// MUST be called as the first statement of the same transaction that
+/// writes the batch's commits, so the bump and the rows it stamps commit
+/// together: a reader can never observe a half-applied batch, and two
+/// concurrent batches can never share a generation.
+fn next_generation(conn: &Connection) -> Result<i64> {
+    conn.execute(
+        r#"
+        INSERT INTO meta (key, value, updated_at) VALUES (?1, '1', ?2)
+        ON CONFLICT(key) DO UPDATE SET
+            value = CAST(value AS INTEGER) + 1,
+            updated_at = excluded.updated_at
+        "#,
+        params![GENERATION_KEY, unix_now()],
+    )?;
+    let generation: i64 = conn.query_row(
+        "SELECT CAST(value AS INTEGER) FROM meta WHERE key = ?1",
+        params![GENERATION_KEY],
+        |r| r.get(0),
+    )?;
+    Ok(generation)
+}
+
+/// The current commit generation — what a fresh reader should pin as its
+/// `view_generation`. 0 before the scanner has written any batch.
+pub fn current_generation(conn: &Connection) -> Result<i64> {
+    let raw = meta_get(conn, GENERATION_KEY)?;
+    Ok(raw.and_then(|s| s.parse().ok()).unwrap_or(0))
+}
+
 // ----- commits -----
 
-pub fn upsert_commits(conn: &mut Connection, commits: &[CommitSummary]) -> Result<()> {
+/// What a `upsert_commits` batch did. `generation` is the new generation the
+/// batch's freshly-inserted commits were stamped with; `inserted` counts only
+/// genuinely-new commits — a conflict-update of an already-cached commit is
+/// not counted, and does not change that commit's `first_seen_generation`.
+/// Callers that emit a `timeline://invalidated` event forward both fields;
+/// callers that only need the rows persisted ignore the value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpsertOutcome {
+    pub generation: i64,
+    pub inserted: usize,
+}
+
+/// Lightweight scanner→UI invalidation signal, emitted as the
+/// `timeline://invalidated` event. The windowed-pull model never pushes
+/// commit arrays to the frontend: the scanner writes to the cache and only
+/// announces "generation N landed, touching `repo_path`, +`inserted` new
+/// commits". The UI then re-pulls whatever windows it currently shows. The
+/// payload is tiny, so it stays cheap even when a discovery sweep emits one
+/// per repo. camelCase to match the other event payloads.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineInvalidated {
+    pub generation: i64,
+    pub inserted: usize,
+    pub repo_path: String,
+}
+
+/// Insert or update a batch of commits, advancing the commit generation by
+/// one. Freshly-inserted rows are stamped with the new generation;
+/// already-cached rows keep their original `first_seen_generation` (only
+/// their mutable fields — branch labels, remote tips — are refreshed).
+/// Returns the new generation and the count of genuinely-new commits. An
+/// empty batch is a no-op and returns the `generation: 0` sentinel.
+pub fn upsert_commits(conn: &mut Connection, commits: &[CommitSummary]) -> Result<UpsertOutcome> {
     if commits.is_empty() {
-        return Ok(());
+        return Ok(UpsertOutcome {
+            generation: 0,
+            inserted: 0,
+        });
     }
     let tx = conn.transaction()?;
+    // One generation per batch — bumped first, before any row is written, so
+    // the whole batch (counter + rows) commits atomically.
+    let generation = next_generation(&tx)?;
+    let mut inserted = 0usize;
     {
         let mut stmt = tx.prepare(
             r#"
-            INSERT INTO commits (repo_path, hash, repo_name, short_hash, summary, author, email, timestamp, branch_label, is_merge, is_tagged, parents, message, remote_tip_label, remote_tip_extra_count)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+            INSERT INTO commits (repo_path, hash, repo_id, repo_name, short_hash, summary, author, email, timestamp, sort_ts, branch_label, is_merge, is_tagged, parents, message, remote_tip_label, remote_tip_extra_count, first_seen_generation)
+            VALUES (?1, ?2, COALESCE((SELECT rowid FROM repos WHERE path = ?1), 0), ?3, ?4, ?5, ?6, ?7, ?8, -?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
             ON CONFLICT(repo_path, hash) DO UPDATE SET
+                repo_id = excluded.repo_id,
+                sort_ts = excluded.sort_ts,
                 repo_name = excluded.repo_name,
                 summary = excluded.summary,
                 author = excluded.author,
@@ -444,31 +576,47 @@ pub fn upsert_commits(conn: &mut Connection, commits: &[CommitSummary]) -> Resul
                 message = excluded.message,
                 remote_tip_label = excluded.remote_tip_label,
                 remote_tip_extra_count = excluded.remote_tip_extra_count
+            RETURNING first_seen_generation
             "#,
         )?;
         for c in commits {
             let parents_json = serde_json::to_string(&c.parents).unwrap_or_else(|_| "[]".into());
-            stmt.execute(params![
-                c.repo_path,
-                c.hash,
-                c.repo_name,
-                c.short_hash,
-                c.summary,
-                c.author,
-                c.email,
-                c.timestamp,
-                c.branch_label,
-                c.is_merge as i32,
-                c.is_tagged as i32,
-                parents_json,
-                c.message,
-                c.remote_tip_label,
-                c.remote_tip_extra_count as i64,
-            ])?;
+            // RETURNING yields the row's `first_seen_generation` after the
+            // statement. A fresh insert stamped it with `generation`; a
+            // conflict-update left the (necessarily older) original value in
+            // place. Since `generation` is strictly greater than every prior
+            // generation, a match means "this row is new".
+            let row_generation: i64 = stmt.query_row(
+                params![
+                    c.repo_path,
+                    c.hash,
+                    c.repo_name,
+                    c.short_hash,
+                    c.summary,
+                    c.author,
+                    c.email,
+                    c.timestamp,
+                    c.branch_label,
+                    c.is_merge as i32,
+                    c.is_tagged as i32,
+                    parents_json,
+                    c.message,
+                    c.remote_tip_label,
+                    c.remote_tip_extra_count as i64,
+                    generation,
+                ],
+                |r| r.get(0),
+            )?;
+            if row_generation == generation {
+                inserted += 1;
+            }
         }
     }
     tx.commit()?;
-    Ok(())
+    Ok(UpsertOutcome {
+        generation,
+        inserted,
+    })
 }
 
 pub fn list_recent_commits(
@@ -509,6 +657,482 @@ pub fn list_recent_commits(
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
+}
+
+// ----- timeline window queries (Phase 1: windowed-pull) -----
+
+/// A keyset cursor into the timeline's total order. `(sort_ts, repo_path,
+/// hash)` is unique across `commits` — `(repo_path, hash)` is the table's
+/// primary key — so a cursor points unambiguously between two rows and
+/// stays valid + stable under concurrent scanner inserts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Cursor {
+    pub sort_ts: i64,
+    pub repo_path: String,
+    pub hash: String,
+}
+
+/// Which way a window query reads from its cursor. `Older` walks toward
+/// older commits (down the timeline), `Newer` toward newer (up).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WindowDirection {
+    Older,
+    Newer,
+}
+
+/// Server-side timeline filters. Every `None` field means "no restriction".
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineFilters {
+    /// Restrict to these repo ids. `None` = all repos.
+    pub repo_ids: Option<Vec<i64>>,
+    /// Restrict to these author names. `None` = all authors.
+    pub authors: Option<Vec<String>>,
+    /// Only commits at/after this unix-seconds timestamp. `None` = all time.
+    pub since: Option<i64>,
+    /// MVCC-lite snapshot pin. When `Some(n)`, only commits whose
+    /// `first_seen_generation <= n` are visible — commits the background
+    /// scanner inserted after the UI pinned generation `n` stay hidden
+    /// until it re-pins. `None` = no pin, every commit visible (the
+    /// pre-Phase-2 behaviour the legacy non-windowed paths still rely on).
+    pub view_generation: Option<i64>,
+}
+
+/// One page of the timeline plus the cursors/flags the UI needs to fetch
+/// adjacent pages. `rows` is always newest-first (sort_ts ascending).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitWindow {
+    pub rows: Vec<CommitSummary>,
+    pub start_cursor: Option<Cursor>,
+    pub end_cursor: Option<Cursor>,
+    pub has_newer: bool,
+    pub has_older: bool,
+}
+
+/// The 15 CommitSummary fields. The cursor's `repo_path` + `hash` are reused
+/// from here (col 0 + col 2); `sort_ts` is derived (= -timestamp).
+const TIMELINE_COLS: &str = "repo_path, repo_name, hash, short_hash, summary, \
+    author, email, timestamp, branch_label, is_merge, is_tagged, parents, \
+    message, remote_tip_label, remote_tip_extra_count";
+
+/// Map a row selecting `TIMELINE_COLS` to a CommitSummary + its cursor.
+fn row_to_window_item(row: &rusqlite::Row) -> rusqlite::Result<(CommitSummary, Cursor)> {
+    let parents_json: String = row.get(11)?;
+    let parents: Vec<String> = serde_json::from_str(&parents_json).unwrap_or_default();
+    let timestamp: i64 = row.get(7)?;
+    let repo_path: String = row.get(0)?;
+    let hash: String = row.get(2)?;
+    let summary = CommitSummary {
+        repo_path: repo_path.clone(),
+        repo_name: row.get(1)?,
+        hash: hash.clone(),
+        short_hash: row.get(3)?,
+        summary: row.get(4)?,
+        author: row.get(5)?,
+        email: row.get(6)?,
+        timestamp,
+        branch_label: row.get(8)?,
+        is_merge: row.get::<_, i32>(9)? != 0,
+        is_tagged: row.get::<_, i32>(10)? != 0,
+        parents,
+        message: row.get(12)?,
+        remote_tip_label: row.get(13)?,
+        remote_tip_extra_count: row.get::<_, i64>(14)? as usize,
+    };
+    let cursor = Cursor {
+        sort_ts: -timestamp,
+        repo_path,
+        hash,
+    };
+    Ok((summary, cursor))
+}
+
+/// Build the SQL filter fragment (each piece prefixed with " AND ") plus
+/// the bound params it introduces. `repo_ids` go inline as an integer
+/// literal — they are our own row ids, never user text, and a huge
+/// multi-repo selection would otherwise blow past SQLite's bound-variable
+/// limit. `authors` (bounded, small), `since` and `view_generation` use
+/// bound params.
+fn build_filter_sql(filters: &TimelineFilters) -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
+    let mut sql = String::new();
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(since) = filters.since {
+        if since > 0 {
+            // sort_ts = -timestamp and leads idx_commits_timeline, so a
+            // sort_ts bound is an index range — `timestamp >= ?` would
+            // only ever be a residual filter.
+            sql.push_str(" AND sort_ts <= ?");
+            params.push(Box::new(-since));
+        }
+    }
+    if let Some(repo_ids) = &filters.repo_ids {
+        // An explicit empty selection genuinely means "no repos" — the UI
+        // sends `None` for the all-repos case.
+        if repo_ids.is_empty() {
+            sql.push_str(" AND 0");
+        } else {
+            let list = repo_ids
+                .iter()
+                .map(|id| id.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            sql.push_str(&format!(" AND repo_id IN ({list})"));
+        }
+    }
+    if let Some(authors) = &filters.authors {
+        if authors.is_empty() {
+            sql.push_str(" AND 0");
+        } else {
+            let marks = vec!["?"; authors.len()].join(",");
+            sql.push_str(&format!(" AND author IN ({marks})"));
+            for a in authors {
+                params.push(Box::new(a.clone()));
+            }
+        }
+    }
+    // MVCC-lite snapshot pin: hide commits first seen after the caller's
+    // pinned generation. `first_seen_generation` is a residual predicate on
+    // the `idx_commits_timeline` scan — the keyset order is unaffected, so
+    // pagination over the pinned subset stays gap- and dupe-free.
+    if let Some(view_generation) = filters.view_generation {
+        sql.push_str(" AND first_seen_generation <= ?");
+        params.push(Box::new(view_generation));
+    }
+    (sql, params)
+}
+
+/// Fetch one keyset-paginated page of the timeline. `cursor == None` reads
+/// from the appropriate end (top for `Older`).
+pub fn list_commits_window(
+    conn: &Connection,
+    filters: &TimelineFilters,
+    cursor: Option<&Cursor>,
+    direction: WindowDirection,
+    limit: usize,
+) -> Result<CommitWindow> {
+    let (filter_sql, mut bind) = build_filter_sql(filters);
+
+    // Overfetch one row to learn whether a further page exists in the
+    // reading direction. Newer pages read DESC and get reversed so the
+    // result is always newest-first.
+    let keep = limit.saturating_add(1);
+    let (order, keyset_op) = match direction {
+        WindowDirection::Older => ("ASC", ">"),
+        WindowDirection::Newer => ("DESC", "<"),
+    };
+
+    let mut sql = format!("SELECT {TIMELINE_COLS} FROM commits WHERE 1=1{filter_sql}");
+    if cursor.is_some() {
+        sql.push_str(&format!(
+            " AND (sort_ts, repo_path, hash) {keyset_op} (?, ?, ?)"
+        ));
+    }
+    sql.push_str(&format!(
+        " ORDER BY sort_ts {order}, repo_path {order}, hash {order} LIMIT ?"
+    ));
+
+    if let Some(c) = cursor {
+        bind.push(Box::new(c.sort_ts));
+        bind.push(Box::new(c.repo_path.clone()));
+        bind.push(Box::new(c.hash.clone()));
+    }
+    bind.push(Box::new(keep as i64));
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut items: Vec<(CommitSummary, Cursor)> = stmt
+        .query_map(rusqlite::params_from_iter(bind.iter()), row_to_window_item)?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Newer pages came back DESC — flip to newest-first.
+    if direction == WindowDirection::Newer {
+        items.reverse();
+    }
+
+    // Trim the overfetched row, if any. After the Newer reverse it sits at
+    // the front; for Older it sits at the back.
+    let has_more = items.len() > limit;
+    if has_more {
+        match direction {
+            WindowDirection::Older => items.truncate(limit),
+            WindowDirection::Newer => {
+                items.remove(0);
+            }
+        }
+    }
+
+    let start_cursor = items.first().map(|(_, c)| c.clone());
+    let end_cursor = items.last().map(|(_, c)| c.clone());
+    // A non-null cursor means we paged off a known row, so the opposite
+    // direction is populated; the reading direction's flag is `has_more`.
+    let (has_newer, has_older) = match direction {
+        WindowDirection::Older => (cursor.is_some(), has_more),
+        WindowDirection::Newer => (has_more, cursor.is_some()),
+    };
+
+    Ok(CommitWindow {
+        rows: items.into_iter().map(|(s, _)| s).collect(),
+        start_cursor,
+        end_cursor,
+        has_newer,
+        has_older,
+    })
+}
+
+/// Total commit count under `filters` — drives the virtual scrollbar size.
+pub fn count_commits(conn: &Connection, filters: &TimelineFilters) -> Result<i64> {
+    let (filter_sql, bind) = build_filter_sql(filters);
+    let sql = format!("SELECT COUNT(*) FROM commits WHERE 1=1{filter_sql}");
+    let n: i64 = conn.query_row(&sql, rusqlite::params_from_iter(bind.iter()), |r| r.get(0))?;
+    Ok(n)
+}
+
+/// Count of commits strictly newer than `cursor` under `filters` — i.e. the
+/// 0-based global rank `cursor`'s row holds (or would hold) in the filtered
+/// total order. O(rank); only on the discrete filter-change recovery path.
+fn count_newer_than(
+    conn: &Connection,
+    filters: &TimelineFilters,
+    cursor: &Cursor,
+) -> Result<i64> {
+    let (filter_sql, mut bind) = build_filter_sql(filters);
+    let sql = format!(
+        "SELECT COUNT(*) FROM commits WHERE 1=1{filter_sql} \
+         AND (sort_ts, repo_path, hash) < (?, ?, ?)"
+    );
+    bind.push(Box::new(cursor.sort_ts));
+    bind.push(Box::new(cursor.repo_path.clone()));
+    bind.push(Box::new(cursor.hash.clone()));
+    let n: i64 =
+        conn.query_row(&sql, rusqlite::params_from_iter(bind.iter()), |r| r.get(0))?;
+    Ok(n)
+}
+
+/// One author's commit tally under the active filters — the AuthorsChip
+/// facet. Mirrors the frontend `AuthorTally`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthorTally {
+    pub name: String,
+    pub count: i64,
+    pub last_activity: i64,
+}
+
+/// Per-repo commit count under the active filters — the RepoChip facet.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoCommitCount {
+    pub repo_id: i64,
+    pub count: i64,
+}
+
+/// The timeline's filter facets: author tallies + per-repo commit counts
+/// under `filters`. Phase 3's windowed timeline drops the full client-side
+/// commit array, so the AuthorsChip / RepoChip can't tally these
+/// themselves — this is their facet source, computed in one call.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilterFacets {
+    pub authors: Vec<AuthorTally>,
+    pub repos: Vec<RepoCommitCount>,
+}
+
+/// Compute the author + repo facets under `filters`. Authors come back
+/// most-recent-activity first. Callers pass the time window (`since`) but
+/// typically leave `repo_ids` / `authors` unset, so each facet covers
+/// every selectable value.
+pub fn list_filter_facets(
+    conn: &Connection,
+    filters: &TimelineFilters,
+) -> Result<FilterFacets> {
+    let (filter_sql, bind) = build_filter_sql(filters);
+
+    let authors_sql = format!(
+        "SELECT author, COUNT(*) AS cnt, MAX(timestamp) AS last \
+         FROM commits WHERE 1=1{filter_sql} \
+         GROUP BY author ORDER BY last DESC"
+    );
+    let mut stmt = conn.prepare(&authors_sql)?;
+    let authors = stmt
+        .query_map(rusqlite::params_from_iter(bind.iter()), |r| {
+            Ok(AuthorTally {
+                name: r.get(0)?,
+                count: r.get(1)?,
+                last_activity: r.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(stmt);
+
+    let repos_sql = format!(
+        "SELECT repo_id, COUNT(*) AS cnt \
+         FROM commits WHERE 1=1{filter_sql} GROUP BY repo_id"
+    );
+    let mut stmt = conn.prepare(&repos_sql)?;
+    let repos = stmt
+        .query_map(rusqlite::params_from_iter(bind.iter()), |r| {
+            Ok(RepoCommitCount {
+                repo_id: r.get(0)?,
+                count: r.get(1)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(FilterFacets { authors, repos })
+}
+
+/// Rows centred on an anchor cursor — `before` rows newer + the anchor row
+/// (when a commit sits exactly there and passes the filter) + `after` rows
+/// older. Restores the viewport after a filter change, where the previous
+/// anchor commit may or may not survive the new filter.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitAround {
+    pub rows: Vec<CommitSummary>,
+    pub anchor_found: bool,
+    /// 0-based global rank of `rows[0]` in the filtered total order — lets
+    /// the UI drop the loaded window into a `count`-tall virtual scroll
+    /// space. 0 when `rows` is empty.
+    pub base_index: i64,
+    pub start_cursor: Option<Cursor>,
+    pub end_cursor: Option<Cursor>,
+    pub has_newer: bool,
+    pub has_older: bool,
+}
+
+pub fn list_commits_around_anchor(
+    conn: &Connection,
+    filters: &TimelineFilters,
+    anchor: &Cursor,
+    before: usize,
+    after: usize,
+    anchor_rank: Option<i64>,
+) -> Result<CommitAround> {
+    let newer = list_commits_window(conn, filters, Some(anchor), WindowDirection::Newer, before)?;
+    let newer_count = newer.rows.len() as i64;
+    let older = list_commits_window(conn, filters, Some(anchor), WindowDirection::Older, after)?;
+
+    // The window queries are strict (`<` / `>`), so the anchor row itself
+    // lands in neither — fetch it directly to learn whether it survives the
+    // filter and to place it between the two halves.
+    let (filter_sql, filter_bind) = build_filter_sql(filters);
+    let anchor_sql = format!(
+        "SELECT {TIMELINE_COLS} FROM commits \
+         WHERE sort_ts = ? AND repo_path = ? AND hash = ?{filter_sql}"
+    );
+    let mut anchor_bind: Vec<Box<dyn rusqlite::ToSql>> = vec![
+        Box::new(anchor.sort_ts),
+        Box::new(anchor.repo_path.clone()),
+        Box::new(anchor.hash.clone()),
+    ];
+    anchor_bind.extend(filter_bind);
+    let anchor_row = match conn.query_row(
+        &anchor_sql,
+        rusqlite::params_from_iter(anchor_bind.iter()),
+        row_to_window_item,
+    ) {
+        Ok(item) => Some(item),
+        Err(rusqlite::Error::QueryReturnedNoRows) => None,
+        Err(e) => return Err(e.into()),
+    };
+    let anchor_found = anchor_row.is_some();
+
+    let mut rows: Vec<CommitSummary> =
+        Vec::with_capacity(newer.rows.len() + older.rows.len() + 1);
+    rows.extend(newer.rows);
+    if let Some((summary, _)) = anchor_row {
+        rows.push(summary);
+    }
+    rows.extend(older.rows);
+
+    let start_cursor = newer
+        .start_cursor
+        .or(if anchor_found { Some(anchor.clone()) } else { None })
+        .or(older.start_cursor);
+    let end_cursor = older
+        .end_cursor
+        .or(if anchor_found { Some(anchor.clone()) } else { None })
+        .or(newer.end_cursor);
+
+    // `rows[0]`'s global rank. When the caller resolved the anchor by rank
+    // (`list_commits_at_rank`), rows[0] sits exactly `newer_count` rows
+    // above it — no scan needed. Otherwise count the commits ahead of it.
+    let base_index = match anchor_rank {
+        Some(rank) => (rank - newer_count).max(0),
+        None => match &start_cursor {
+            Some(c) => count_newer_than(conn, filters, c)?,
+            None => 0,
+        },
+    };
+
+    Ok(CommitAround {
+        rows,
+        anchor_found,
+        base_index,
+        start_cursor,
+        end_cursor,
+        has_newer: newer.has_newer,
+        has_older: older.has_older,
+    })
+}
+
+/// The keyset cursor of the row at 0-based `rank` in the filtered total
+/// order, or `None` when `rank` is past the end. Backs the random-access
+/// scrollbar: the UI turns a scrollbar position into a rank, this resolves
+/// the anchor `list_commits_at_rank` then centres a window on. The `OFFSET`
+/// scan is O(rank) — fine for a discrete jump, never on the scroll path.
+pub fn cursor_at_rank(
+    conn: &Connection,
+    filters: &TimelineFilters,
+    rank: i64,
+) -> Result<Option<Cursor>> {
+    let (filter_sql, mut bind) = build_filter_sql(filters);
+    let sql = format!(
+        "SELECT sort_ts, repo_path, hash FROM commits WHERE 1=1{filter_sql} \
+         ORDER BY sort_ts ASC, repo_path ASC, hash ASC LIMIT 1 OFFSET ?"
+    );
+    bind.push(Box::new(rank.max(0)));
+    match conn.query_row(&sql, rusqlite::params_from_iter(bind.iter()), |r| {
+        Ok(Cursor {
+            sort_ts: r.get(0)?,
+            repo_path: r.get(1)?,
+            hash: r.get(2)?,
+        })
+    }) {
+        Ok(c) => Ok(Some(c)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// A window centred on the row at 0-based `rank` — the random-access
+/// scrollbar's jump-load. Resolves the anchor by rank, then defers to
+/// `list_commits_around_anchor` (so `base_index` lands at ≈ `rank - before`).
+/// An out-of-range `rank` yields an empty window pinned at the end.
+pub fn list_commits_at_rank(
+    conn: &Connection,
+    filters: &TimelineFilters,
+    rank: i64,
+    before: usize,
+    after: usize,
+) -> Result<CommitAround> {
+    match cursor_at_rank(conn, filters, rank)? {
+        Some(anchor) => {
+            list_commits_around_anchor(conn, filters, &anchor, before, after, Some(rank))
+        }
+        None => Ok(CommitAround {
+            rows: Vec::new(),
+            anchor_found: false,
+            base_index: count_commits(conn, filters)?,
+            start_cursor: None,
+            end_cursor: None,
+            has_newer: false,
+            has_older: false,
+        }),
+    }
 }
 
 // ----- diffs -----
@@ -609,4 +1233,446 @@ fn unix_now() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A fresh in-memory DB carrying just the v4 `commits` schema.
+    fn test_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(COMMITS_SCHEMA_V5).unwrap();
+        conn
+    }
+
+    /// A fresh in-memory DB with the v4 `commits` schema plus the minimal
+    /// `repos` + `meta` tables `upsert_commits` touches — the `repos` rowid
+    /// lookup and the `meta` generation counter respectively.
+    fn upsert_test_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(COMMITS_SCHEMA_V5).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE repos (path TEXT PRIMARY KEY, name TEXT NOT NULL);\
+             CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL, \
+             updated_at INTEGER NOT NULL);",
+        )
+        .unwrap();
+        conn
+    }
+
+    /// Build a minimal `CommitSummary` for `upsert_commits` tests.
+    fn sample_commit(repo_path: &str, hash: &str, ts: i64) -> CommitSummary {
+        CommitSummary {
+            repo_path: repo_path.to_string(),
+            repo_name: "repo".to_string(),
+            hash: hash.to_string(),
+            short_hash: hash.chars().take(7).collect(),
+            summary: "summary".to_string(),
+            author: "alice".to_string(),
+            email: "alice@example.com".to_string(),
+            timestamp: ts,
+            branch_label: None,
+            is_merge: false,
+            is_tagged: false,
+            parents: Vec::new(),
+            message: "message".to_string(),
+            remote_tip_label: None,
+            remote_tip_extra_count: 0,
+        }
+    }
+
+    /// Insert one commit at an explicit `first_seen_generation`. `sort_ts`
+    /// is derived from `ts` exactly as `upsert_commits` does (= -timestamp).
+    fn insert_gen(
+        conn: &Connection,
+        repo_id: i64,
+        hash: &str,
+        ts: i64,
+        author: &str,
+        generation: i64,
+    ) {
+        conn.execute(
+            "INSERT INTO commits (repo_path, hash, repo_id, repo_name, \
+             short_hash, summary, author, email, timestamp, sort_ts, \
+             first_seen_generation) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                format!("/repo/{repo_id}"),
+                hash,
+                repo_id,
+                format!("repo{repo_id}"),
+                hash,
+                "summary",
+                author,
+                "dev@example.com",
+                ts,
+                -ts,
+                generation,
+            ],
+        )
+        .unwrap();
+    }
+
+    /// Insert one commit at generation 0 (the always-visible default).
+    fn insert(conn: &Connection, repo_id: i64, hash: &str, ts: i64, author: &str) {
+        insert_gen(conn, repo_id, hash, ts, author, 0);
+    }
+
+    /// Page through the whole timeline (Older direction) via the cursor
+    /// chain, returning hashes newest-first.
+    fn walk(conn: &Connection, filters: &TimelineFilters, page: usize) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut cursor: Option<Cursor> = None;
+        loop {
+            let w =
+                list_commits_window(conn, filters, cursor.as_ref(), WindowDirection::Older, page)
+                    .unwrap();
+            out.extend(w.rows.iter().map(|c| c.hash.clone()));
+            if !w.has_older {
+                break;
+            }
+            cursor = Some(w.end_cursor.expect("has_older implies an end cursor"));
+        }
+        out
+    }
+
+    #[test]
+    fn window_paginates_without_gaps_or_dupes() {
+        let conn = test_db();
+        for i in 0..50 {
+            insert(&conn, 1, &format!("h{i:03}"), 1_000 + i, "alice");
+        }
+        let walked = walk(&conn, &TimelineFilters::default(), 7);
+        assert_eq!(walked.len(), 50);
+        let unique: std::collections::HashSet<_> = walked.iter().collect();
+        assert_eq!(unique.len(), 50, "no duplicates across pages");
+        assert_eq!(walked.first().unwrap().as_str(), "h049", "newest first");
+        assert_eq!(walked.last().unwrap().as_str(), "h000", "oldest last");
+    }
+
+    #[test]
+    fn identical_timestamps_keep_a_stable_total_order() {
+        let conn = test_db();
+        // 30 commits sharing one timestamp across 3 repos — the
+        // (sort_ts, repo_path, hash) total order must still paginate cleanly.
+        for repo in 1..=3 {
+            for i in 0..10 {
+                insert(&conn, repo, &format!("r{repo}c{i}"), 5_000, "bob");
+            }
+        }
+        let f = TimelineFilters::default();
+        let walked = walk(&conn, &f, 4);
+        assert_eq!(walked.len(), 30);
+        assert_eq!(
+            walked.iter().collect::<std::collections::HashSet<_>>().len(),
+            30,
+            "identical timestamps still paginate without gaps or dupes"
+        );
+        assert_eq!(walk(&conn, &f, 9), walked, "ordering is deterministic");
+    }
+
+    #[test]
+    fn count_and_filters() {
+        let conn = test_db();
+        for i in 0..20 {
+            insert(&conn, 1, &format!("a{i:02}"), 1_000 + i, "alice");
+        }
+        for i in 0..15 {
+            insert(&conn, 2, &format!("b{i:02}"), 1_000 + i, "bob");
+        }
+        assert_eq!(count_commits(&conn, &TimelineFilters::default()).unwrap(), 35);
+
+        let repo2 = TimelineFilters {
+            repo_ids: Some(vec![2]),
+            ..Default::default()
+        };
+        assert_eq!(count_commits(&conn, &repo2).unwrap(), 15);
+        assert_eq!(walk(&conn, &repo2, 6).len(), 15);
+
+        let alice = TimelineFilters {
+            authors: Some(vec!["alice".to_string()]),
+            ..Default::default()
+        };
+        assert_eq!(count_commits(&conn, &alice).unwrap(), 20);
+
+        // An explicit empty repo selection genuinely means "nothing".
+        let none = TimelineFilters {
+            repo_ids: Some(vec![]),
+            ..Default::default()
+        };
+        assert_eq!(count_commits(&conn, &none).unwrap(), 0);
+    }
+
+    #[test]
+    fn around_anchor_centres_on_a_present_anchor() {
+        let conn = test_db();
+        for i in 0..40 {
+            insert(&conn, 1, &format!("c{i:02}"), 2_000 + i, "alice");
+        }
+        let anchor = Cursor {
+            sort_ts: -2_020,
+            repo_path: "/repo/1".to_string(),
+            hash: "c20".to_string(),
+        };
+        let around =
+            list_commits_around_anchor(&conn, &TimelineFilters::default(), &anchor, 5, 5, None).unwrap();
+        assert!(around.anchor_found);
+        assert_eq!(around.rows.len(), 11, "5 newer + anchor + 5 older");
+        assert_eq!(around.rows[0].hash.as_str(), "c25");
+        assert_eq!(around.rows[5].hash.as_str(), "c20", "anchor in the middle");
+        assert_eq!(around.rows[10].hash.as_str(), "c15");
+    }
+
+    #[test]
+    fn around_anchor_handles_a_missing_anchor() {
+        let conn = test_db();
+        for i in 0..20 {
+            insert(&conn, 1, &format!("d{i:02}"), 3_000 + i * 10, "alice");
+        }
+        // A cursor at a timestamp where no commit sits (between d09 and
+        // d10) is still a valid position in the total order.
+        let anchor = Cursor {
+            sort_ts: -3_095,
+            repo_path: "/repo/1".to_string(),
+            hash: "zzz".to_string(),
+        };
+        let around =
+            list_commits_around_anchor(&conn, &TimelineFilters::default(), &anchor, 3, 3, None).unwrap();
+        assert!(!around.anchor_found);
+        assert_eq!(around.rows.len(), 6, "3 newer + 3 older, no anchor row");
+    }
+
+    #[test]
+    fn cursor_at_rank_resolves_positions() {
+        let conn = test_db();
+        for i in 0..30 {
+            insert(&conn, 1, &format!("e{i:02}"), 4_000 + i, "alice");
+        }
+        let f = TimelineFilters::default();
+        // rank 0 = newest (e29); rank 29 = oldest (e00).
+        assert_eq!(cursor_at_rank(&conn, &f, 0).unwrap().unwrap().hash, "e29");
+        assert_eq!(cursor_at_rank(&conn, &f, 29).unwrap().unwrap().hash, "e00");
+        // Past the end → None.
+        assert!(cursor_at_rank(&conn, &f, 30).unwrap().is_none());
+    }
+
+    #[test]
+    fn at_rank_centres_a_window_and_reports_base_index() {
+        let conn = test_db();
+        for i in 0..40 {
+            insert(&conn, 1, &format!("f{i:02}"), 5_000 + i, "alice");
+        }
+        let f = TimelineFilters::default();
+        // rank 0 = f39 (newest), so rank 20 = f19.
+        let w = list_commits_at_rank(&conn, &f, 20, 5, 5).unwrap();
+        assert!(w.anchor_found);
+        assert_eq!(w.rows.len(), 11, "5 newer + anchor + 5 older");
+        assert_eq!(w.base_index, 15, "rows[0] sits at rank 20 - 5");
+        assert_eq!(w.rows[0].hash, "f24", "rank 15 = f24");
+        assert_eq!(w.rows[5].hash, "f19", "anchor at the requested rank");
+        // A rank past the end → empty window pinned at the count.
+        let end = list_commits_at_rank(&conn, &f, 999, 5, 5).unwrap();
+        assert!(end.rows.is_empty());
+        assert_eq!(end.base_index, 40);
+    }
+
+    #[test]
+    fn around_anchor_reports_base_index() {
+        let conn = test_db();
+        for i in 0..40 {
+            insert(&conn, 1, &format!("g{i:02}"), 6_000 + i, "alice");
+        }
+        // g20 sits at rank 19 (g39 = rank 0); window rows[0] = g25 at rank 14.
+        let anchor = Cursor {
+            sort_ts: -6_020,
+            repo_path: "/repo/1".to_string(),
+            hash: "g20".to_string(),
+        };
+        let around =
+            list_commits_around_anchor(&conn, &TimelineFilters::default(), &anchor, 5, 5, None).unwrap();
+        assert_eq!(around.base_index, 14);
+        assert_eq!(around.rows[0].hash, "g25");
+    }
+
+    #[test]
+    fn generation_counter_is_monotonic() {
+        let mut conn = upsert_test_db();
+        assert_eq!(current_generation(&conn).unwrap(), 0, "0 before any batch");
+
+        // upsert_commits bumps the generation exactly once per batch.
+        let o1 = upsert_commits(&mut conn, &[sample_commit("/r/a", "h1", 100)]).unwrap();
+        assert_eq!(o1.generation, 1);
+        let o2 = upsert_commits(&mut conn, &[sample_commit("/r/a", "h2", 200)]).unwrap();
+        assert_eq!(o2.generation, 2);
+        assert_eq!(current_generation(&conn).unwrap(), 2);
+
+        // An empty batch is a no-op: no bump, `generation: 0` sentinel.
+        let o3 = upsert_commits(&mut conn, &[]).unwrap();
+        assert_eq!(o3, UpsertOutcome { generation: 0, inserted: 0 });
+        assert_eq!(
+            current_generation(&conn).unwrap(),
+            2,
+            "empty batch did not bump"
+        );
+    }
+
+    #[test]
+    fn upsert_stamps_generation_and_counts_only_new_rows() {
+        let mut conn = upsert_test_db();
+
+        // Batch 1: three brand-new commits.
+        let batch1 = [
+            sample_commit("/r/a", "h1", 100),
+            sample_commit("/r/a", "h2", 200),
+            sample_commit("/r/a", "h3", 300),
+        ];
+        let o1 = upsert_commits(&mut conn, &batch1).unwrap();
+        assert_eq!(
+            o1,
+            UpsertOutcome {
+                generation: 1,
+                inserted: 3
+            }
+        );
+
+        // Batch 2: one repeat (h3) + one new (h4) — only h4 counts as inserted.
+        let batch2 = [
+            sample_commit("/r/a", "h3", 300),
+            sample_commit("/r/a", "h4", 400),
+        ];
+        let o2 = upsert_commits(&mut conn, &batch2).unwrap();
+        assert_eq!(
+            o2,
+            UpsertOutcome {
+                generation: 2,
+                inserted: 1
+            }
+        );
+
+        // h3 keeps its original generation — it was *first* seen in batch 1,
+        // so batch 2's conflict-update must not rewrite first_seen_generation.
+        let h3_gen: i64 = conn
+            .query_row(
+                "SELECT first_seen_generation FROM commits WHERE hash = 'h3'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(h3_gen, 1, "first_seen_generation survives a re-upsert");
+
+        // h4 is stamped with batch 2's generation.
+        let h4_gen: i64 = conn
+            .query_row(
+                "SELECT first_seen_generation FROM commits WHERE hash = 'h4'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(h4_gen, 2);
+    }
+
+    #[test]
+    fn window_view_generation_hides_later_batches() {
+        let conn = test_db();
+        // Generation 1: 10 commits at the even timestamps.
+        for i in 0..10 {
+            insert_gen(&conn, 1, &format!("g1c{i:02}"), 1_000 + i * 2, "alice", 1);
+        }
+        // Generation 2: 10 commits interleaved at the odd timestamps between
+        // them — the scanner inserting into the middle of the timeline.
+        for i in 0..10 {
+            insert_gen(&conn, 1, &format!("g2c{i:02}"), 1_001 + i * 2, "alice", 2);
+        }
+
+        // A reader pinned to generation 1 sees only the generation-1 commits.
+        let pinned = TimelineFilters {
+            view_generation: Some(1),
+            ..Default::default()
+        };
+        let walked = walk(&conn, &pinned, 4);
+        assert_eq!(walked.len(), 10, "generation-2 inserts stay invisible");
+        assert!(
+            walked.iter().all(|h| h.starts_with("g1c")),
+            "only generation-1 commits, none from the later batch"
+        );
+        assert_eq!(count_commits(&conn, &pinned).unwrap(), 10);
+
+        // No pin sees every commit.
+        let all = TimelineFilters::default();
+        assert_eq!(walk(&conn, &all, 4).len(), 20);
+        assert_eq!(count_commits(&conn, &all).unwrap(), 20);
+
+        // Pinned to generation 2 also sees everything (1 <= 2 and 2 <= 2).
+        let pinned2 = TimelineFilters {
+            view_generation: Some(2),
+            ..Default::default()
+        };
+        assert_eq!(walk(&conn, &pinned2, 4).len(), 20);
+    }
+
+    #[test]
+    fn pinned_window_paginates_cleanly_while_newer_batches_arrive() {
+        let conn = test_db();
+        // The snapshot the reader pins: 40 commits at generation 1.
+        for i in 0..40 {
+            insert_gen(&conn, 1, &format!("base{i:02}"), 5_000 + i, "alice", 1);
+        }
+        let pinned = TimelineFilters {
+            view_generation: Some(1),
+            ..Default::default()
+        };
+
+        // Walk the snapshot a small page at a time; between every page a
+        // concurrent "scanner" batch lands at a later generation, interleaved
+        // into the same timestamp range. The pinned walk must be unaffected.
+        let mut out: Vec<String> = Vec::new();
+        let mut cursor: Option<Cursor> = None;
+        let mut intruder = 0;
+        loop {
+            let w =
+                list_commits_window(&conn, &pinned, cursor.as_ref(), WindowDirection::Older, 6)
+                    .unwrap();
+            out.extend(w.rows.iter().map(|c| c.hash.clone()));
+            insert_gen(&conn, 1, &format!("new{intruder:02}"), 5_000 + intruder, "bob", 2);
+            intruder += 1;
+            if !w.has_older {
+                break;
+            }
+            cursor = Some(w.end_cursor.expect("has_older implies an end cursor"));
+        }
+        assert_eq!(out.len(), 40, "exactly the pinned snapshot, no extra rows");
+        let unique: std::collections::HashSet<_> = out.iter().collect();
+        assert_eq!(unique.len(), 40, "no duplicates despite concurrent inserts");
+        assert!(out.iter().all(|h| h.starts_with("base")));
+    }
+
+    #[test]
+    fn filter_facets_tally_authors_and_repos() {
+        let conn = test_db();
+        // repo 1: 3 by alice + 2 by bob. repo 2: 4 by alice.
+        for i in 0..3 {
+            insert(&conn, 1, &format!("a{i}"), 1_000 + i, "alice");
+        }
+        for i in 0..2 {
+            insert(&conn, 1, &format!("b{i}"), 2_000 + i, "bob");
+        }
+        for i in 0..4 {
+            insert(&conn, 2, &format!("c{i}"), 3_000 + i, "alice");
+        }
+
+        let facets = list_filter_facets(&conn, &TimelineFilters::default()).unwrap();
+
+        // Authors: alice 7 (3 + 4), bob 2.
+        let alice = facets.authors.iter().find(|a| a.name == "alice").unwrap();
+        assert_eq!(alice.count, 7);
+        let bob = facets.authors.iter().find(|a| a.name == "bob").unwrap();
+        assert_eq!(bob.count, 2);
+
+        // Repos: repo 1 → 5, repo 2 → 4.
+        let r1 = facets.repos.iter().find(|r| r.repo_id == 1).unwrap();
+        assert_eq!(r1.count, 5);
+        let r2 = facets.repos.iter().find(|r| r.repo_id == 2).unwrap();
+        assert_eq!(r2.count, 4);
+    }
 }
