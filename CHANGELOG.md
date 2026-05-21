@@ -5,6 +5,34 @@ All notable changes to gitwink will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-05-22
+
+### Changed
+
+- The commit timeline is rebuilt on a windowed-pull architecture: it
+  pages commits in from the local cache instead of holding the whole
+  history in memory, so the all-repos timeline stays responsive no
+  matter how many repositories, commits, or branches you have. The
+  single-repo DAG view is virtualized the same way.
+- The all-repos timeline scrollbar now spans your entire history — drag
+  the thumb to jump to any point in time, not only the loaded range.
+- The Repo, Author, and Branch filter dropdowns are virtualized, so they
+  open instantly even with thousands of entries.
+
+### Added
+
+- A "↑ N new commits" pill appears when the background scanner finds new
+  commits while you are scrolled away from the top; click it to jump up
+  to them.
+
+### Fixed
+
+- The Repo chip now clearly distinguishes the single repository you have
+  drilled into from repositories merely checked in the multi-select
+  filter — the two were near-identical shades of blue before.
+- The diff window opens at a modest default size instead of reopening
+  oversized on high-DPI displays.
+
 ## [0.2.2] — 2026-05-21
 
 ### Added
