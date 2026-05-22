@@ -134,6 +134,9 @@ export function DiffApp() {
     const target = e.target as HTMLElement;
     if (target.closest('input, textarea, [contenteditable="true"]')) return;
     e.preventDefault();
+    // Custom menu belongs to the diff content only — right-clicking the
+    // header or file sidebar shows nothing (native menu stays suppressed).
+    if (!target.closest(".diff-main")) return;
     if (!ctx) return;
     const selection = window.getSelection()?.toString() ?? "";
     const range = getDiffSelectionRange();
