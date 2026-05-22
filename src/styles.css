@@ -1669,8 +1669,16 @@ body,
   }
 }
 
+/* Sized to the widest line so every row's tint spans the full scroll
+   width — short rows would otherwise show untinted gaps when scrolled. */
+.sbs-col-inner {
+  width: max-content;
+  min-width: 100%;
+}
+
 .sbs-hunk-header {
   background: rgba(80, 130, 240, 0.06);
+  width: 100%;
   padding: 4px 10px;
   opacity: 0.7;
   font-size: 11px;
@@ -1698,6 +1706,7 @@ body,
 .sbs-line {
   display: grid;
   grid-template-columns: 44px 16px max-content;
+  width: 100%;
   align-items: baseline;
   padding: 0 6px;
   min-height: 18px;

@@ -85,38 +85,42 @@ export function SideBySideDiff({ text, filePath }: Props) {
     <div className="sbs">
       <div className="sbs-cols">
         <div className="sbs-col" ref={leftRef}>
-          {hunks.map((h, hi) => (
-            <div key={hi}>
-              <div className="sbs-hunk-header">{h.header}</div>
-              {h.rows.map((r, ri) => (
-                <Line
-                  key={ri}
-                  side={r.left}
-                  kind="left"
-                  highlighter={highlighter}
-                  lang={lang}
-                  dark={dark}
-                />
-              ))}
-            </div>
-          ))}
+          <div className="sbs-col-inner">
+            {hunks.map((h, hi) => (
+              <div key={hi}>
+                <div className="sbs-hunk-header">{h.header}</div>
+                {h.rows.map((r, ri) => (
+                  <Line
+                    key={ri}
+                    side={r.left}
+                    kind="left"
+                    highlighter={highlighter}
+                    lang={lang}
+                    dark={dark}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
         <div className="sbs-col" ref={rightRef}>
-          {hunks.map((h, hi) => (
-            <div key={hi}>
-              <div className="sbs-hunk-header sbs-hunk-header-blank">&nbsp;</div>
-              {h.rows.map((r, ri) => (
-                <Line
-                  key={ri}
-                  side={r.right}
-                  kind="right"
-                  highlighter={highlighter}
-                  lang={lang}
-                  dark={dark}
-                />
-              ))}
-            </div>
-          ))}
+          <div className="sbs-col-inner">
+            {hunks.map((h, hi) => (
+              <div key={hi}>
+                <div className="sbs-hunk-header sbs-hunk-header-blank">&nbsp;</div>
+                {h.rows.map((r, ri) => (
+                  <Line
+                    key={ri}
+                    side={r.right}
+                    kind="right"
+                    highlighter={highlighter}
+                    lang={lang}
+                    dark={dark}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
