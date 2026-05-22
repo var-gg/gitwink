@@ -57,20 +57,22 @@ const SETTINGS_LABEL: &str = "settings";
 
 /// Open the settings window — or focus it if already open. Built lazily
 /// off the shared index.html, like the diff window; main.tsx routes the
-/// "settings" label to the Settings component.
+/// "settings" label to the Settings component. The panel is summoned
+/// alongside so diff/timeline size + font changes preview live.
 pub fn open_settings(app: &AppHandle) {
+    // Bring the panel up next to the settings window so the user can see
+    // size/font changes apply live. Drop its always-on-top so it can't
+    // cover the settings window — the next summon re-asserts it.
+    show_panel(app);
+    if let Some(panel) = app.get_webview_window(PANEL_LABEL) {
+        let _ = panel.set_always_on_top(false);
+    }
+
     if let Some(win) = app.get_webview_window(SETTINGS_LABEL) {
         let _ = win.unminimize();
         let _ = win.show();
         let _ = win.set_focus();
         return;
-    }
-    // The panel is always-on-top; drop that so it can't sit over the
-    // settings window. The next panel summon re-asserts it (toggle_panel).
-    if let Some(panel) = app.get_webview_window(PANEL_LABEL) {
-        if panel.is_visible().unwrap_or(false) {
-            let _ = panel.set_always_on_top(false);
-        }
     }
     let built = WebviewWindowBuilder::new(
         app,
