@@ -848,11 +848,23 @@ pub fn set_panel_hotkey(app: AppHandle, spec: String) -> Result<(), String> {
 #[tauri::command]
 pub fn set_panel_pinned(app: AppHandle, pinned: bool) {
     eprintln!("gitwink: set_panel_pinned({pinned})");
+    let _ = std::io::Write::flush(&mut std::io::stderr());
     settings::save_panel_pinned(&app, pinned);
     if let Some(state) = app.try_state::<PanelPinned>() {
         state.0.store(pinned, std::sync::atomic::Ordering::SeqCst);
     }
-    window::apply_panel_pinned(&app, pinned);
+    // Runtime toggle: ONLY flip always_on_top (safe Win32 toggle). We
+    // deliberately do NOT touch set_skip_taskbar here — that mutates
+    // WS_EX_TOOLWINDOW / WS_EX_APPWINDOW at runtime, which on Windows
+    // is a known WebView2 destabiliser (subsequent window builds can
+    // come up blank). The taskbar entry change applies on next launch
+    // via apply_panel_pinned in lib.rs setup. The blur-dismiss behaviour
+    // change is live regardless — it's just an atomic check.
+    if let Some(panel) = app.get_webview_window("panel") {
+        let r = panel.set_always_on_top(!pinned);
+        eprintln!("gitwink: set_panel_pinned runtime always_on_top={r:?}");
+        let _ = std::io::Write::flush(&mut std::io::stderr());
+    }
 }
 
 /// Open (or focus) the settings window from the frontend — used by the

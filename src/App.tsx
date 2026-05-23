@@ -806,8 +806,8 @@ function App() {
           }}
           title={
             pinned
-              ? "Unpin — return to glance mode (auto-hides on blur, no taskbar)"
-              : "Pin — keep open while clicking elsewhere; shows in taskbar"
+              ? "Unpin — return to glance mode (auto-hides on blur). The taskbar entry disappears on next launch."
+              : "Pin — keep open while clicking elsewhere. The taskbar entry appears on next launch."
           }
         >
           📌
