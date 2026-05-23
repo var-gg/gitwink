@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, WindowEvent,
@@ -61,11 +63,32 @@ pub fn show_panel(app: &AppHandle) {
 
 const SETTINGS_LABEL: &str = "settings";
 
+/// Serializes open_settings so two near-simultaneous triggers (tray
+/// click + header right-click within a frame; double-fire MenuEvents)
+/// can't both race into WebviewWindowBuilder::build() for the same
+/// "settings" label — that crashed gitwink.exe on Windows (exit code
+/// 0xcfffffff after two "building fresh settings window" eprintlns).
+static OPEN_SETTINGS_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
 /// Open the settings window — or focus it if already open. Built lazily
 /// off the shared index.html, like the diff window; main.tsx routes the
 /// "settings" label to the Settings component. The panel is summoned
 /// alongside so diff/timeline size + font changes preview live.
 pub fn open_settings(app: &AppHandle) {
+    // RAII release: clearing the flag in Drop guarantees we don't leak
+    // a stuck "in flight" if any branch panics or returns early.
+    struct ReleaseOnDrop;
+    impl Drop for ReleaseOnDrop {
+        fn drop(&mut self) {
+            OPEN_SETTINGS_IN_FLIGHT.store(false, Ordering::SeqCst);
+        }
+    }
+    if OPEN_SETTINGS_IN_FLIGHT.swap(true, Ordering::SeqCst) {
+        eprintln!("gitwink: open_settings already in flight, ignoring duplicate call");
+        let _ = std::io::Write::flush(&mut std::io::stderr());
+        return;
+    }
+    let _guard = ReleaseOnDrop;
     // Bring the panel up next to the settings window so the user can see
     // size/font changes apply live. Drop its always-on-top so it can't
     // cover the settings window — the next summon re-asserts it.
