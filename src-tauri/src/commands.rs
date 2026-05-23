@@ -847,6 +847,7 @@ pub fn set_panel_hotkey(app: AppHandle, spec: String) -> Result<(), String> {
 /// caller is responsible for broadcastSettings — see App.tsx.
 #[tauri::command]
 pub fn set_panel_pinned(app: AppHandle, pinned: bool) {
+    eprintln!("gitwink: set_panel_pinned({pinned})");
     settings::save_panel_pinned(&app, pinned);
     if let Some(state) = app.try_state::<PanelPinned>() {
         state.0.store(pinned, std::sync::atomic::Ordering::SeqCst);

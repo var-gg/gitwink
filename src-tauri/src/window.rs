@@ -74,12 +74,25 @@ pub fn open_settings(app: &AppHandle) {
         let _ = panel.set_always_on_top(false);
     }
 
+    // Try to reuse the existing settings window. If any of unminimize /
+    // show / set_focus fails (the OS killed it, prevent_close didn't
+    // take, Tauri's registry holds a stale handle), tear it down and
+    // build fresh rather than leaving the user staring at a blank shell.
     if let Some(win) = app.get_webview_window(SETTINGS_LABEL) {
-        let _ = win.unminimize();
-        let _ = win.show();
-        let _ = win.set_focus();
-        return;
+        let unmin = win.unminimize();
+        let show = win.show();
+        let focus = win.set_focus();
+        if unmin.is_ok() && show.is_ok() && focus.is_ok() {
+            eprintln!("gitwink: re-shown existing settings window");
+            return;
+        }
+        eprintln!(
+            "gitwink: existing settings window unusable (unmin={unmin:?} show={show:?} focus={focus:?}); rebuilding"
+        );
+        let _ = win.destroy();
     }
+
+    eprintln!("gitwink: building fresh settings window");
     let built = WebviewWindowBuilder::new(
         app,
         SETTINGS_LABEL,
@@ -96,23 +109,29 @@ pub fn open_settings(app: &AppHandle) {
     .build();
     match built {
         Ok(win) => {
+            eprintln!("gitwink: settings window built ok");
             // Hide instead of destroy on close — same pattern as the diff
             // window. Two reasons: re-open is instant (no rebuild / no
             // re-mount), and the get_webview_window check at the top of
             // open_settings can never race with a slow first-time build.
+            // On close, restore the panel's always-on-top for the
+            // current mode (glance → true; pinned → false) so the panel
+            // doesn't stay un-topmost after the user dismisses settings.
             let handle = app.clone();
             win.on_window_event(move |evt| match evt {
                 WindowEvent::CloseRequested { api, .. } => {
+                    eprintln!("gitwink: settings CloseRequested → prevent + hide");
                     api.prevent_close();
                     if let Some(w) = handle.get_webview_window(SETTINGS_LABEL) {
                         let _ = w.hide();
                     }
+                    assert_panel_always_on_top(&handle);
                 }
                 _ => {}
             });
         }
         Err(e) => {
-            eprintln!("gitwink: failed to open settings window: {e:#}");
+            eprintln!("gitwink: failed to build settings window: {e:#}");
         }
     }
 }
@@ -158,14 +177,22 @@ pub fn assert_panel_always_on_top(app: &AppHandle) {
 
 /// Apply the panel's pin/glance flags: skip_taskbar + always_on_top.
 /// Called by set_panel_pinned on toggle, and by lib.rs setup on startup
-/// so a saved pinned state takes effect before the first show.
+/// so a saved pinned state takes effect before the first show. Logs the
+/// per-call return values so a destabilising WebView2 interaction (the
+/// usual culprit when a runtime skip_taskbar toggle goes wrong) shows
+/// up in tauri dev's output.
 pub fn apply_panel_pinned(app: &AppHandle, pinned: bool) {
-    if let Some(panel) = app.get_webview_window(PANEL_LABEL) {
-        // skip_taskbar=true hides the panel from the taskbar (glance).
-        // pinned=true → false → panel appears in the taskbar.
-        let _ = panel.set_skip_taskbar(!pinned);
-        let _ = panel.set_always_on_top(!pinned);
-    }
+    let Some(panel) = app.get_webview_window(PANEL_LABEL) else {
+        eprintln!("gitwink: apply_panel_pinned but panel window missing");
+        return;
+    };
+    // skip_taskbar=true hides the panel from the taskbar (glance).
+    // pinned=true → false → panel appears in the taskbar.
+    let st = panel.set_skip_taskbar(!pinned);
+    let at = panel.set_always_on_top(!pinned);
+    eprintln!(
+        "gitwink: apply_panel_pinned(pinned={pinned}) → skip_taskbar={st:?} always_on_top={at:?}"
+    );
 }
 
 fn position_panel(window: &WebviewWindow) {
