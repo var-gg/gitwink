@@ -333,6 +333,7 @@ pub fn run() {
             commands::set_ui_scale,
             commands::set_diff_font,
             commands::set_panel_hotkey,
+            commands::open_settings_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

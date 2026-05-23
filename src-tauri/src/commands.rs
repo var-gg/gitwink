@@ -823,6 +823,13 @@ pub fn set_panel_hotkey(app: AppHandle, spec: String) -> Result<(), String> {
     }
 }
 
+/// Open (or focus) the settings window from the frontend — used by the
+/// panel header's right-click context menu, mirroring the tray entry.
+#[tauri::command]
+pub fn open_settings_window(app: AppHandle) {
+    window::open_settings(&app);
+}
+
 fn unix_now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

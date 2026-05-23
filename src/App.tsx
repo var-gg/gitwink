@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
 import { AuthorsChip } from "./components/AuthorsChip";
 import { BranchChip } from "./components/BranchChip";
+import { ContextMenu, type MenuItem } from "./components/ContextMenu";
 import { RepoChip } from "./components/RepoChip";
 import { Timeline } from "./components/Timeline";
 import { TimelineWindowed } from "./components/TimelineWindowed";
@@ -153,6 +155,16 @@ function App() {
   const [openChip, setOpenChip] = useState<
     "repo" | "time" | "authors" | "branch" | null
   >(null);
+
+  // Right-click on the panel header (empty space / drag handle / icon /
+  // status / upstream badge) opens this — currently a single "Settings…"
+  // entry, mirroring the tray menu. Chips and the close button keep
+  // their own click behaviour.
+  const [headerCtxMenu, setHeaderCtxMenu] = useState<{
+    x: number;
+    y: number;
+    items: MenuItem[];
+  } | null>(null);
 
   // Drop/paste add-repo flow: inline feedback only, no modal.
   // `addError` clears itself after 4s so a typo'd path doesn't linger.
@@ -677,7 +689,28 @@ function App() {
 
   return (
     <main className={"panel" + (singleMode ? " single-mode" : "")}>
-      <header className="panel-header" onPointerDown={startDrag}>
+      <header
+        className="panel-header"
+        onPointerDown={startDrag}
+        onContextMenu={(e) => {
+          const target = e.target as HTMLElement;
+          // Chips have their own dropdown behaviour; the close button is
+          // its own action. Right-click anywhere else on the header
+          // (empty space, drag handle, icon, status, badge) opens the menu.
+          if (target.closest(".chip-wrap, .panel-close")) return;
+          e.preventDefault();
+          setHeaderCtxMenu({
+            x: e.clientX,
+            y: e.clientY,
+            items: [
+              {
+                label: "Settings…",
+                onClick: () => void invoke("open_settings_window"),
+              },
+            ],
+          });
+        }}
+      >
         <img
           src="/icon.png"
           alt="gitwink"
@@ -809,6 +842,14 @@ function App() {
         <UpdateModal
           state={updateModal}
           onClose={() => setUpdateModal(null)}
+        />
+      )}
+      {headerCtxMenu && (
+        <ContextMenu
+          items={headerCtxMenu.items}
+          x={headerCtxMenu.x}
+          y={headerCtxMenu.y}
+          onClose={() => setHeaderCtxMenu(null)}
         />
       )}
     </main>
