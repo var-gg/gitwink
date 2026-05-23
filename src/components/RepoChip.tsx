@@ -3,12 +3,15 @@ import { useEffect, useMemo, useState } from "react";
 import type { Repo } from "../types";
 import { ChipDropdown } from "./ChipDropdown";
 import { VirtualChipList, type VirtualChipRow } from "./VirtualChipList";
+import { chipRowH, useUiScale } from "../lib/settings";
 
-// Virtualised-row heights (px) — mirror the box heights in styles.css.
-const REPO_ROW_H = 40; // .chip-item-row — two-line repo entry
-const SECTION_H = 21; // .chip-section — "📌 Pinned" label
-const ALL_H = 23; // .chip-section-all — "All repos" reset button
-const EMPTY_H = 34; // .chip-empty — "No repos match."
+// Virtualised-row BASE heights (px) at scale 1.0 — chipRowH multiplies
+// these by the current --ui-scale so the JS row heights track the CSS
+// content (which scales via calc(... * var(--ui-scale))).
+const REPO_ROW_H_BASE = 40; // .chip-item-row — two-line repo entry
+const SECTION_H_BASE = 21; // .chip-section — "📌 Pinned" label
+const ALL_H_BASE = 23; // .chip-section-all — "All repos" reset button
+const EMPTY_H_BASE = 34; // .chip-empty — "No repos match."
 
 interface Props {
   open: boolean;
@@ -43,6 +46,7 @@ export function RepoChip({
   totalRepoCount,
 }: Props) {
   const [query, setQuery] = useState("");
+  const scale = useUiScale();
 
   useEffect(() => {
     if (!open) setQuery("");
@@ -160,6 +164,13 @@ export function RepoChip({
   // the "All repos" button and the empty-state line are known-height
   // special rows interleaved with the repo rows.
   const rows = useMemo<VirtualChipRow[]>(() => {
+    // Scaled heights — shadow the module BASE values so the closure
+    // below uses one integer set everywhere, recomputed when scale changes.
+    const REPO_ROW_H = chipRowH(scale, REPO_ROW_H_BASE);
+    const SECTION_H = chipRowH(scale, SECTION_H_BASE);
+    const ALL_H = chipRowH(scale, ALL_H_BASE);
+    const EMPTY_H = chipRowH(scale, EMPTY_H_BASE);
+
     const repoRow = (r: Repo, withCount: boolean): VirtualChipRow => ({
       key: "repo:" + r.path,
       height: REPO_ROW_H,
@@ -243,6 +254,7 @@ export function RepoChip({
     onTogglePin,
     onHide,
     onClose,
+    scale,
   ]);
 
   return (

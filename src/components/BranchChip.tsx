@@ -3,11 +3,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { BranchInfo } from "../types";
 import { ChipDropdown } from "./ChipDropdown";
 import { VirtualChipList, type VirtualChipRow } from "./VirtualChipList";
+import { chipRowH, useUiScale } from "../lib/settings";
 
-// Virtualised-row heights (px) — mirror the box heights in styles.css.
-const ITEM_H = 26; // .chip-item — one-line branch entry
-const HEADER_H = 25; // .chip-section-header — "Local" / "Remote tracking"
-const EMPTY_H = 34; // .chip-empty — "No branches match."
+// Virtualised-row BASE heights (px) at scale 1.0 — chipRowH scales them
+// against the current --ui-scale so JS row heights match the CSS content.
+const ITEM_H_BASE = 26; // .chip-item — one-line branch entry
+const HEADER_H_BASE = 25; // .chip-section-header — "Local" / "Remote tracking"
+const EMPTY_H_BASE = 34; // .chip-empty — "No branches match."
 
 interface Props {
   open: boolean;
@@ -30,6 +32,7 @@ export function BranchChip({
   onChange,
 }: Props) {
   const [query, setQuery] = useState("");
+  const scale = useUiScale();
 
   useEffect(() => {
     if (!open) setQuery("");
@@ -101,6 +104,10 @@ export function BranchChip({
   // headers and the empty-state line are known-height special rows
   // interleaved with the branch rows.
   const rows = useMemo<VirtualChipRow[]>(() => {
+    const ITEM_H = chipRowH(scale, ITEM_H_BASE);
+    const HEADER_H = chipRowH(scale, HEADER_H_BASE);
+    const EMPTY_H = chipRowH(scale, EMPTY_H_BASE);
+
     const branchRow = (b: BranchInfo): VirtualChipRow => {
       // In the "all" meta-state the All branches row at the top carries the
       // highlight — individual items shouldn't ALSO look "checked", or a
@@ -177,7 +184,7 @@ export function BranchChip({
       });
     }
     return out;
-  }, [localBranches, remoteBranches, selected, onChange, onClose, toggle]);
+  }, [localBranches, remoteBranches, selected, onChange, onClose, toggle, scale]);
 
   return (
     <ChipDropdown

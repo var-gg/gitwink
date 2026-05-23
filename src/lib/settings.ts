@@ -31,6 +31,14 @@ export function timelineRowH(scale: number): number {
   return Math.round(BASE_TIMELINE_ROW_H * scale);
 }
 
+/** Scale any chip-dropdown base px (row height, viewport cap) by the
+ *  current --ui-scale and round to an integer. JS uses the result for
+ *  virtual-row heights; the chip CSS's content height scales by the
+ *  same factor via calc(... * var(--ui-scale)), so the two track. */
+export function chipRowH(scale: number, basePx: number): number {
+  return Math.round(basePx * scale);
+}
+
 /** App-wide event carrying a full settings snapshot — broadcast by the
  *  Settings window so every window re-applies without a disk round-trip. */
 const SETTINGS_EVENT = "settings://changed";

@@ -3,10 +3,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AuthorTally } from "../types";
 import { ChipDropdown } from "./ChipDropdown";
 import { VirtualChipList, type VirtualChipRow } from "./VirtualChipList";
+import { chipRowH, useUiScale } from "../lib/settings";
 
-// Virtualised-row heights (px) — mirror the box heights in styles.css.
-const ITEM_H = 26; // .chip-item — one-line author entry
-const EMPTY_H = 34; // .chip-empty — "No authors match."
+// Virtualised-row BASE heights (px) at scale 1.0 — chipRowH scales them
+// against the current --ui-scale so JS row heights match the CSS content.
+const ITEM_H_BASE = 26; // .chip-item — one-line author entry
+const EMPTY_H_BASE = 34; // .chip-empty — "No authors match."
 
 interface Props {
   open: boolean;
@@ -26,6 +28,7 @@ export function AuthorsChip({
   onChange,
 }: Props) {
   const [query, setQuery] = useState("");
+  const scale = useUiScale();
 
   useEffect(() => {
     if (!open) setQuery("");
@@ -66,6 +69,9 @@ export function AuthorsChip({
   // Flatten into virtual rows: the "All authors" reset button, then one
   // row per author, then the empty-state line when nothing matches.
   const rows = useMemo<VirtualChipRow[]>(() => {
+    const ITEM_H = chipRowH(scale, ITEM_H_BASE);
+    const EMPTY_H = chipRowH(scale, EMPTY_H_BASE);
+
     const out: VirtualChipRow[] = [];
     out.push({
       key: "__all",
@@ -111,7 +117,7 @@ export function AuthorsChip({
       });
     }
     return out;
-  }, [filtered, selected, onChange, onClose, toggle]);
+  }, [filtered, selected, onChange, onClose, toggle, scale]);
 
   return (
     <ChipDropdown

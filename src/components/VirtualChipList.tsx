@@ -6,6 +6,8 @@ import {
   type ReactNode,
 } from "react";
 
+import { chipRowH, useUiScale } from "../lib/settings";
+
 /** One row in a virtualised chip dropdown. `height` is the row's fixed
  * pixel height — rows of a kind are uniform, so the caller knows it up
  * front — and `render` produces the row content (called only for rows
@@ -53,7 +55,10 @@ export function VirtualChipList({
     return arr;
   }, [rows]);
   const total = offsets[rows.length];
-  const viewportH = Math.min(total, maxHeight);
+  // Scale the maxHeight cap so a bigger UI gets a proportionally bigger
+  // dropdown viewport, matching the scaled row heights.
+  const effectiveMaxHeight = chipRowH(useUiScale(), maxHeight);
+  const viewportH = Math.min(total, effectiveMaxHeight);
 
   // Snap back to the top whenever the filter query changes. useLayoutEffect
   // so the reset lands before paint — no flash of the old scroll position.
