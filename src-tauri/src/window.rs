@@ -1,6 +1,6 @@
 use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder,
+    WebviewWindowBuilder, WindowEvent,
 };
 
 use crate::settings;
@@ -92,8 +92,26 @@ pub fn open_settings(app: &AppHandle) {
     .always_on_top(false)
     .visible(true)
     .build();
-    if let Err(e) = built {
-        eprintln!("gitwink: failed to open settings window: {e:#}");
+    match built {
+        Ok(win) => {
+            // Hide instead of destroy on close — same pattern as the diff
+            // window. Two reasons: re-open is instant (no rebuild / no
+            // re-mount), and the get_webview_window check at the top of
+            // open_settings can never race with a slow first-time build.
+            let handle = app.clone();
+            win.on_window_event(move |evt| match evt {
+                WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    if let Some(w) = handle.get_webview_window(SETTINGS_LABEL) {
+                        let _ = w.hide();
+                    }
+                }
+                _ => {}
+            });
+        }
+        Err(e) => {
+            eprintln!("gitwink: failed to open settings window: {e:#}");
+        }
     }
 }
 
