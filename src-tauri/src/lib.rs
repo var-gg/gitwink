@@ -47,6 +47,11 @@ pub fn run() {
             app.manage(commands::PendingDiff::default());
             app.manage(commands::PanelSticky::default());
             app.manage(commands::PanelPinned::default());
+            // Seed the in-memory settings cache from disk BEFORE any
+            // window mounts and calls get_settings — see D1 in the
+            // GPT Pro review (newly-opened windows could otherwise read
+            // stale disk while a debounced broadcast was in flight).
+            app.manage(commands::LiveSettings::from_disk(app.handle()));
             app.manage(commands::ChangedFilesCache::default());
             app.manage(discovery_orchestrator::ScanState::default());
 
@@ -330,6 +335,7 @@ pub fn run() {
             commands::open_settings_window,
             commands::set_update_check,
             commands::open_settings_file,
+            commands::set_live_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

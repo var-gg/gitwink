@@ -86,24 +86,52 @@ export function getCurrentSettings(): AppSettings {
 
 /** Apply a settings change in this window AND broadcast it to every other
  *  window — the live-preview path the Settings window drives on each edit.
- *  Persisting to disk is a separate (debounced) command call. */
-export function broadcastSettings(s: AppSettings): void {
+ *  Persisting to disk is a separate (debounced) command call.
+ *
+ *  Order matters: we synchronously push the new snapshot into the
+ *  backend in-memory cache (`set_live_settings`) BEFORE emitting, so
+ *  any window that mounts during the debounce window calls
+ *  `get_settings` and gets the fresh value. Without this, the new
+ *  window would read stale disk and disagree with the panel until the
+ *  next edit (GPT Pro review D1).
+ *
+ *  The await is fast (no disk I/O), but we still let it run before the
+ *  event emit so the cache update happens-before any other window's
+ *  reactive read. */
+export async function broadcastSettings(s: AppSettings): Promise<void> {
   setLocal(s);
+  try {
+    await invoke("set_live_settings", { next: s });
+  } catch {
+    // Best-effort — if the IPC fails the in-memory copy on this side
+    // is still updated, and the event still goes out below.
+  }
   void emit(SETTINGS_EVENT, s);
 }
 
 /** Load settings from the backend, apply them, and start listening for
  *  live changes from the Settings window. Called once per window mount,
- *  before first render. */
+ *  before first render.
+ *
+ *  The listener is registered BEFORE the initial `get_settings` await
+ *  (and we track whether a broadcast already landed) so the
+ *  "settings broadcast arrives during initial load" race can't leave
+ *  this window stuck on the stale disk snapshot. The freshest write
+ *  wins. */
 export async function initSettings(): Promise<void> {
-  try {
-    setLocal(await invoke<AppSettings>("get_settings"));
-  } catch {
-    setLocal({ ...DEFAULT_SETTINGS });
-  }
+  let sawBroadcast = false;
   void listen<AppSettings>(SETTINGS_EVENT, (e) => {
-    if (e.payload) setLocal(e.payload);
+    if (e.payload) {
+      sawBroadcast = true;
+      setLocal(e.payload);
+    }
   });
+  try {
+    const loaded = await invoke<AppSettings>("get_settings");
+    if (!sawBroadcast) setLocal(loaded);
+  } catch {
+    if (!sawBroadcast) setLocal({ ...DEFAULT_SETTINGS });
+  }
 }
 
 function subscribe(fn: () => void): () => void {

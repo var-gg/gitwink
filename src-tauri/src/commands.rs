@@ -542,6 +542,42 @@ impl Default for PanelPinned {
     }
 }
 
+/// In-memory mirror of the on-disk settings, seeded at startup and kept
+/// up to date by every settings setter + the broadcast hot path. Solves
+/// the "new window opens during the 250ms persist debounce and reads
+/// stale settings.json" race (GPT Pro D1): `get_settings` reads this
+/// snapshot instead of hitting disk, so the broadcast that already
+/// updated live state wins even if the debounced disk write hasn't
+/// fired yet. Disk is still the source of truth across restarts;
+/// LiveSettings is just a write-through cache that closes the
+/// in-session window.
+pub struct LiveSettings(pub std::sync::RwLock<settings::Settings>);
+
+impl LiveSettings {
+    /// Build with the current disk state. Called once at startup from
+    /// lib.rs setup; later sets mutate the same RwLock in place.
+    pub fn from_disk(app: &AppHandle) -> Self {
+        Self(std::sync::RwLock::new(settings::load(app)))
+    }
+
+    /// Read a clone of the cached Settings. Cloning under the read lock
+    /// keeps the critical section tiny — callers project to AppSettings
+    /// (or just inspect fields) without holding the lock.
+    pub fn snapshot(&self) -> settings::Settings {
+        self.0.read().map(|g| g.clone()).unwrap_or_default()
+    }
+
+    /// Mutate the cached Settings in place. Returns silently on a
+    /// poisoned lock; the disk write is the durable path, so a poisoned
+    /// in-memory cache just degrades to "next get_settings sees the
+    /// pre-poison snapshot" which is acceptable.
+    fn with_mut<F: FnOnce(&mut settings::Settings)>(&self, f: F) {
+        if let Ok(mut g) = self.0.write() {
+            f(&mut *g);
+        }
+    }
+}
+
 #[tauri::command]
 pub fn set_panel_sticky(sticky: bool, state: tauri::State<'_, PanelSticky>) {
     state
@@ -681,7 +717,9 @@ pub const UI_SCALE_MAX: f32 = 1.6;
 
 /// The user-facing slice of settings the Settings window reads + writes.
 /// camelCase so it maps straight onto the TypeScript `AppSettings`.
-#[derive(Serialize)]
+/// Deserialize is for the `set_live_settings` command path, which
+/// accepts an incoming AppSettings from the broadcast hot path.
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     /// UI scale multiplier; 1.0 = default.
@@ -705,8 +743,14 @@ pub struct AppSettings {
 }
 
 #[tauri::command]
-pub fn get_settings(app: AppHandle) -> AppSettings {
-    let s = settings::load(&app);
+pub fn get_settings(
+    live: tauri::State<'_, LiveSettings>,
+) -> AppSettings {
+    // Read the in-memory snapshot, NOT disk — the Settings window's
+    // broadcast hot path already updated LiveSettings synchronously,
+    // so a newly-opened window's initSettings sees the fresh value
+    // even when the debounced disk write hasn't landed yet.
+    let s = live.snapshot();
     AppSettings {
         ui_scale: s.ui_scale.unwrap_or(1.0).clamp(UI_SCALE_MIN, UI_SCALE_MAX),
         diff_font_family: s.diff_font_family,
@@ -720,6 +764,27 @@ pub fn get_settings(app: AppHandle) -> AppSettings {
     }
 }
 
+/// Project an incoming AppSettings (the user-facing slice the frontend
+/// passes via broadcastSettings) into the live Settings cache. Skips
+/// `updater_available` (computed) and re-clamps `ui_scale` defensively
+/// so an out-of-range value from a stale frontend can't poison the
+/// cache. Hotkey persistence still goes through `set_panel_hotkey`
+/// because re-binding the global shortcut has to succeed before we
+/// commit; the broadcast just keeps the displayed text aligned.
+#[tauri::command]
+pub fn set_live_settings(
+    next: AppSettings,
+    live: tauri::State<'_, LiveSettings>,
+) {
+    live.with_mut(|s| {
+        s.ui_scale = Some(next.ui_scale.clamp(UI_SCALE_MIN, UI_SCALE_MAX));
+        s.diff_font_family = next.diff_font_family;
+        s.panel_hotkey = Some(next.panel_hotkey);
+        s.panel_pinned = Some(next.panel_pinned);
+        s.update_check = next.update_check;
+    });
+}
+
 /// Persist the UI scale and resize the panel window proportionally.
 /// Clamped to [UI_SCALE_MIN, UI_SCALE_MAX] — the slider enforces the
 /// same bounds; this is the hand-edit backstop. The resize lags slider
@@ -728,6 +793,9 @@ pub fn get_settings(app: AppHandle) -> AppSettings {
 pub fn set_ui_scale(app: AppHandle, scale: f32) {
     let clamped = scale.clamp(UI_SCALE_MIN, UI_SCALE_MAX);
     settings::save_ui_scale(&app, Some(clamped));
+    if let Some(live) = app.try_state::<LiveSettings>() {
+        live.with_mut(|s| s.ui_scale = Some(clamped));
+    }
     window::resize_panel_for_scale(&app, clamped);
 }
 
@@ -738,7 +806,10 @@ pub fn set_diff_font(app: AppHandle, family: Option<String>) {
     let cleaned = family
         .map(|f| f.trim().to_string())
         .filter(|f| !f.is_empty());
-    settings::save_diff_font_family(&app, cleaned);
+    settings::save_diff_font_family(&app, cleaned.clone());
+    if let Some(live) = app.try_state::<LiveSettings>() {
+        live.with_mut(|s| s.diff_font_family = cleaned);
+    }
 }
 
 /// Re-bind the global panel hotkey live — no restart. Validates the spec,
@@ -761,6 +832,9 @@ pub fn set_panel_hotkey(app: AppHandle, spec: String) -> Result<(), String> {
     match gs.register(new_shortcut) {
         Ok(()) => {
             settings::save_panel_hotkey(&app, Some(trimmed.to_string()));
+            if let Some(live) = app.try_state::<LiveSettings>() {
+                live.with_mut(|s| s.panel_hotkey = Some(trimmed.to_string()));
+            }
             Ok(())
         }
         Err(e) => {
@@ -786,6 +860,9 @@ pub fn set_panel_pinned(app: AppHandle, pinned: bool) {
     eprintln!("gitwink: set_panel_pinned({pinned})");
     let _ = std::io::Write::flush(&mut std::io::stderr());
     settings::save_panel_pinned(&app, pinned);
+    if let Some(live) = app.try_state::<LiveSettings>() {
+        live.with_mut(|s| s.panel_pinned = Some(pinned));
+    }
     if let Some(state) = app.try_state::<PanelPinned>() {
         state.0.store(pinned, std::sync::atomic::Ordering::SeqCst);
     }
@@ -823,6 +900,9 @@ pub async fn open_settings_window(app: AppHandle) {
 #[tauri::command]
 pub fn set_update_check(app: AppHandle, mode: settings::UpdateCheckMode) {
     settings::save_update_check_mode(&app, mode);
+    if let Some(live) = app.try_state::<LiveSettings>() {
+        live.with_mut(|s| s.update_check = mode);
+    }
     update::refresh_indicator(&app);
 }
 
