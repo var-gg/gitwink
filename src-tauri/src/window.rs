@@ -89,23 +89,19 @@ pub fn open_settings(app: &AppHandle) {
         return;
     }
     let _guard = ReleaseOnDrop;
-    // (We used to show_panel + drop the panel's always-on-top here so
-    // the user could see size/font changes preview against a visible
-    // panel. That was implicated in WebviewWindowBuilder::build() never
-    // returning — touching the panel's window state right before a
-    // fresh WebView2 build on Windows blocked the main thread enough
-    // that the settings webview never finished initialising. Pulled
-    // for now; re-introduce as a separate gesture if it's missed.)
-
-    // Always destroy any existing settings window and rebuild. The
-    // reuse path turned out to be a footgun (stale handles surviving
-    // close-on-hide → show/focus appearing to succeed but the WebView2
-    // inside was already dead → blank shell). Settings is rarely opened
-    // so a fresh ~50ms rebuild per open is the right trade.
-    if let Some(existing) = app.get_webview_window(SETTINGS_LABEL) {
-        eprintln!("gitwink: destroying existing settings window before rebuild");
+    // Reuse the existing settings window if there is one — close-on-hide
+    // keeps it alive across X-clicks so a re-open is instant and there
+    // is no Tauri registry race. (The previous destroy+rebuild attempt
+    // tripped on Tauri's async destroy: the registry entry survived
+    // long enough for the next build() to fail with "label already
+    // exists", forcing the user to click Settings twice.)
+    if let Some(win) = app.get_webview_window(SETTINGS_LABEL) {
+        eprintln!("gitwink: re-using existing settings window");
         let _ = std::io::Write::flush(&mut std::io::stderr());
-        let _ = existing.destroy();
+        let _ = win.unminimize();
+        let _ = win.show();
+        let _ = win.set_focus();
+        return;
     }
 
     eprintln!("gitwink: building settings window");
