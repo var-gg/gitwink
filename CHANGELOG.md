@@ -5,6 +5,48 @@ All notable changes to gitwink will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-05-24
+
+### Added
+
+- Settings window — a dedicated panel for adjusting gitwink's behaviour
+  and appearance. Open it from the tray menu or the panel header's
+  right-click → Settings entry.
+- UI scale (size) control in Settings — the panel chrome, chip
+  dropdowns, row heights, and inline commit expansions all scale in
+  lockstep so the layout never breaks at large sizes.
+- Font picker in Settings → Appearance — switch between system fonts
+  for commit text without editing settings.json by hand.
+- Hotkey recorder for the global panel shortcut — capture a new key
+  combination by pressing it, instead of typing the Tauri shortcut spec.
+- Updates section in Settings — see your installer channel (Direct /
+  Scoop / Microsoft Store), the current update-check mode, and trigger
+  a manual update check. A footer link opens settings.json in your
+  editor.
+- Pin mode for the panel — toggle between glance mode (auto-dismiss on
+  blur) and pinned mode (stays open) for keeping the timeline visible
+  while you work elsewhere.
+
+### Fixed
+
+- Microsoft Store tile assets are now fully opaque, with a filled white
+  wink on a solid purple background. The previous assets rendered the
+  wink at alpha 1–33, which Windows alpha-compositing turned into
+  chrome-colour holes — the Store certification team read them as
+  broken placeholders.
+- Diff window — row tint now extends across the full horizontal scroll
+  width, the sticky line-number gutter is opaque so long lines don't
+  bleed through under horizontal scroll, the right-click menu is scoped
+  to the diff content, and the window build is main-thread plus
+  single-flight to eliminate a blank-webview race.
+- Panel and Settings stability — concurrent Settings opens are
+  serialized so they can't race-crash, the Settings window is hidden on
+  close instead of destroyed (no async-destroy race), an in-memory
+  settings cache prevents stale reads during debounce, and the panel
+  blur-dismiss rule consolidates and re-evaluates on child-window
+  close. Plus five small correctness fixes from a GPT Pro review of the
+  panel and updater paths.
+
 ## [0.3.0] — 2026-05-22
 
 ### Changed
