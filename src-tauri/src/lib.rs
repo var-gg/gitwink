@@ -171,6 +171,12 @@ pub fn run() {
                         // always-on-top for the current mode (glance →
                         // true; pinned → stays false).
                         window::assert_panel_always_on_top(&handle);
+                        // The "diff is visible" veto in the blur handler
+                        // was holding the panel up while the user was
+                        // reading the diff; re-evaluate now so a glance
+                        // panel actually dismisses if focus moved
+                        // somewhere outside the app.
+                        window::maybe_hide_panel_for_blur(&handle);
                     }
                     WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
                         let stamp = if matches!(evt, WindowEvent::Moved(_)) {
@@ -238,6 +244,10 @@ pub fn run() {
                     WindowEvent::Focused(false) => {
                         // Debounce hide: a momentary blur (e.g. OS-native drag,
                         // tray context menu) shouldn't dismiss the panel.
+                        // All dismiss conditions (sticky, pinned, child
+                        // visible, panel still focused) are in
+                        // window::maybe_hide_panel_for_blur so the same rule
+                        // can be re-applied from child CloseRequested paths.
                         let stamp =
                             focus_generation.fetch_add(1, Ordering::SeqCst).wrapping_add(1);
                         let gen_clone = Arc::clone(&focus_generation);
@@ -247,46 +257,7 @@ pub fn run() {
                             if gen_clone.load(Ordering::SeqCst) != stamp {
                                 return;
                             }
-                            // Sticky: the panel resists blur-dismiss while the
-                            // empty-state add-repo screen is up or a native
-                            // folder picker is open. Focus left the panel, but
-                            // the user is mid add-repo flow, not dismissing.
-                            let sticky = handle_clone
-                                .try_state::<commands::PanelSticky>()
-                                .map(|s| s.0.load(Ordering::SeqCst))
-                                .unwrap_or(false);
-                            if sticky {
-                                return;
-                            }
-                            // Don't dismiss the panel just because the user
-                            // clicked into our own diff window — that's still
-                            // an in-app interaction.
-                            // Pinned mode: the panel stays put regardless
-                            // of blur — that's the whole point of pinning.
-                            let pinned = handle_clone
-                                .try_state::<commands::PanelPinned>()
-                                .map(|s| s.0.load(Ordering::SeqCst))
-                                .unwrap_or(false);
-                            if pinned {
-                                return;
-                            }
-                            let diff_visible = handle_clone
-                                .get_webview_window("diff")
-                                .and_then(|w| w.is_visible().ok())
-                                .unwrap_or(false);
-                            if diff_visible {
-                                return;
-                            }
-                            // Same for the settings window — interacting
-                            // with it must not dismiss the panel behind it.
-                            let settings_visible = handle_clone
-                                .get_webview_window("settings")
-                                .and_then(|w| w.is_visible().ok())
-                                .unwrap_or(false);
-                            if settings_visible {
-                                return;
-                            }
-                            window::hide_panel(&handle_clone);
+                            window::maybe_hide_panel_for_blur(&handle_clone);
                         });
                     }
                     WindowEvent::Focused(true) => {

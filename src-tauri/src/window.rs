@@ -142,6 +142,12 @@ pub fn open_settings(app: &AppHandle) {
                         let _ = w.hide();
                     }
                     assert_panel_always_on_top(&handle);
+                    // The "settings is visible" veto in the blur handler
+                    // was holding the panel up while the user worked in
+                    // Settings; now that it's hiding, re-evaluate so a
+                    // glance panel actually dismisses if focus moved
+                    // somewhere outside the app.
+                    maybe_hide_panel_for_blur(&handle);
                 }
                 _ => {}
             });
@@ -175,6 +181,55 @@ pub fn resize_panel_for_scale(app: &AppHandle, scale: f32) {
     let final_w = want_w.min(max_w).max(PANEL_BASE_W);
     let final_h = want_h.min(max_h).max(PANEL_BASE_H);
     let _ = panel.set_size(LogicalSize::new(final_w, final_h));
+}
+
+/// Re-evaluate whether the panel should auto-hide and do it if so. The
+/// blur debounce, the Settings/Diff CloseRequested handlers, and any
+/// future "may have removed the last reason to keep the panel up"
+/// path all route through here so the dismiss rule lives in one place.
+///
+/// The rule: hide iff
+///   - not sticky (add-repo / native picker), AND
+///   - not pinned (pinned mode never auto-hides), AND
+///   - no child window (settings or diff) is visible, AND
+///   - the panel itself is no longer focused.
+///
+/// That last check is what the inline blur handler used to skip — and
+/// why glance mode could leave the panel stuck visible after the user
+/// closed a child window via X (focus went elsewhere, no fresh blur
+/// event ever lands on the panel because the panel was already blurred
+/// while the child was on top).
+pub fn maybe_hide_panel_for_blur(app: &AppHandle) {
+    use std::sync::atomic::Ordering;
+    let sticky = app
+        .try_state::<commands::PanelSticky>()
+        .map(|s| s.0.load(Ordering::SeqCst))
+        .unwrap_or(false);
+    if sticky {
+        return;
+    }
+    let pinned = app
+        .try_state::<commands::PanelPinned>()
+        .map(|s| s.0.load(Ordering::SeqCst))
+        .unwrap_or(false);
+    if pinned {
+        return;
+    }
+    let child_visible = ["diff", "settings"].iter().any(|label| {
+        app.get_webview_window(label)
+            .and_then(|w| w.is_visible().ok())
+            .unwrap_or(false)
+    });
+    if child_visible {
+        return;
+    }
+    let panel_focused = app
+        .get_webview_window(PANEL_LABEL)
+        .and_then(|w| w.is_focused().ok())
+        .unwrap_or(false);
+    if !panel_focused {
+        hide_panel(app);
+    }
 }
 
 /// Read the runtime PanelPinned state and set the panel's always-on-top
