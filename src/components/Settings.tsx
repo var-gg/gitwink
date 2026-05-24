@@ -125,6 +125,38 @@ export function Settings() {
     });
   }
 
+  // When the Settings window is hidden (X-click on close-on-hide path)
+  // or the page is about to unload, drain any in-flight scale / font
+  // debounce so a fast quit can't lose the just-edited value to disk
+  // (GPT Pro review D2). LiveSettings already keeps the in-session
+  // state correct across windows; this is the durability backstop for
+  // values that hadn't yet been persisted when the user walked away.
+  useEffect(() => {
+    function flushPending() {
+      if (scaleTimer.current !== undefined) {
+        window.clearTimeout(scaleTimer.current);
+        scaleTimer.current = undefined;
+        void invoke("set_ui_scale", { scale: settingsRef.current.uiScale });
+      }
+      if (fontTimer.current !== undefined) {
+        window.clearTimeout(fontTimer.current);
+        fontTimer.current = undefined;
+        void invoke("set_diff_font", {
+          family: settingsRef.current.diffFontFamily,
+        });
+      }
+    }
+    function onVisibilityChange() {
+      if (document.visibilityState === "hidden") flushPending();
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("beforeunload", flushPending);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("beforeunload", flushPending);
+    };
+  }, []);
+
   // Recording mode: capture the next valid combo and send it to Rust to
   // re-bind the global shortcut live. Esc cancels. OS-reserved combos
   // (Alt+Tab, Win+L, …) never reach the webview, so the recorder simply

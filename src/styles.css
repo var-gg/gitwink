@@ -385,11 +385,18 @@ body,
   width: 100%;
 }
 
-/* One virtual row, absolutely placed at its prefix-sum offset. */
+/* One virtual row, absolutely placed at its prefix-sum offset. The JS
+   virtualizer sets `height` inline from `chipRowH(scale, base)` so the
+   row box is an integer. Children scale via calc(... * var(--ui-scale))
+   independently. `overflow: hidden` keeps a future
+   larger-than-expected child (longer localized label, larger font
+   metric, extra badge) from leaking visually into the next virtual
+   row — the row geometry stays whatever chipRowH said it is. */
 .chip-vrow {
   position: absolute;
   left: 0;
   right: 0;
+  overflow: hidden;
 }
 
 .chip-section {

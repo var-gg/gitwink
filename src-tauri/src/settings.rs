@@ -64,9 +64,15 @@ pub struct Settings {
     /// monospace stack; any installed font name is accepted.
     #[serde(default)]
     pub diff_font_family: Option<String>,
-    /// "Pin" mode for the panel — when true, the panel does not auto-hide
-    /// on blur, shows in the taskbar, and is not always-on-top. Default
-    /// false (the tray-glance behaviour gitwink is designed around).
+    /// "Pin" mode for the panel — when true, the panel does NOT auto-hide
+    /// on blur and is not always-on-top. The taskbar entry promise was
+    /// dropped during the WebView2 stability arc: runtime set_skip_taskbar
+    /// toggles on Windows destabilise subsequent WebView builds, so the
+    /// panel always honours tauri.conf.json's skipTaskbar=true regardless
+    /// of pin state. Pinned therefore means "no blur-dismiss + normal
+    /// stacking" — the user still summons via tray / hotkey rather than
+    /// alt-tab. Default false (the tray-glance behaviour gitwink is
+    /// designed around).
     #[serde(default)]
     pub panel_pinned: Option<bool>,
 }
@@ -95,9 +101,11 @@ fn settings_path(app: &AppHandle) -> Result<PathBuf> {
     Ok(dir.join("settings.json"))
 }
 
-/// Public path resolver so the tray menu can offer "Open settings file..."
-/// — making sure the file exists first by writing the current (possibly
-/// default) state if it's missing.
+/// Public path resolver for the Settings window's "Open settings.json"
+/// footer link (the tray used to host this entry but it was demoted to
+/// keep the tray to one Settings item). Writes the current — possibly
+/// default — state first so the editor never opens to a "file not
+/// found" dialog on a fresh install.
 pub fn ensure_path(app: &AppHandle) -> Result<PathBuf> {
     let path = settings_path(app)?;
     if !path.exists() {

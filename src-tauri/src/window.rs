@@ -87,8 +87,9 @@ pub fn open_settings(app: &AppHandle) -> Result<(), String> {
         }
     }
     if OPEN_SETTINGS_IN_FLIGHT.swap(true, Ordering::SeqCst) {
+        // Diagnostic — kept always-on so the rare race surface stays
+        // visible in production logs.
         eprintln!("gitwink: open_settings already in flight, ignoring duplicate call");
-        let _ = std::io::Write::flush(&mut std::io::stderr());
         return Err("settings open already in flight".into());
     }
     let _guard = ReleaseOnDrop;
@@ -99,16 +100,12 @@ pub fn open_settings(app: &AppHandle) -> Result<(), String> {
     // long enough for the next build() to fail with "label already
     // exists", forcing the user to click Settings twice.)
     if let Some(win) = app.get_webview_window(SETTINGS_LABEL) {
-        eprintln!("gitwink: re-using existing settings window");
-        let _ = std::io::Write::flush(&mut std::io::stderr());
         let _ = win.unminimize();
         win.show().map_err(|e| e.to_string())?;
         win.set_focus().map_err(|e| e.to_string())?;
         return Ok(());
     }
 
-    eprintln!("gitwink: building settings window");
-    let _ = std::io::Write::flush(&mut std::io::stderr());
     let built = WebviewWindowBuilder::new(
         app,
         SETTINGS_LABEL,
@@ -125,11 +122,8 @@ pub fn open_settings(app: &AppHandle) -> Result<(), String> {
     .build();
     let win = built.map_err(|e| {
         eprintln!("gitwink: failed to build settings window: {e:#}");
-        let _ = std::io::Write::flush(&mut std::io::stderr());
         e.to_string()
     })?;
-    eprintln!("gitwink: settings window built ok, attaching close handler");
-    let _ = std::io::Write::flush(&mut std::io::stderr());
     // Hide instead of destroy on close — same pattern as the diff
     // window. Two reasons: re-open is instant (no rebuild / no
     // re-mount), and the get_webview_window check at the top of
@@ -140,7 +134,6 @@ pub fn open_settings(app: &AppHandle) -> Result<(), String> {
     let handle = app.clone();
     win.on_window_event(move |evt| match evt {
         WindowEvent::CloseRequested { api, .. } => {
-            eprintln!("gitwink: settings CloseRequested → prevent + hide");
             api.prevent_close();
             if let Some(w) = handle.get_webview_window(SETTINGS_LABEL) {
                 let _ = w.hide();
@@ -186,29 +179,22 @@ pub fn open_or_focus_diff(
         }
     }
     if OPEN_DIFF_IN_FLIGHT.swap(true, Ordering::SeqCst) {
+        // Diagnostic — kept always-on so the rare race surface stays
+        // visible in production logs.
         eprintln!("gitwink: open_or_focus_diff already in flight, ignoring duplicate call");
-        let _ = std::io::Write::flush(&mut std::io::stderr());
         return Err("diff window open already in flight".into());
     }
     let _guard = ReleaseOnDrop;
 
     if let Some(diff) = app.get_webview_window(DIFF_LABEL) {
-        eprintln!("open_or_focus_diff: existing window, show + focus + emit");
         diff.unminimize().ok();
-        diff.show().map_err(|e| {
-            eprintln!("open_or_focus_diff: show failed: {e}");
-            e.to_string()
-        })?;
-        diff.set_focus().map_err(|e| {
-            eprintln!("open_or_focus_diff: focus failed: {e}");
-            e.to_string()
-        })?;
+        diff.show().map_err(|e| e.to_string())?;
+        diff.set_focus().map_err(|e| e.to_string())?;
         app.emit_to(DIFF_LABEL, "diff://open", payload)
             .map_err(|e| e.to_string())?;
         return Ok(());
     }
 
-    eprintln!("open_or_focus_diff: building new diff window");
     let saved = settings::load(app).diff_window;
     // Always open at the modest default size. A remembered window size
     // restored across DPI scale factors was bloating the window (saved
@@ -236,7 +222,7 @@ pub fn open_or_focus_diff(
     }
 
     let window = builder.build().map_err(|e| {
-        eprintln!("open_or_focus_diff: build FAILED: {e:#}");
+        eprintln!("gitwink: failed to build diff window: {e:#}");
         e.to_string()
     })?;
 
@@ -400,12 +386,11 @@ pub fn assert_panel_always_on_top(app: &AppHandle) {
 pub fn apply_panel_pinned(app: &AppHandle, pinned: bool) {
     let Some(panel) = app.get_webview_window(PANEL_LABEL) else {
         eprintln!("gitwink: apply_panel_pinned but panel window missing");
-        let _ = std::io::Write::flush(&mut std::io::stderr());
         return;
     };
-    let at = panel.set_always_on_top(!pinned);
-    eprintln!("gitwink: apply_panel_pinned(pinned={pinned}) → always_on_top={at:?}");
-    let _ = std::io::Write::flush(&mut std::io::stderr());
+    if let Err(e) = panel.set_always_on_top(!pinned) {
+        eprintln!("gitwink: apply_panel_pinned set_always_on_top failed: {e}");
+    }
 }
 
 fn position_panel(window: &WebviewWindow) {

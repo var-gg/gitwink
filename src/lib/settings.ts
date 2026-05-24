@@ -47,9 +47,16 @@ export function timelineRowH(scale: number): number {
 }
 
 /** Scale any chip-dropdown base px (row height, viewport cap) by the
- *  current --ui-scale and round to an integer. JS uses the result for
- *  virtual-row heights; the chip CSS's content height scales by the
- *  same factor via calc(... * var(--ui-scale)), so the two track. */
+ *  current --ui-scale and round to an integer.
+ *
+ *  Invariant (in practice, not via a shared CSS var):
+ *  the JS-owned virtual-row box (set inline as `height: rowHeight` on
+ *  `.chip-vrow`) is sized from this integer, and the chip content
+ *  inside the row scales via `calc(... * var(--ui-scale))`. There is
+ *  no `--chip-row-h` CSS var; descendants don't read the row height.
+ *  An `overflow: hidden` guard on `.chip-vrow` keeps a future
+ *  larger-than-expected child (longer label, bigger font metric)
+ *  from leaking visually into the next virtual row. */
 export function chipRowH(scale: number, basePx: number): number {
   return Math.round(basePx * scale);
 }

@@ -80,9 +80,12 @@ pub fn run() {
                 .clamp(commands::UI_SCALE_MIN, commands::UI_SCALE_MAX);
             window::resize_panel_for_scale(app.handle(), saved_scale);
 
-            // Apply the saved panel pin state to the runtime atomic + the
-            // panel's skip_taskbar / always_on_top flags before the first
-            // show — so a pinned-at-quit panel comes back pinned.
+            // Apply the saved panel pin state to the runtime atomic +
+            // the panel's always_on_top flag before the first show — so
+            // a pinned-at-quit panel comes back pinned. skipTaskbar is
+            // intentionally not touched at any runtime point on Windows
+            // (see PanelPinned doc); the panel always honours
+            // tauri.conf.json's skipTaskbar=true.
             let saved_pinned = settings::load(app.handle())
                 .panel_pinned
                 .unwrap_or(false);

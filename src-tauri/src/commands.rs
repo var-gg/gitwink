@@ -530,10 +530,14 @@ impl Default for PanelSticky {
     }
 }
 
-/// Whether the panel is "pinned" — true disables blur-dismiss, adds a
-/// taskbar entry, drops always-on-top. Source of truth for the runtime
-/// check in lib.rs's blur handler + window::assert_panel_always_on_top;
-/// mirrors settings.panel_pinned across launches.
+/// Whether the panel is "pinned" — true disables blur-dismiss and
+/// drops always-on-top. The taskbar entry promise was dropped during
+/// the WebView2 stability arc (runtime set_skip_taskbar destabilises
+/// subsequent window builds on Windows); the panel always honours
+/// tauri.conf.json's skipTaskbar=true regardless of pin state.
+/// Source of truth for the runtime check in lib.rs's blur handler +
+/// window::assert_panel_always_on_top; mirrors settings.panel_pinned
+/// across launches.
 pub struct PanelPinned(pub std::sync::atomic::AtomicBool);
 
 impl Default for PanelPinned {
@@ -616,14 +620,13 @@ pub async fn open_diff(
     file_path: String,
 ) -> Result<(), String> {
     let payload = DiffOpenPayload {
-        repo_path: repo_path.clone(),
+        repo_path,
         repo_name,
-        hash: hash.clone(),
+        hash,
         short_hash,
         summary,
-        file_path: file_path.clone(),
+        file_path,
     };
-    eprintln!("open_diff invoked: repo={repo_path} hash={hash} file={file_path}");
 
     if let Some(state) = app.try_state::<PendingDiff>() {
         if let Ok(mut s) = state.lock() {
@@ -851,14 +854,14 @@ pub fn set_panel_hotkey(app: AppHandle, spec: String) -> Result<(), String> {
     }
 }
 
-/// Toggle the panel between glance (blur-dismiss, no taskbar, always on
-/// top — the default) and pinned (no auto-hide, taskbar entry, normal
-/// stacking). Persisted so the choice survives across launches. The
-/// caller is responsible for broadcastSettings — see App.tsx.
+/// Toggle the panel between glance (blur-dismiss + always-on-top —
+/// the default) and pinned (no auto-hide + normal stacking). The
+/// panel stays skipTaskbar=true in both modes; see the PanelPinned
+/// struct doc above for why the taskbar promise was dropped.
+/// Persisted so the choice survives across launches. The caller is
+/// responsible for broadcastSettings — see App.tsx.
 #[tauri::command]
 pub fn set_panel_pinned(app: AppHandle, pinned: bool) -> Result<(), String> {
-    eprintln!("gitwink: set_panel_pinned({pinned})");
-    let _ = std::io::Write::flush(&mut std::io::stderr());
     // Persist FIRST. If the write fails (read-only config dir, disk
     // full), refuse the toggle entirely so the UI and the next launch
     // agree (GPT Pro review A3 caveat).
@@ -876,9 +879,9 @@ pub fn set_panel_pinned(app: AppHandle, pinned: bool) -> Result<(), String> {
     // come up blank). The blur-dismiss behaviour change is live
     // regardless — it's just an atomic check.
     if let Some(panel) = app.get_webview_window("panel") {
-        let r = panel.set_always_on_top(!pinned);
-        eprintln!("gitwink: set_panel_pinned runtime always_on_top={r:?}");
-        let _ = std::io::Write::flush(&mut std::io::stderr());
+        if let Err(e) = panel.set_always_on_top(!pinned) {
+            eprintln!("gitwink: set_panel_pinned set_always_on_top failed: {e}");
+        }
     }
     Ok(())
 }
