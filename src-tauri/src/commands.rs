@@ -768,6 +768,15 @@ pub struct AppSettings {
     /// When true, the panel is "pinned" — no blur auto-hide, shows in
     /// the taskbar, not always-on-top. False = tray-glance default.
     pub panel_pinned: bool,
+    /// Self-update behaviour. Serialized as "enabled" / "manual" /
+    /// "disabled" via the enum's lowercase rename. Meaningful only when
+    /// `updater_available` is true.
+    pub update_check: settings::UpdateCheckMode,
+    /// False for Scoop and Microsoft Store (MSIX) installs — those
+    /// channels manage their own updates, so the Updates section in
+    /// the Settings window is hidden and the `update_check` knob is
+    /// inert. The frontend uses this flag to gate the UI.
+    pub updater_available: bool,
 }
 
 #[tauri::command]
@@ -781,6 +790,8 @@ pub fn get_settings(app: AppHandle) -> AppSettings {
             .filter(|h| !h.trim().is_empty())
             .unwrap_or_else(|| settings::DEFAULT_PANEL_HOTKEY.to_string()),
         panel_pinned: s.panel_pinned.unwrap_or(false),
+        update_check: s.update_check,
+        updater_available: !update::installed_via_scoop() && !update::installed_via_msix(),
     }
 }
 
@@ -879,6 +890,31 @@ pub async fn open_settings_window(app: AppHandle) {
     let _ = app.run_on_main_thread(move || {
         window::open_settings(&app2);
     });
+}
+
+/// Persist the self-update mode and refresh the tray dot immediately
+/// (Disabled hides the indicator + tray "Check for updates" item via
+/// build_menu; refresh_indicator drives the rebuild).
+#[tauri::command]
+pub fn set_update_check(app: AppHandle, mode: settings::UpdateCheckMode) {
+    settings::save_update_check_mode(&app, mode);
+    update::refresh_indicator(&app);
+}
+
+/// Reveal `settings.json` in the user's default editor (or the OS file
+/// handler for `.json`). Exposed for the "Open settings.json" link in
+/// the Settings window's footer — the tray menu used to host this but
+/// it was demoted to keep the tray to one Settings entry.
+#[tauri::command]
+pub fn open_settings_file(app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    // ensure_path writes a default file if missing so the editor never
+    // opens to a "file not found" dialog on a fresh install.
+    let path = settings::ensure_path(&app).map_err(|e| e.to_string())?;
+    let path_str = path.to_string_lossy().into_owned();
+    app.opener()
+        .open_path(&path_str, None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 fn unix_now() -> i64 {

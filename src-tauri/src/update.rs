@@ -143,11 +143,14 @@ async fn run_check(app: &AppHandle, manual: bool) -> anyhow::Result<()> {
 }
 
 /// Recompute the tray dot + menu item from current state + settings.
-/// Shown iff an update exists, isn't the skipped version, and isn't
-/// snoozed.
+/// Shown iff an update exists, isn't the skipped version, isn't
+/// snoozed, and the user hasn't switched update_check to Disabled
+/// (Disabled means "no tray affordances", per the enum doc).
 pub fn refresh_indicator(app: &AppHandle) {
     let s = settings::load(app);
-    let version = {
+    let version = if s.update_check == UpdateCheckMode::Disabled {
+        None
+    } else {
         let state = app.state::<UpdateState>();
         let slot = state.available.lock().unwrap();
         slot.as_ref().and_then(|u| {

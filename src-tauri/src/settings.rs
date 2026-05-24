@@ -237,3 +237,14 @@ pub fn save_panel_pinned(app: &AppHandle, pinned: bool) {
         eprintln!("settings: failed to persist panel_pinned: {e:#}");
     }
 }
+
+/// Persist the self-update mode (`Enabled` / `Manual` / `Disabled`).
+/// Refreshing the tray indicator + menu is the caller's job — see
+/// `set_update_check` in commands.rs.
+pub fn save_update_check_mode(app: &AppHandle, mode: UpdateCheckMode) {
+    let mut s = load(app);
+    s.update_check = mode;
+    if let Err(e) = save(app, &s) {
+        eprintln!("settings: failed to persist update_check: {e:#}");
+    }
+}

@@ -4,9 +4,9 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     App, AppHandle, Wry,
 };
-use tauri_plugin_opener::OpenerExt;
 
-use crate::{settings, update, window};
+use crate::settings::{self, UpdateCheckMode};
+use crate::{update, window};
 
 const TRAY_ID: &str = "main";
 
@@ -54,6 +54,11 @@ pub fn setup(app: &App) -> tauri::Result<()> {
 /// "Update available" item is prepended above a separator. The menu is
 /// rebuilt wholesale (rather than toggling item visibility) whenever the
 /// update state changes — see `set_update_indicator`.
+///
+/// The "Open settings file…" entry used to live here next to "Settings…"
+/// but was demoted to a footer link inside the Settings window itself —
+/// two "Settings*" items in a small tray menu were redundant. The same
+/// affordance is still reachable: tray → Settings… → "Open settings.json".
 fn build_menu(app: &AppHandle, update_version: Option<&str>) -> tauri::Result<Menu<Wry>> {
     let reset = MenuItem::with_id(
         app,
@@ -62,22 +67,20 @@ fn build_menu(app: &AppHandle, update_version: Option<&str>) -> tauri::Result<Me
         true,
         None::<&str>,
     )?;
-    let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
-    let open_settings = MenuItem::with_id(
-        app,
-        "open_settings",
-        "Open settings file…",
-        true,
-        None::<&str>,
-    )?;
+    let settings_item =
+        MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit gitwink", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
 
-    // Microsoft Store installs update via the Store itself — gitwink shows
-    // no in-app updater UI. Scoop and direct installs keep the
-    // "Check for updates" item.
-    if update::installed_via_msix() {
-        return Menu::with_items(app, &[&settings, &reset, &open_settings, &sep, &quit]);
+    // Microsoft Store installs update via the Store itself — gitwink
+    // shows no in-app updater UI. Same goes for the Disabled mode the
+    // user picked in Settings ("no tray affordances" per UpdateCheckMode
+    // doc). Scoop installs keep the item since manual_check still
+    // surfaces the modal with the `scoop update` hint.
+    let hide_updater =
+        update::installed_via_msix() || settings::load(app).update_check == UpdateCheckMode::Disabled;
+    if hide_updater {
+        return Menu::with_items(app, &[&settings_item, &reset, &sep, &quit]);
     }
 
     let check =
@@ -98,17 +101,14 @@ fn build_menu(app: &AppHandle, update_version: Option<&str>) -> tauri::Result<Me
                     &update_item,
                     &sep_top,
                     &check,
-                    &settings,
+                    &settings_item,
                     &reset,
-                    &open_settings,
                     &sep,
                     &quit,
                 ],
             )
         }
-        None => {
-            Menu::with_items(app, &[&check, &settings, &reset, &open_settings, &sep, &quit])
-        }
+        None => Menu::with_items(app, &[&check, &settings_item, &reset, &sep, &quit]),
     }
 }
 
@@ -117,7 +117,6 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
         "quit" => app.exit(0),
         "reset_position" => settings::clear_panel_position(app),
         "settings" => window::open_settings(app),
-        "open_settings" => open_settings_file(app),
         "check_updates" => update::manual_check(app),
         "update_available" => update::open_modal(app),
         _ => {}
@@ -196,20 +195,3 @@ fn with_dot(base: &Image<'_>) -> Image<'static> {
     Image::new_owned(rgba, w, h)
 }
 
-/// Reveal settings.json in the user's default editor (or the OS file
-/// handler for `.json`). We `ensure_path` first so the file always exists
-/// when the editor opens — otherwise the user would land on a blank
-/// "file not found" dialog the first time they try this.
-fn open_settings_file(app: &AppHandle) {
-    let path = match settings::ensure_path(app) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("gitwink: failed to ensure settings file: {e:#}");
-            return;
-        }
-    };
-    let path_str = path.to_string_lossy().into_owned();
-    if let Err(e) = app.opener().open_path(&path_str, None::<&str>) {
-        eprintln!("gitwink: failed to open settings file {path_str:?}: {e}");
-    }
-}

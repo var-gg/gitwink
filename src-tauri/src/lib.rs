@@ -357,6 +357,8 @@ pub fn run() {
             commands::set_panel_hotkey,
             commands::set_panel_pinned,
             commands::open_settings_window,
+            commands::set_update_check,
+            commands::open_settings_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
