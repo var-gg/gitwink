@@ -869,9 +869,16 @@ pub fn set_panel_pinned(app: AppHandle, pinned: bool) {
 
 /// Open (or focus) the settings window from the frontend — used by the
 /// panel header's right-click context menu, mirroring the tray entry.
+/// async + run_on_main_thread so window creation is explicitly
+/// dispatched to the UI thread rather than running on whatever worker
+/// the sync command was scheduled on (sync commands building windows
+/// have been observed to hang on Windows / WebView2).
 #[tauri::command]
-pub fn open_settings_window(app: AppHandle) {
-    window::open_settings(&app);
+pub async fn open_settings_window(app: AppHandle) {
+    let app2 = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        window::open_settings(&app2);
+    });
 }
 
 fn unix_now() -> i64 {

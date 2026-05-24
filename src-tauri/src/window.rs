@@ -89,13 +89,13 @@ pub fn open_settings(app: &AppHandle) {
         return;
     }
     let _guard = ReleaseOnDrop;
-    // Bring the panel up next to the settings window so the user can see
-    // size/font changes apply live. Drop its always-on-top so it can't
-    // cover the settings window — the next summon re-asserts it.
-    show_panel(app);
-    if let Some(panel) = app.get_webview_window(PANEL_LABEL) {
-        let _ = panel.set_always_on_top(false);
-    }
+    // (We used to show_panel + drop the panel's always-on-top here so
+    // the user could see size/font changes preview against a visible
+    // panel. That was implicated in WebviewWindowBuilder::build() never
+    // returning — touching the panel's window state right before a
+    // fresh WebView2 build on Windows blocked the main thread enough
+    // that the settings webview never finished initialising. Pulled
+    // for now; re-introduce as a separate gesture if it's missed.)
 
     // Always destroy any existing settings window and rebuild. The
     // reuse path turned out to be a footgun (stale handles surviving
