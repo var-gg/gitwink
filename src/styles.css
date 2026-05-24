@@ -1787,6 +1787,18 @@ body,
   }
 }
 
+/* Gutter cells (line number + +/- sign) are sticky-left so they stay
+   visible during the diff window's horizontal scroll. They MUST have
+   an opaque background or the scrolled body text bleeds through them
+   visually — `background: inherit` from .sbs-line was inheriting the
+   row's semi-transparent tint (rgba 0.10~0.18) which is exactly the
+   wrong choice for a sticky overlay. Following the same pattern as
+   GitHub / GitLab / VS Code's monaco diff: per-row-type SOLID colour
+   pre-blended against the body bg (#fafafa light / #1a1a1a dark) so
+   the gutter looks identical to the row tint at column-resting state
+   AND obscures content underneath when the row scrolls horizontally.
+   The sign cell carries a thin right border so the gutter/content
+   boundary stays visible during scroll. */
 .sbs-num {
   text-align: right;
   opacity: 0.45;
@@ -1795,7 +1807,8 @@ body,
   padding-right: 6px;
   position: sticky;
   left: 0;
-  background: inherit;
+  background: #fafafa;
+  z-index: 1;
 }
 
 .sbs-sign {
@@ -1805,7 +1818,29 @@ body,
   font-weight: 700;
   position: sticky;
   left: calc(44px * var(--ui-scale, 1));
-  background: inherit;
+  background: #fafafa;
+  border-right: 1px solid rgba(0, 0, 0, 0.06);
+  z-index: 1;
+}
+
+/* Solid pre-blended row colours for the sticky gutter. Each value
+   equals the corresponding .sbs-line.<type> rgba tint flattened onto
+   the body bg so at column-resting state the gutter is visually
+   indistinguishable from the row, but during horizontal scroll it
+   actually paints opaquely instead of letting text through. */
+.sbs-line.delete .sbs-num,
+.sbs-line.delete .sbs-sign {
+  background: rgb(247, 233, 233);
+}
+
+.sbs-line.add .sbs-num,
+.sbs-line.add .sbs-sign {
+  background: rgb(233, 245, 237);
+}
+
+.sbs-line.blank .sbs-num,
+.sbs-line.blank .sbs-sign {
+  background: rgb(246, 246, 246);
 }
 
 .sbs-line.delete .sbs-sign {
@@ -1817,6 +1852,25 @@ body,
 }
 
 @media (prefers-color-scheme: dark) {
+  .sbs-num,
+  .sbs-sign {
+    background: #1a1a1a;
+  }
+  .sbs-sign {
+    border-right-color: rgba(255, 255, 255, 0.06);
+  }
+  .sbs-line.delete .sbs-num,
+  .sbs-line.delete .sbs-sign {
+    background: rgb(61, 36, 36);
+  }
+  .sbs-line.add .sbs-num,
+  .sbs-line.add .sbs-sign {
+    background: rgb(35, 54, 41);
+  }
+  .sbs-line.blank .sbs-num,
+  .sbs-line.blank .sbs-sign {
+    background: rgb(33, 33, 33);
+  }
   .sbs-line.delete .sbs-sign { color: rgba(255, 130, 130, 1); }
   .sbs-line.add .sbs-sign { color: rgba(120, 220, 150, 1); }
 }
