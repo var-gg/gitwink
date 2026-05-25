@@ -21,6 +21,12 @@ cannot commit, push, merge, or modify anything. Read-only by design.
 
 [**Get gitwink on the Microsoft Store →**](https://apps.microsoft.com/detail/9P0S21GJD53F)
 
+Or via [WinGet](https://github.com/microsoft/winget-cli):
+
+```sh
+winget install gitwink
+```
+
 The Store build is signed by Microsoft during certification, so no
 SmartScreen prompt appears. The Store also owns updates — gitwink's
 in-app updater stays out of the way for this channel.

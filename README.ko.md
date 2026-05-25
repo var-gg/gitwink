@@ -21,6 +21,12 @@ merge, 수정 어느 것도 못 한다. 설계상 읽기 전용.
 
 [**Microsoft Store에서 gitwink 받기 →**](https://apps.microsoft.com/detail/9P0S21GJD53F)
 
+또는 [WinGet](https://github.com/microsoft/winget-cli)으로:
+
+```sh
+winget install gitwink
+```
+
 Store 빌드는 인증 단계에서 Microsoft가 자동 서명하므로 SmartScreen 경고가
 뜨지 않는다. 업데이트도 Store가 관리한다 — 이 채널에서는 gitwink 인앱
 업데이터가 비활성화된다.
