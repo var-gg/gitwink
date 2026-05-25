@@ -3,10 +3,11 @@
 [English](README.md) · **한국어** · [日本語](README.ja.md)
 
 [![Release](https://img.shields.io/github/v/release/var-gg/gitwink)](https://github.com/var-gg/gitwink/releases/latest)
+[![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-Available-0078D4?logo=microsoftstore&logoColor=white)](https://apps.microsoft.com/detail/9P0S21GJD53F)
 
 > AI 에이전트 시대를 위한 트레이 상주 · 읽기 전용 git glance.
 
-**상태:** v0.2 — 쓸 만함. cold-start 친화적인 트레이 앱.
+**상태:** v0.4 — 쓸 만함. cold-start 친화적인 트레이 앱.
 
 ![gitwink](docs/images/hero.gif)
 
@@ -15,6 +16,14 @@ gitwink는 시스템 트레이에 산다. 클릭하면 **모든** 로컬 repo의
 merge, 수정 어느 것도 못 한다. 설계상 읽기 전용.
 
 ## 다운로드
+
+**Windows — [Microsoft Store](https://apps.microsoft.com/detail/9P0S21GJD53F):**
+
+[**Microsoft Store에서 gitwink 받기 →**](https://apps.microsoft.com/detail/9P0S21GJD53F)
+
+Store 빌드는 인증 단계에서 Microsoft가 자동 서명하므로 SmartScreen 경고가
+뜨지 않는다. 업데이트도 Store가 관리한다 — 이 채널에서는 gitwink 인앱
+업데이터가 비활성화된다.
 
 **Windows — [Scoop](https://scoop.sh):**
 
@@ -33,16 +42,20 @@ SmartScreen 경고가 아예 뜨지 않는다.
 - **Windows** — `.exe` (NSIS 인스톨러) 또는 `.msi`
 - **macOS** — `.dmg` (universal)
 
-현재 아티팩트는 서명되지 않아, 첫 실행 시 Windows SmartScreen / macOS
-Gatekeeper가 경고를 띄운다 — 우회 방법은 릴리즈 노트에 있다. 직접
-빌드하려면 [개발](#개발) 참고.
+직접 다운로드 빌드는 현재 서명되지 않아, 첫 실행 시 Windows SmartScreen /
+macOS Gatekeeper가 경고를 띄운다 — 우회 방법은 릴리즈 노트에 있다.
+직접 빌드하려면 [개발](#개발) 참고.
 
 ## 코드 서명
 
-gitwink는 오픈소스를 위한 [SignPath Foundation](https://signpath.org/)
-무상 코드 서명 프로그램에 참여하고 있다 — [코드 서명 정책](CODE_SIGNING_POLICY.md)
-참고. 첫 서명 릴리즈가 나오기 전까지 Windows 빌드는 서명되지 않은
-상태다 (위 [다운로드](#다운로드) 참고).
+설치 채널마다 신뢰 경로가 다르다:
+
+- **Microsoft Store** — 인증 단계에서 Microsoft가 자동 재서명. SmartScreen 안 뜬다.
+- **Scoop** — 추출 방식 설치라 SmartScreen 안 뜬다.
+- **직접 다운로드** (`.exe` / `.msi`) — 현재 서명되지 않은 상태. gitwink는
+  오픈소스를 위한 [SignPath Foundation](https://signpath.org/) 무상 코드
+  서명 프로그램에 참여하고 있다 ([코드 서명 정책](CODE_SIGNING_POLICY.md)
+  참고); 승인되면 SignPath 인증서가 이 빌드들을 서명하게 된다.
 
 ## 만든 이유
 

@@ -3,10 +3,11 @@
 **English** · [한국어](README.ko.md) · [日本語](README.ja.md)
 
 [![Release](https://img.shields.io/github/v/release/var-gg/gitwink)](https://github.com/var-gg/gitwink/releases/latest)
+[![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-Available-0078D4?logo=microsoftstore&logoColor=white)](https://apps.microsoft.com/detail/9P0S21GJD53F)
 
 > Tray-resident, read-only git glance for the AI-agent era.
 
-**Status:** v0.2 — usable. Cold-start friendly tray app.
+**Status:** v0.4 — usable. Cold-start friendly tray app.
 
 ![gitwink](docs/images/hero.gif)
 
@@ -15,6 +16,14 @@ activity across **all** your local repos. It is **not** a git client — it
 cannot commit, push, merge, or modify anything. Read-only by design.
 
 ## Download
+
+**Windows — [Microsoft Store](https://apps.microsoft.com/detail/9P0S21GJD53F):**
+
+[**Get gitwink on the Microsoft Store →**](https://apps.microsoft.com/detail/9P0S21GJD53F)
+
+The Store build is signed by Microsoft during certification, so no
+SmartScreen prompt appears. The Store also owns updates — gitwink's
+in-app updater stays out of the way for this channel.
 
 **Windows — [Scoop](https://scoop.sh):**
 
@@ -33,17 +42,22 @@ extraction, so the SmartScreen prompt never appears.
 - **Windows** — `.exe` (NSIS installer) or `.msi`
 - **macOS** — `.dmg` (universal)
 
-Artefacts are unsigned for now, so Windows SmartScreen / macOS Gatekeeper
-will warn on first launch — the release notes have the bypass steps.
-Prefer to build it yourself? See [Development](#development).
+Direct downloads are unsigned for now, so Windows SmartScreen / macOS
+Gatekeeper will warn on first launch — the release notes have the
+bypass steps. Prefer to build it yourself? See [Development](#development).
 
 ## Code signing
 
-gitwink participates in the [SignPath Foundation](https://signpath.org/)
-free code-signing program for open-source software — see the
-[Code signing policy](CODE_SIGNING_POLICY.md). Until the first signed
-release ships, Windows builds remain unsigned (see [Download](#download)
-above).
+Different install channels carry their own trust path:
+
+- **Microsoft Store** — packages are automatically re-signed by
+  Microsoft during certification; SmartScreen stays silent.
+- **Scoop** — installs by extraction, no SmartScreen prompt either.
+- **Direct downloads** (`.exe` / `.msi`) — currently unsigned. gitwink
+  participates in the [SignPath Foundation](https://signpath.org/) free
+  code-signing program for open-source software (see the
+  [Code signing policy](CODE_SIGNING_POLICY.md)); the SignPath
+  certificate will sign these artefacts once approved.
 
 ## Origin
 
