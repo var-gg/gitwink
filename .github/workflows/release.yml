@@ -86,3 +86,20 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+  # Open a PR against microsoft/winget-pkgs with the bumped NSIS installer.
+  # First-time submission was a manual wingetcreate run; this job keeps it
+  # current on every tagged release. Skips if WINGET_TOKEN isn't set (e.g.
+  # forks without the secret), so it never blocks a release.
+  publish-winget:
+    name: Update winget-pkgs manifest
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.ref_name, '-') }}  # skip prereleases like v0.4.0-rc1
+    steps:
+      - name: Submit PR to microsoft/winget-pkgs
+        uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: var-gg.gitwink
+          installers-regex: 'gitwink_.*_x64-setup\.exe$'
+          token: ${{ secrets.WINGET_TOKEN }}
