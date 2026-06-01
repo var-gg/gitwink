@@ -484,41 +484,59 @@ export function useTimelineWindow(
 
   const countNew = useCallback(() => machinery.countNew(), [machinery]);
 
-  // (Re)load whenever the filters or refreshNonce change. The first load
-  // starts at the top; later ones recover around the focused commit.
+  // (Re)load whenever the filters or refreshNonce change. We tell three
+  // cases apart by what actually changed:
+  //   • initial load        → window from the top, emit a scroll-to;
+  //   • filter change (repo / author / window) → recover around the focused
+  //     commit, emit a scroll-to (different data, so re-anchor the view);
+  //   • refreshNonce-only bump (panel re-summon / scan-complete / watcher
+  //     invalidation — SAME filter) → reload IN PLACE at the current
+  //     viewport rank with NO scroll-to. This is the fix for a mid-view
+  //     click being yanked back to the top: a quiet background refresh must
+  //     preserve the open expansion + selection + scroll, never re-anchor.
   //
   // A background git→cache refill follows ONLY when fresh git data could
   // exist — the first load, a panel re-summon (`refreshNonce`), or a
   // changed time window. A repo / author chip change is a pure re-query of
   // the already-cached commits, so it skips the refill. The refill (and its
-  // quiet in-place re-pull) is sequenced strictly AFTER the primary reload,
-  // so it can never supersede that reload's anchor recovery.
+  // quiet in-place re-pull) is sequenced strictly AFTER the primary reload.
   const filterKey = JSON.stringify([repoIds, authors, windowDays, refreshNonce]);
-  const refillKeyRef = useRef<{ windowDays: number | null; refreshNonce: number }>(
-    { windowDays, refreshNonce },
-  );
+  const filtersKey = JSON.stringify([repoIds, authors, windowDays]);
+  const reloadKeyRef = useRef<{
+    filtersKey: string;
+    windowDays: number | null;
+    refreshNonce: number;
+  }>({ filtersKey, windowDays, refreshNonce });
   useEffect(() => {
     const isInitial = windowRef.current.filter == null;
-    const prevRefill = refillKeyRef.current;
+    const prev = reloadKeyRef.current;
+    const filtersChanged = !isInitial && filtersKey !== prev.filtersKey;
     const needsRefill =
       isInitial ||
-      windowDays !== prevRefill.windowDays ||
-      refreshNonce !== prevRefill.refreshNonce;
-    refillKeyRef.current = { windowDays, refreshNonce };
+      windowDays !== prev.windowDays ||
+      refreshNonce !== prev.refreshNonce;
+    reloadKeyRef.current = { filtersKey, windowDays, refreshNonce };
 
-    void machinery
-      .reload(isInitial ? "top" : "recover", false, true)
-      .then(() => {
-        if (!needsRefill) return;
-        const qid = queryRef.current;
-        recentCommits(paramsRef.current.windowDays)
-          .then(() => {
-            if (qid === queryRef.current) {
-              void machinery.reload("current", false, false);
-            }
-          })
-          .catch(() => {});
-      });
+    // A refreshNonce-only bump (filters unchanged) reloads in place with no
+    // scroll-to, so the user's open expansion / selection / scroll survive.
+    const anchorMode: "top" | "recover" | "current" = isInitial
+      ? "top"
+      : filtersChanged
+        ? "recover"
+        : "current";
+    const emitRecovery = isInitial || filtersChanged;
+
+    void machinery.reload(anchorMode, false, emitRecovery).then(() => {
+      if (!needsRefill) return;
+      const qid = queryRef.current;
+      recentCommits(paramsRef.current.windowDays)
+        .then(() => {
+          if (qid === queryRef.current) {
+            void machinery.reload("current", false, false);
+          }
+        })
+        .catch(() => {});
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey]);
 

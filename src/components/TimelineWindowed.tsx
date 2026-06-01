@@ -117,6 +117,10 @@ export function TimelineWindowed({
   // `selected` is a GLOBAL row index (it can point at a not-yet-loaded row).
   const [selected, setSelected] = useState(0);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  // Ref mirror of `expandedKey` so the long-lived invalidation listener
+  // reads the live expanded state without re-subscribing on every toggle.
+  const expandedKeyRef = useRef<string | null>(null);
+  expandedKeyRef.current = expandedKey;
   // "N new commits" pill — set when the scanner reports new commits while
   // the reader is scrolled away from the top.
   const [newCount, setNewCount] = useState(0);
@@ -291,7 +295,15 @@ export function TimelineWindowed({
       timer = window.setTimeout(() => {
         void (async () => {
           const el = scrollRef.current;
-          if (el && el.scrollTop < ROW_H * 2) {
+          // At the very top with nothing expanded → auto-advance to the
+          // latest. If a row is expanded the reader is mid-view: don't yank
+          // the page out from under them — surface the "N new" pill instead
+          // and let them opt in.
+          if (
+            el &&
+            el.scrollTop < ROW_H * 2 &&
+            expandedKeyRef.current == null
+          ) {
             reloadLatest();
           } else {
             const n = await countNew();

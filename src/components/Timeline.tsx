@@ -47,6 +47,12 @@ interface Props {
   commits: CommitSummary[];
   /** Branch list — colors the DAG lanes by branch identity. */
   branches?: BranchInfo[];
+  /** Filter signature (branch / window / author). A change means the user
+   *  picked a different view → reset selection / expansion / scroll. A pure
+   *  commits refresh under the same signature (a background re-pull driven
+   *  by refreshNonce) keeps the view, so a mid-view click isn't yanked back
+   *  to the top. */
+  resetKey?: string;
 }
 
 function timeAgo(unixSeconds: number): string {
@@ -71,7 +77,7 @@ function formatFullTime(unixSeconds: number): string {
   });
 }
 
-export function Timeline({ commits, branches }: Props) {
+export function Timeline({ commits, branches, resetKey }: Props) {
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportH, setViewportH] = useState(0);
   const [selected, setSelected] = useState(0);
@@ -198,14 +204,19 @@ export function Timeline({ commits, branches }: Props) {
     return () => observer.disconnect();
   }, []);
 
-  // Fresh commit list (repo / branch / window / author swap, or a re-pull)
-  // — reset selection, expansion, and scroll back to the newest commit.
+  // Fresh filter (branch / window / author swap) — reset selection,
+  // expansion, and scroll back to the newest commit. Keyed on the filter
+  // signature, NOT the commits array: a background re-pull under the same
+  // filter (a panel re-summon / scan-complete bumps refreshNonce, which
+  // refetches commits into a new array) keeps the view, so a mid-view click
+  // isn't yanked back to the top. The repo swap is handled one level up by
+  // a remount (App keys Timeline on the repo path).
   useEffect(() => {
     setSelected(0);
     setExpandedHash(null);
     setScrollTop(0);
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [commits]);
+  }, [resetKey]);
 
   // Keep `selected` in range as the commit list changes.
   useEffect(() => {

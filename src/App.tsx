@@ -848,6 +848,7 @@ function App() {
               key={`single:${selectedRepoPath}`}
               commits={filteredCommits}
               branches={branches}
+              resetKey={`${JSON.stringify(selectedBranches)}|${windowDays}|${JSON.stringify(selectedAuthors)}`}
             />
           )
         ) : (
