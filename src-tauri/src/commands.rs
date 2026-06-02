@@ -447,26 +447,38 @@ pub async fn commit_file_blobs(
     .map_err(|e| e.to_string())?
 }
 
+/// Default unified-diff context. Only this size is cached — it's the hot
+/// path. Expanded-context requests (±25 / whole-file) are on-demand and
+/// rare, so they skip the cache rather than bloating its key with the
+/// context size.
+const DEFAULT_DIFF_CONTEXT: u32 = 3;
+
 #[tauri::command]
 pub async fn file_diff(
     app: AppHandle,
     repo_path: String,
     hash: String,
     file_path: String,
+    context_lines: u32,
 ) -> Result<String, String> {
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
-        // 1. Cache hit?
-        if let Ok(conn) = cache::open(&app) {
-            if let Ok(Some(text)) = cache::get_diff(&conn, &repo_path, &hash, &file_path) {
-                return Ok(text);
+        let cacheable = context_lines == DEFAULT_DIFF_CONTEXT;
+        // 1. Cache hit? (default context only)
+        if cacheable {
+            if let Ok(conn) = cache::open(&app) {
+                if let Ok(Some(text)) = cache::get_diff(&conn, &repo_path, &hash, &file_path) {
+                    return Ok(text);
+                }
             }
         }
-        // 2. Compute, persist, return.
-        let text = git::file_diff(Path::new(&repo_path), &hash, &file_path)
+        // 2. Compute, persist (default context only), return.
+        let text = git::file_diff(Path::new(&repo_path), &hash, &file_path, context_lines)
             .map_err(|e| e.to_string())?;
-        if let Ok(conn) = cache::open(&app) {
-            let _ = cache::put_diff(&conn, &repo_path, &hash, &file_path, &text);
+        if cacheable {
+            if let Ok(conn) = cache::open(&app) {
+                let _ = cache::put_diff(&conn, &repo_path, &hash, &file_path, &text);
+            }
         }
         Ok(text)
     })

@@ -451,7 +451,12 @@ pub fn commit_file_blobs(
 /// Unified diff text (git's standard patch output) for a single file in a
 /// commit, against that commit's first parent. Root commit compares against
 /// the empty tree.
-pub fn file_diff(repo_path: &Path, commit_hash: &str, file_path: &str) -> Result<String> {
+pub fn file_diff(
+    repo_path: &Path,
+    commit_hash: &str,
+    file_path: &str,
+    context_lines: u32,
+) -> Result<String> {
     let repo = Repository::open(repo_path)
         .with_context(|| format!("open repo {}", repo_path.display()))?;
     let oid = git2::Oid::from_str(commit_hash).context("parse commit hash")?;
@@ -466,7 +471,11 @@ pub fn file_diff(repo_path: &Path, commit_hash: &str, file_path: &str) -> Result
 
     let mut opts = git2::DiffOptions::new();
     opts.pathspec(file_path);
-    opts.context_lines(3);
+    // Caller-controlled: 3 for the default hunk view, larger to expand
+    // context, very large (≥ file length) for a whole-file diff. git merges
+    // hunks as the context grows, so the same patch output renders a full
+    // file with add/delete tinting intact — no separate viewer needed.
+    opts.context_lines(context_lines);
     // Force text patch generation. libgit2's binary heuristic misfires on
     // big Unity YAML scenes (NUL bytes in long fields) and would otherwise
     // emit "Binary files differ" for files that are perfectly diffable.

@@ -18,13 +18,27 @@ function isDarkScheme(): boolean {
   );
 }
 
+// Persisted old/new split — fraction of width given to the left (old)
+// column. Clamped so neither side can be dragged to nothing.
+const SPLIT_KEY = "gitwink.diffSplit";
+const SPLIT_MIN = 0.15;
+const SPLIT_MAX = 0.85;
+function loadSplit(): number {
+  if (typeof window === "undefined") return 0.5;
+  const v = Number(window.localStorage.getItem(SPLIT_KEY));
+  return Number.isFinite(v) && v >= SPLIT_MIN && v <= SPLIT_MAX ? v : 0.5;
+}
+
 export function SideBySideDiff({ text, filePath }: Props) {
   const { hunks } = parseDiff(text);
   const leftRef = useRef<HTMLDivElement | null>(null);
   const rightRef = useRef<HTMLDivElement | null>(null);
+  const colsRef = useRef<HTMLDivElement | null>(null);
+  const draggingRef = useRef(false);
 
   const [highlighter, setHighlighter] = useState<Highlighter | null>(null);
   const [dark, setDark] = useState(isDarkScheme);
+  const [split, setSplit] = useState(loadSplit);
 
   const lang = filePath ? langForPath(filePath) : null;
 
@@ -77,13 +91,46 @@ export function SideBySideDiff({ text, filePath }: Props) {
     };
   }, [hunks.length]);
 
+  // Persist the split so it survives reopening the diff window.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SPLIT_KEY, String(split));
+    } catch {}
+  }, [split]);
+
+  // Column resizer — drag the divider to rebalance old vs new, double-click
+  // to reset to 50/50. Pointer capture keeps the drag alive past the thin
+  // handle and over the scrolling columns.
+  function onResizerDown(e: React.PointerEvent) {
+    e.preventDefault();
+    draggingRef.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+  function onResizerMove(e: React.PointerEvent) {
+    if (!draggingRef.current || !colsRef.current) return;
+    const rect = colsRef.current.getBoundingClientRect();
+    const r = (e.clientX - rect.left) / rect.width;
+    setSplit(Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, r)));
+  }
+  function onResizerUp(e: React.PointerEvent) {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
+  }
+
   if (hunks.length === 0) {
     return <div className="sbs-empty">No textual diff.</div>;
   }
 
   return (
     <div className="sbs">
-      <div className="sbs-cols">
+      <div
+        className="sbs-cols"
+        ref={colsRef}
+        style={{ gridTemplateColumns: `${split}fr 8px ${1 - split}fr` }}
+      >
         <div className="sbs-col" ref={leftRef}>
           <div className="sbs-col-inner">
             {hunks.map((h, hi) => (
@@ -103,6 +150,17 @@ export function SideBySideDiff({ text, filePath }: Props) {
             ))}
           </div>
         </div>
+        <div
+          className="sbs-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize old/new columns"
+          title="Drag to resize · double-click to reset"
+          onPointerDown={onResizerDown}
+          onPointerMove={onResizerMove}
+          onPointerUp={onResizerUp}
+          onDoubleClick={() => setSplit(0.5)}
+        />
         <div className="sbs-col" ref={rightRef}>
           <div className="sbs-col-inner">
             {hunks.map((h, hi) => (

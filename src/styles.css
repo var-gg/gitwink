@@ -1540,9 +1540,18 @@ body,
   padding: 8px 16px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.diff-header-left {
+  display: flex;
   flex-direction: column;
   gap: 2px;
-  flex-shrink: 0;
+  min-width: 0;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1554,6 +1563,9 @@ body,
 .diff-header-summary {
   font-size: 14px;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .diff-header-meta {
@@ -1575,6 +1587,60 @@ body,
 @media (prefers-color-scheme: dark) {
   .diff-header-hash {
     background: rgba(255, 255, 255, 0.10);
+  }
+}
+
+/* Context-line toggle: a small segmented control in the diff header.
+   Switches the side-by-side view between ±3 / ±25 / whole-file. */
+.diff-context-toggle {
+  display: flex;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.diff-context-btn {
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 9px;
+  border: none;
+  border-left: 1px solid rgba(0, 0, 0, 0.12);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.diff-context-btn:first-child {
+  border-left: none;
+}
+
+.diff-context-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  opacity: 1;
+}
+
+.diff-context-btn.active {
+  background: rgba(80, 130, 240, 0.9);
+  color: #fff;
+  opacity: 1;
+}
+
+@media (prefers-color-scheme: dark) {
+  .diff-context-toggle {
+    border-color: rgba(255, 255, 255, 0.14);
+  }
+  .diff-context-btn {
+    border-left-color: rgba(255, 255, 255, 0.14);
+  }
+  .diff-context-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .diff-context-btn.active {
+    background: rgba(120, 160, 255, 0.9);
+    color: #0b0b0b;
   }
 }
 
@@ -1693,7 +1759,9 @@ body,
 .sbs-cols {
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* Inline style overrides the columns with the persisted split; this is
+     the fallback and defines the resizer's fixed middle track width. */
+  grid-template-columns: 1fr 8px 1fr;
   min-width: 0;
   height: 100%;
 }
@@ -1712,6 +1780,30 @@ body,
 @media (prefers-color-scheme: dark) {
   .sbs-col {
     border-right-color: rgba(255, 255, 255, 0.06);
+  }
+}
+
+/* Draggable divider between the old/new columns. The grid gives it a fixed
+   8px track; pointer drag rewrites the inline grid-template-columns. */
+.sbs-resizer {
+  cursor: col-resize;
+  background: rgba(0, 0, 0, 0.06);
+  touch-action: none;
+  transition: background 0.12s;
+}
+
+.sbs-resizer:hover,
+.sbs-resizer:active {
+  background: rgba(80, 130, 240, 0.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  .sbs-resizer {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .sbs-resizer:hover,
+  .sbs-resizer:active {
+    background: rgba(140, 180, 255, 0.6);
   }
 }
 

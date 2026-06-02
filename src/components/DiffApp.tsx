@@ -8,6 +8,7 @@ import {
   changedFiles,
   fileDiff,
   takePendingDiffOpen,
+  WHOLE_FILE_CONTEXT,
   type DiffOpenPayload,
 } from "../lib/ipc";
 import { getDiffSelectionRange, refLineWithFile } from "../lib/smartcopy";
@@ -39,11 +40,28 @@ function formatSize(bytes: number | null): string {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 
+/** Header context-toggle steps. "Full" expands git's context past any real
+ * file length, so the same side-by-side view renders the whole file with
+ * changes still tinted — no separate read-only editor. */
+const CONTEXT_OPTIONS: { value: number; label: string; title: string }[] = [
+  { value: 3, label: "±3", title: "Default — 3 lines of context around each change" },
+  { value: 25, label: "±25", title: "Expanded — 25 lines of context" },
+  {
+    value: WHOLE_FILE_CONTEXT,
+    label: "Full",
+    title: "Whole file, with changes highlighted",
+  },
+];
+
 export function DiffApp() {
   const [ctx, setCtx] = useState<DiffOpenPayload | null>(null);
   const [files, setFiles] = useState<ChangedFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [diffText, setDiffText] = useState<string | null>(null);
+  // Unified-diff context lines for the selected file. 3 = default hunk
+  // view; the header toggle bumps it to expand context or show the whole
+  // file. Persists across file switches so "Full" stays on if chosen.
+  const [context, setContext] = useState<number>(3);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -119,7 +137,7 @@ export function DiffApp() {
     setDiffText(null);
     (async () => {
       try {
-        const txt = await fileDiff(ctx.repoPath, ctx.hash, selectedFile);
+        const txt = await fileDiff(ctx.repoPath, ctx.hash, selectedFile, context);
         if (!cancelled) setDiffText(txt);
       } catch (e) {
         if (!cancelled) setDiffText(`Error: ${String(e)}`);
@@ -128,7 +146,7 @@ export function DiffApp() {
     return () => {
       cancelled = true;
     };
-  }, [ctx?.repoPath, ctx?.hash, selectedFile, isImage, isBinary]);
+  }, [ctx?.repoPath, ctx?.hash, selectedFile, isImage, isBinary, context]);
 
   function onShellContextMenu(e: React.MouseEvent) {
     const target = e.target as HTMLElement;
@@ -191,13 +209,36 @@ export function DiffApp() {
   return (
     <div className="diff-shell" onContextMenu={onShellContextMenu}>
       <header className="diff-header">
-        <div className="diff-header-summary">{ctx.summary}</div>
-        <div className="diff-header-meta">
-          <span>{ctx.repoName}</span>
-          <code className="diff-header-hash" title={ctx.hash}>
-            {ctx.shortHash}
-          </code>
+        <div className="diff-header-left">
+          <div className="diff-header-summary">{ctx.summary}</div>
+          <div className="diff-header-meta">
+            <span>{ctx.repoName}</span>
+            <code className="diff-header-hash" title={ctx.hash}>
+              {ctx.shortHash}
+            </code>
+          </div>
         </div>
+        {selectedFile && !isImage && !isBinary && (
+          <div
+            className="diff-context-toggle"
+            role="group"
+            aria-label="Diff context"
+          >
+            {CONTEXT_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                className={
+                  "diff-context-btn" + (context === o.value ? " active" : "")
+                }
+                onClick={() => setContext(o.value)}
+                title={o.title}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
       <div className="diff-body">
         <aside className="diff-sidebar">

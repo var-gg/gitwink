@@ -124,12 +124,21 @@ export async function changedFilesBatch(
   }
 }
 
+/** Context-line count that yields a whole-file diff: far larger than any
+ * real file, so git emits the entire file as context with add/delete
+ * tinting intact. Not cached (only the default ±3 view is). */
+export const WHOLE_FILE_CONTEXT = 1_000_000;
+
 export async function fileDiff(
   repoPath: string,
   hash: string,
   filePath: string,
+  /** Unified-diff context lines. 3 = default hunk view; larger expands
+   * context; a very large value (see WHOLE_FILE_CONTEXT) yields a
+   * whole-file diff. Only the default is cached by the backend. */
+  contextLines = 3,
 ): Promise<string> {
-  return invoke<string>("file_diff", { repoPath, hash, filePath });
+  return invoke<string>("file_diff", { repoPath, hash, filePath, contextLines });
 }
 
 export async function commitFileBlobs(
