@@ -13,6 +13,9 @@ name: MSIX (Microsoft Store)
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: read
@@ -21,6 +24,12 @@ jobs:
   msix:
     name: Build MSIX bundle
     runs-on: windows-latest
+    # Skip prerelease tags (e.g. v0.5.0-rc1); a manual dispatch always runs.
+    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.ref_name, '-') }}
+    # Surfaced as an env var so the publish steps below can gate on whether
+    # the Partner Center / Entra credentials have been configured yet.
+    env:
+      AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -67,3 +76,29 @@ jobs:
           name: gitwink-msix
           path: src-tauri/target/msix/*.msixbundle
           if-no-files-found: error
+
+      # Auto-submit to the Microsoft Store via the Dev Store CLI (msstore).
+      # Gated on the Partner Center / Entra credentials being present, so the
+      # build + artifact path still works before they're configured (and on
+      # forks without the secrets). Store-update via GitHub Actions is
+      # free-product-only today — gitwink is free. Product id 9P0S21GJD53F.
+      - name: Configure Microsoft Store CLI
+        if: ${{ env.AZURE_AD_TENANT_ID != '' }}
+        uses: microsoft/microsoft-store-apppublisher@v1.1
+
+      - name: Authenticate to Partner Center
+        if: ${{ env.AZURE_AD_TENANT_ID != '' }}
+        run: >-
+          msstore reconfigure
+          --tenantId ${{ secrets.AZURE_AD_TENANT_ID }}
+          --sellerId ${{ secrets.SELLER_ID }}
+          --clientId ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          --clientSecret ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+
+      - name: Publish msixbundle to the Microsoft Store
+        if: ${{ env.AZURE_AD_TENANT_ID != '' }}
+        shell: pwsh
+        run: |
+          $pkg = (Get-ChildItem src-tauri/target/msix/*.msixbundle | Select-Object -First 1).FullName
+          Write-Output "Publishing $pkg to Store product 9P0S21GJD53F"
+          msstore publish "$pkg" -id 9P0S21GJD53F
