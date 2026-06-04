@@ -37,3 +37,6 @@ Thumbs.db
 # gpt-pro-submit workspace hook (config + ephemeral payload — personal)
 .gptprosubmit/
 .tmp_review/
+
+# Store MSIX bundle staged for manual Partner Center upload (tools/deploy-store.ps1)
+.store-upload/

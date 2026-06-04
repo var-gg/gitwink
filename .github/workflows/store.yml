@@ -78,16 +78,26 @@ jobs:
           if-no-files-found: error
 
       # Auto-submit to the Microsoft Store via the Dev Store CLI (msstore).
-      # Gated on the Partner Center / Entra credentials being present, so the
-      # build + artifact path still works before they're configured (and on
-      # forks without the secrets). Store-update via GitHub Actions is
-      # free-product-only today — gitwink is free. Product id 9P0S21GJD53F.
+      #
+      # DISABLED by default: gated on the `STORE_AUTOPUBLISH` repo *variable*
+      # being "true", which it is NOT today. Reason: the Entra app that msstore
+      # authenticates with is not yet associated to the Partner Center account
+      # (Azure app registration != Partner Center "Microsoft Entra applications"
+      # association), so `msstore reconfigure` fails and turns every run red —
+      # even though the MSIX build + artifact upload above succeed. Until that's
+      # set up, Store submission is done via tools/deploy-store.ps1 (it grabs the
+      # exact artifact built above for a manual Partner Center upload). To
+      # re-enable once the Entra app is connected with a Manager role:
+      #   gh variable set STORE_AUTOPUBLISH --repo var-gg/gitwink --body true
+      # The env.AZURE_AD_TENANT_ID guard also stays so forks without the secrets
+      # never run it. Store-update via GitHub Actions is free-product-only —
+      # gitwink is free. Product id 9P0S21GJD53F.
       - name: Configure Microsoft Store CLI
-        if: ${{ env.AZURE_AD_TENANT_ID != '' }}
+        if: ${{ vars.STORE_AUTOPUBLISH == 'true' && env.AZURE_AD_TENANT_ID != '' }}
         uses: microsoft/microsoft-store-apppublisher@v1.1
 
       - name: Authenticate to Partner Center
-        if: ${{ env.AZURE_AD_TENANT_ID != '' }}
+        if: ${{ vars.STORE_AUTOPUBLISH == 'true' && env.AZURE_AD_TENANT_ID != '' }}
         run: >-
           msstore reconfigure
           --tenantId ${{ secrets.AZURE_AD_TENANT_ID }}
@@ -96,7 +106,7 @@ jobs:
           --clientSecret ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
 
       - name: Publish msixbundle to the Microsoft Store
-        if: ${{ env.AZURE_AD_TENANT_ID != '' }}
+        if: ${{ vars.STORE_AUTOPUBLISH == 'true' && env.AZURE_AD_TENANT_ID != '' }}
         shell: pwsh
         run: |
           $pkg = (Get-ChildItem src-tauri/target/msix/*.msixbundle | Select-Object -First 1).FullName
