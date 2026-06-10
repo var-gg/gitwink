@@ -237,7 +237,9 @@ fn announce_registered_repo(
 
     let repo_path = PathBuf::from(&repo.canonical_path);
     let cutoff = unix_now() - 7 * 86_400;
-    let commits = git::recent_commits(&repo_path, 10, cutoff)
+    // Cap matches the watcher's REFRESH_MAX_PER_REPO rationale: the initial
+    // fill must cover a whole active week, not just the newest ten commits.
+    let commits = git::recent_commits(&repo_path, 100, cutoff)
         .unwrap_or_default()
         .into_iter()
         .map(|mut c| {
@@ -257,6 +259,7 @@ fn announce_registered_repo(
                 cache::TimelineInvalidated {
                     generation: o.generation,
                     inserted: o.inserted,
+                    deleted: 0,
                     repo_path: repo.canonical_path.clone(),
                 },
             );
@@ -486,6 +489,21 @@ pub fn hide_repo(app: &AppHandle, canonical_path: &str) -> Result<()> {
     )?;
     tx.commit()?;
 
+    // The cache half: drop the repo's commits so the all-repos timeline
+    // stops showing them now, not at the next schema migration. The
+    // watcher half: detach its .git subscription so new agent commits in
+    // the hidden repo can't re-insert rows the user asked to remove.
+    let removed = cache::delete_repo_commits(&mut conn, canonical_path).unwrap_or(
+        cache::UpsertOutcome {
+            generation: 0,
+            inserted: 0,
+            deleted: 0,
+        },
+    );
+    if let Some(w) = app.try_state::<watcher::RepoWatcher>() {
+        w.remove(Path::new(canonical_path));
+    }
+
     let _ = app.emit(
         "timeline://repo-status",
         &RepoStatusPayload {
@@ -493,6 +511,17 @@ pub fn hide_repo(app: &AppHandle, canonical_path: &str) -> Result<()> {
             status: "removed",
         },
     );
+    if removed.deleted > 0 {
+        let _ = app.emit(
+            "timeline://invalidated",
+            cache::TimelineInvalidated {
+                generation: removed.generation,
+                inserted: 0,
+                deleted: removed.deleted,
+                repo_path: canonical_path.to_string(),
+            },
+        );
+    }
     let _ = append_scan_log(app, &format!("{now} user_hide: {canonical_path}"));
     Ok(())
 }
@@ -687,8 +716,17 @@ fn run_pipeline_sync(
     }
 
     // Flush per-repo events AFTER commit. Frontend can append these to
-    // its row list — the cache row they reference is now durable.
+    // its row list — the cache row they reference is now durable. Attach
+    // the file watcher here too: lib.rs only wires repos already cached at
+    // startup, so without this every repo the scan finds stays unwatched
+    // for the whole first session — no live updates exactly when the
+    // first impression is formed. `add` is idempotent (canonical-path map
+    // check), so re-announcing a known repo is harmless.
+    let watcher_state = app.try_state::<watcher::RepoWatcher>();
     for payload in emit_buffer {
+        if let Some(w) = &watcher_state {
+            w.add(Path::new(&payload.path));
+        }
         let _ = app.emit("timeline://repo-discovered", &payload);
     }
 

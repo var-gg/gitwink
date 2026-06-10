@@ -3,20 +3,25 @@
 // refresh that re-reads that repo's recent commits and emits a
 // `timeline://repo-fill` event the frontend already knows how to merge.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{cache, git};
 
 /// How recent a commit has to be to enter the streamed payload. Matches the
 /// panel's default time window so the merge in the frontend is meaningful.
 const REFRESH_WINDOW_DAYS: i64 = 7;
-const REFRESH_MAX_PER_REPO: usize = 10;
+/// Per-refresh revwalk cap. Must comfortably exceed any realistic agent
+/// burst (a 30-commit rebase, a squash-merge train): the walk result is
+/// also the live set `reconcile_repo_commits` trusts, and a capped walk
+/// can only reconcile the span it actually covered — ghosts below the cap
+/// boundary would linger.
+const REFRESH_MAX_PER_REPO: usize = 100;
 const DEBOUNCE_MS: u64 = 500;
 
 /// Per-repo trailing-edge debounce state. `generation` ticks on every
@@ -31,14 +36,21 @@ struct DebounceEntry {
 
 type DebounceMap = Arc<Mutex<HashMap<PathBuf, DebounceEntry>>>;
 
+/// canonical watched dir → every repo path that depends on it. A linked
+/// worktree shares its main repo's common gitdir (refs/remotes, packed-refs,
+/// FETCH_HEAD live there), so one watched dir can serve several repos:
+/// events fan out to ALL of them, and the underlying notify watch is only
+/// dropped when the LAST dependent repo is removed.
+type DirMap = HashMap<PathBuf, HashSet<PathBuf>>;
+
 pub struct RepoWatcher {
     inner: Arc<Mutex<RecommendedWatcher>>,
-    /// canonical .git dir → repo_path as the rest of the app sees it
-    /// (un-canonicalized, matches what discovery / cache use). Notify
-    /// reports events with the canonical form on Windows (`\\?\…` prefix),
-    /// so we need this lookup to emit a path that matches the cache and
-    /// the all-mode rows.
-    git_to_repo: Arc<Mutex<HashMap<PathBuf, PathBuf>>>,
+    /// Keys are canonical .git dirs; values are repo_paths as the rest of
+    /// the app sees them (un-canonicalized, matching discovery / cache).
+    /// Notify reports events with the canonical form on Windows (`\\?\…`
+    /// prefix), so we need this lookup to emit paths that match the cache
+    /// and the all-mode rows.
+    git_to_repo: Arc<Mutex<DirMap>>,
 }
 
 impl RepoWatcher {
@@ -46,8 +58,7 @@ impl RepoWatcher {
         let debounce: DebounceMap = Arc::new(Mutex::new(HashMap::new()));
         let app_for_event = app.clone();
 
-        let git_to_repo: Arc<Mutex<HashMap<PathBuf, PathBuf>>> =
-            Arc::new(Mutex::new(HashMap::new()));
+        let git_to_repo: Arc<Mutex<DirMap>> = Arc::new(Mutex::new(HashMap::new()));
         let g2r = Arc::clone(&git_to_repo);
 
         let watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
@@ -58,21 +69,40 @@ impl RepoWatcher {
                 return;
             };
 
-            // Find the repo this event belongs to. Worktrees keep their
+            // Cheap reject before any lock: only ref movement matters to a
+            // commit timeline. A `git status` rewrites the index, a fetch
+            // writes objects/**, gc repacks — none of those change what the
+            // timeline shows, yet each used to schedule a full refresh
+            // (libgit2 revwalk + two SQLite opens + a write transaction).
+            // In the agent workflow this product targets — status/commit
+            // loops running all day across N repos — this filter is the
+            // difference between "refresh per git command" and "refresh per
+            // actual ref movement".
+            if !is_relevant_git_event(path) {
+                return;
+            }
+
+            // Find the repo(s) this event belongs to. Worktrees keep their
             // gitdir at `main/.git/worktrees/<name>` and submodules at
             // `super/.git/modules/<name>`, so "first ancestor named .git"
             // matches the WRONG directory in those cases. Look up the
             // event's ancestors against the registered watched dirs and
-            // take the longest-prefix match instead.
-            let Ok(map) = g2r.lock() else {
-                return;
+            // take the longest-prefix match instead. A shared common dir
+            // (main repo + its linked worktrees) fans out to every
+            // dependent repo — a fetch in the main checkout must refresh
+            // the worktree rows too.
+            let repos: Vec<PathBuf> = {
+                let Ok(map) = g2r.lock() else {
+                    return;
+                };
+                match repos_for_event_path(path, &map) {
+                    Some(set) => set.iter().cloned().collect(),
+                    None => return,
+                }
             };
-            let Some(repo_path) = repo_for_event_path(path, &map) else {
-                return;
-            };
-            drop(map);
-
-            schedule_refresh(app_for_event.clone(), repo_path, debounce.clone());
+            for repo_path in repos {
+                schedule_refresh(app_for_event.clone(), repo_path, debounce.clone());
+            }
         })?;
 
         Ok(Self {
@@ -86,38 +116,124 @@ impl RepoWatcher {
         if dirs.is_empty() {
             return;
         }
-        let Ok(mut map) = self.git_to_repo.lock() else {
+        // Phase 1 (map lock only): record interest, collect dirs that need
+        // a fresh OS watch. Phase 2 (watcher lock only): start them. The
+        // two locks are NEVER held together: the notify backend can block
+        // watch() on its event thread, and the event closure takes the map
+        // lock — holding the map lock across watch() deadlocks the moment
+        // an event fires while a repo is being added.
+        let mut to_watch: Vec<PathBuf> = Vec::new();
+        {
+            let Ok(mut map) = self.git_to_repo.lock() else {
+                return;
+            };
+            for dir in dirs {
+                let canon = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+                let set = map.entry(canon.clone()).or_default();
+                if set.is_empty() {
+                    to_watch.push(canon);
+                }
+                set.insert(repo_path.to_path_buf());
+            }
+        }
+        if to_watch.is_empty() {
             return;
-        };
+        }
+        let mut failed: Vec<PathBuf> = Vec::new();
+        {
+            let Ok(mut w) = self.inner.lock() else {
+                return;
+            };
+            for canon in &to_watch {
+                if w.watch(canon, RecursiveMode::Recursive).is_err() {
+                    failed.push(canon.clone());
+                }
+            }
+        }
+        // Roll back map entries whose watch never started, so a later add
+        // retries instead of assuming the dir is covered.
+        if !failed.is_empty() {
+            if let Ok(mut map) = self.git_to_repo.lock() {
+                for canon in failed {
+                    if let Some(set) = map.get_mut(&canon) {
+                        set.remove(repo_path);
+                        if set.is_empty() {
+                            map.remove(&canon);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Detach `repo_path`'s interest in every watched dir — the watcher
+    /// half of "hide repo". Without this a hidden repo's .git stays
+    /// subscribed and every new agent commit in it re-inserts rows the
+    /// user asked to remove. Refcounted: a dir other repos still depend on
+    /// (a common gitdir shared by a main repo and its worktrees) keeps its
+    /// OS watch; only dirs left with zero dependents are unwatched.
+    pub fn remove(&self, repo_path: &Path) {
+        let mut to_unwatch: Vec<PathBuf> = Vec::new();
+        {
+            let Ok(mut map) = self.git_to_repo.lock() else {
+                return;
+            };
+            map.retain(|dir, set| {
+                set.remove(repo_path);
+                if set.is_empty() {
+                    to_unwatch.push(dir.clone());
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        if to_unwatch.is_empty() {
+            return;
+        }
         let Ok(mut w) = self.inner.lock() else {
             return;
         };
-        for dir in dirs {
-            let canon = dir.canonicalize().unwrap_or_else(|_| dir.clone());
-            if map.contains_key(&canon) {
-                continue;
-            }
-            if w.watch(&canon, RecursiveMode::Recursive).is_ok() {
-                map.insert(canon, repo_path.to_path_buf());
-            }
+        for dir in to_unwatch {
+            let _ = w.unwatch(&dir);
         }
     }
 }
 
-/// Resolve an inbound notify event back to one of our registered repos by
-/// finding the longest-ancestor that's a key in `git_to_repo`. Falls back
-/// to per-ancestor canonicalize for non-canonical input.
-fn repo_for_event_path(
+/// Does this path under a watched git dir signal something the timeline
+/// cares about? Ref movement shows up as `HEAD` / `packed-refs` /
+/// `FETCH_HEAD` writes or anything under `refs/` or `logs/` (reflog).
+/// Index churn from `git status`, object writes during fetch/gc,
+/// `COMMIT_EDITMSG`, and `*.lock` staging files are all noise. A repo that
+/// happens to live under a directory literally named `refs`/`logs` can
+/// false-positive — that only costs a redundant refresh, never a miss.
+fn is_relevant_git_event(path: &Path) -> bool {
+    let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    if name.ends_with(".lock") {
+        return false;
+    }
+    if matches!(name, "HEAD" | "packed-refs" | "FETCH_HEAD") {
+        return true;
+    }
+    path.components()
+        .any(|c| matches!(c.as_os_str().to_str(), Some("refs") | Some("logs")))
+}
+
+/// Resolve an inbound notify event back to the registered repos that
+/// depend on it, by finding the longest-ancestor that's a key in
+/// `git_to_repo`. Falls back to per-ancestor canonicalize for
+/// non-canonical input.
+fn repos_for_event_path<'m>(
     event_path: &Path,
-    git_to_repo: &HashMap<PathBuf, PathBuf>,
-) -> Option<PathBuf> {
+    git_to_repo: &'m DirMap,
+) -> Option<&'m HashSet<PathBuf>> {
     for ancestor in event_path.ancestors() {
-        if let Some(repo) = git_to_repo.get(ancestor) {
-            return Some(repo.clone());
+        if let Some(set) = git_to_repo.get(ancestor) {
+            return Some(set);
         }
         if let Ok(canon) = ancestor.canonicalize() {
-            if let Some(repo) = git_to_repo.get(&canon) {
-                return Some(repo.clone());
+            if let Some(set) = git_to_repo.get(&canon) {
+                return Some(set);
             }
         }
     }
@@ -224,29 +340,67 @@ fn schedule_refresh(app: AppHandle, repo_path: PathBuf, debounce: DebounceMap) {
 
 fn refresh_repo(app: &AppHandle, repo_path: &Path) {
     let cutoff = unix_now() - REFRESH_WINDOW_DAYS * 86_400;
+    // Err (repo unopenable — deleted, locked) bails out. Ok(empty) flows
+    // through but is inert end to end: the upsert below skips an empty
+    // batch, and reconcile_repo_commits refuses an empty live set — an
+    // empty walk is ambiguous (skew-stuck frontier vs truly no commits)
+    // and must never wipe a repo's cached window.
     let Ok(commits) = git::recent_commits(repo_path, REFRESH_MAX_PER_REPO, cutoff) else {
         return;
     };
-    if commits.is_empty() {
+
+    let Ok(mut conn) = cache::open(app) else {
+        return;
+    };
+    let upserted = if commits.is_empty() {
+        None
+    } else {
+        cache::upsert_commits(&mut conn, &commits).ok()
+    };
+    // Reconcile: the walk above is the live set — cached rows in the
+    // covered span that the repo no longer reaches were amended/rebased
+    // away, and keeping them would show the user history that no longer
+    // exists (the one lie a read-only glance tool must never tell).
+    let walk_capped = commits.len() >= REFRESH_MAX_PER_REPO;
+    let reconciled =
+        cache::reconcile_repo_commits(&mut conn, &repo_path.to_string_lossy(), &commits, cutoff, walk_capped)
+            .ok();
+    drop(conn);
+
+    let inserted = upserted.as_ref().map(|o| o.inserted).unwrap_or(0);
+    let deleted = reconciled.as_ref().map(|o| o.deleted).unwrap_or(0);
+    // The freshest generation either write produced (reconcile bumps after
+    // upsert when both ran).
+    let generation = reconciled
+        .as_ref()
+        .map(|o| o.generation)
+        .filter(|g| *g > 0)
+        .or(upserted.as_ref().map(|o| o.generation))
+        .unwrap_or(0);
+
+    // Emit policy: while the panel is visible, every refresh is worth a
+    // re-pull (branch labels / remote badges on existing rows update too).
+    // While it is hidden, only actual row changes matter — label-only
+    // refreshes would just burn IPC + queries in an invisible webview.
+    if generation == 0 {
         return;
     }
-
-    let outcome = cache::open(app)
-        .ok()
-        .and_then(|mut conn| cache::upsert_commits(&mut conn, &commits).ok());
-
-    // Lightweight windowed-pull signal: tell the UI a new generation landed
-    // for this repo so it re-pulls the affected windows from the cache.
-    if let Some(o) = outcome {
-        let _ = app.emit(
-            "timeline://invalidated",
-            cache::TimelineInvalidated {
-                generation: o.generation,
-                inserted: o.inserted,
-                repo_path: repo_path.to_string_lossy().into_owned(),
-            },
-        );
+    let panel_visible = app
+        .get_webview_window("panel")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+    if !panel_visible && inserted == 0 && deleted == 0 {
+        return;
     }
+    let _ = app.emit(
+        "timeline://invalidated",
+        cache::TimelineInvalidated {
+            generation,
+            inserted,
+            deleted,
+            repo_path: repo_path.to_string_lossy().into_owned(),
+        },
+    );
 }
 
 fn unix_now() -> i64 {
@@ -264,15 +418,21 @@ mod tests {
         PathBuf::from(s.replace('/', std::path::MAIN_SEPARATOR_STR.chars().next().unwrap().to_string().as_str()))
     }
 
+    fn one(repo: &PathBuf) -> HashSet<PathBuf> {
+        let mut s = HashSet::new();
+        s.insert(repo.clone());
+        s
+    }
+
     #[test]
     fn event_path_under_normal_repo_gitdir_maps_to_repo() {
         let repo = p("/tmp/myrepo");
         let gitdir = p("/tmp/myrepo/.git");
-        let mut map = HashMap::new();
-        map.insert(gitdir.clone(), repo.clone());
+        let mut map: DirMap = HashMap::new();
+        map.insert(gitdir.clone(), one(&repo));
 
         let event = gitdir.join("HEAD");
-        assert_eq!(repo_for_event_path(&event, &map), Some(repo));
+        assert_eq!(repos_for_event_path(&event, &map), Some(&one(&repo)));
     }
 
     #[test]
@@ -283,28 +443,80 @@ mod tests {
         // should pick the registered worktree gitdir instead.
         let worktree_repo = p("/tmp/worktree");
         let worktree_gitdir = p("/tmp/main/.git/worktrees/wt1");
-        let mut map = HashMap::new();
-        map.insert(worktree_gitdir.clone(), worktree_repo.clone());
+        let mut map: DirMap = HashMap::new();
+        map.insert(worktree_gitdir.clone(), one(&worktree_repo));
 
         let event = worktree_gitdir.join("HEAD");
-        assert_eq!(repo_for_event_path(&event, &map), Some(worktree_repo));
+        assert_eq!(
+            repos_for_event_path(&event, &map),
+            Some(&one(&worktree_repo))
+        );
     }
 
     #[test]
     fn event_path_under_submodule_gitdir_maps_to_submodule_repo() {
         let sub_repo = p("/tmp/super/sub");
         let sub_gitdir = p("/tmp/super/.git/modules/sub");
-        let mut map = HashMap::new();
-        map.insert(sub_gitdir.clone(), sub_repo.clone());
+        let mut map: DirMap = HashMap::new();
+        map.insert(sub_gitdir.clone(), one(&sub_repo));
 
         let event = sub_gitdir.join("refs/heads/main");
-        assert_eq!(repo_for_event_path(&event, &map), Some(sub_repo));
+        assert_eq!(repos_for_event_path(&event, &map), Some(&one(&sub_repo)));
+    }
+
+    #[test]
+    fn shared_common_dir_fans_out_to_every_dependent_repo() {
+        // A main repo and its linked worktree both depend on the common
+        // gitdir (refs/remotes, packed-refs, FETCH_HEAD live there): a
+        // fetch in the main checkout must refresh the worktree rows too.
+        let main_repo = p("/tmp/main");
+        let worktree_repo = p("/tmp/worktree");
+        let common = p("/tmp/main/.git");
+        let mut set = HashSet::new();
+        set.insert(main_repo.clone());
+        set.insert(worktree_repo.clone());
+        let mut map: DirMap = HashMap::new();
+        map.insert(common.clone(), set.clone());
+
+        let event = common.join("packed-refs");
+        assert_eq!(repos_for_event_path(&event, &map), Some(&set));
     }
 
     #[test]
     fn unregistered_event_returns_none() {
-        let map: HashMap<PathBuf, PathBuf> = HashMap::new();
+        let map: DirMap = HashMap::new();
         let event = p("/tmp/random/path");
-        assert_eq!(repo_for_event_path(&event, &map), None);
+        assert_eq!(repos_for_event_path(&event, &map), None);
+    }
+
+    #[test]
+    fn ref_movement_events_are_relevant() {
+        for path in [
+            "/r/.git/HEAD",
+            "/r/.git/packed-refs",
+            "/r/.git/FETCH_HEAD",
+            "/r/.git/refs/heads/main",
+            "/r/.git/refs/remotes/origin/main",
+            "/r/.git/logs/HEAD",
+            "/main/.git/worktrees/wt1/HEAD",
+        ] {
+            assert!(is_relevant_git_event(&p(path)), "{path} should refresh");
+        }
+    }
+
+    #[test]
+    fn index_and_object_churn_is_filtered_out() {
+        for path in [
+            "/r/.git/index",
+            "/r/.git/index.lock",
+            "/r/.git/COMMIT_EDITMSG",
+            "/r/.git/MERGE_MSG",
+            "/r/.git/objects/ab/cdef0123456789",
+            "/r/.git/objects/pack/pack-deadbeef.pack",
+            "/r/.git/refs/heads/main.lock",
+            "/r/.git/packed-refs.lock",
+        ] {
+            assert!(!is_relevant_git_event(&p(path)), "{path} should be ignored");
+        }
     }
 }

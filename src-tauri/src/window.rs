@@ -202,7 +202,7 @@ pub fn open_or_focus_diff(
     // Position + maximized state are still restored below.
     let (init_w, init_h) = default_diff_size(app);
 
-    let mut builder = WebviewWindowBuilder::new(
+    let builder = WebviewWindowBuilder::new(
         app,
         DIFF_LABEL,
         WebviewUrl::App("index.html".into()),
@@ -215,16 +215,22 @@ pub fn open_or_focus_diff(
     .always_on_top(false)
     .visible(true);
 
-    if let Some(s) = saved {
-        if monitor_can_contain(app, s.x, s.y, s.w, s.h) {
-            builder = builder.position(s.x as f64, s.y as f64);
-        }
-    }
-
     let window = builder.build().map_err(|e| {
         eprintln!("gitwink: failed to build diff window: {e:#}");
         e.to_string()
     })?;
+
+    // Restore the saved position AFTER build, in physical pixels. The
+    // persist side (lib.rs) saves `outer_position()` — physical — while
+    // `builder.position()` interprets logical: routing the saved coords
+    // through the builder multiplied them by the DPI scale on every
+    // save/restore round-trip, creeping the window toward the bottom-right
+    // (and eventually off-screen) on scaled Windows monitors.
+    if let Some(s) = saved {
+        if monitor_can_contain(app, s.x, s.y, s.w, s.h) {
+            let _ = window.set_position(PhysicalPosition::new(s.x, s.y));
+        }
+    }
 
     if saved.map(|s| s.maximized).unwrap_or(false) {
         let _ = window.maximize();

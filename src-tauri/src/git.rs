@@ -768,6 +768,18 @@ const BRANCH_LABEL_SCAN_CAP: usize = 5_000;
 /// stale remote branches. 64 covers every active project we've seen.
 const REMOTE_TIP_ROOT_CAP: usize = 64;
 
+/// How many consecutive sub-cutoff commits a TIME-sorted walk tolerates
+/// before it stops. Committer dates are NOT monotone along ancestry
+/// (`rebase --committer-date-is-author-date`, `git am` imports, skewed CI
+/// clocks), and libgit2's GIT_SORT_TIME is a frontier priority queue — a
+/// skew-OLD-dated child pops BEFORE its newer-dated ancestors are even
+/// discovered. Breaking on first sight of an old commit therefore hides
+/// live in-window history sitting behind it; since the walk result doubles
+/// as the live set `cache::reconcile_repo_commits` trusts for DELETION,
+/// that would be destructive, not just cosmetic. git's own `--since`
+/// handling keeps walking with a slop for exactly this reason.
+const CUTOFF_SLOP: usize = 32;
+
 /// A `refs/remotes/origin/<short>` ref pinned to a single commit. We don't
 /// walk this — it's just a tip OID we may use as a revwalk root and as a
 /// per-commit badge.
@@ -1091,29 +1103,34 @@ pub fn repo_commits(
         for tip in &remote_tips {
             let _ = revwalk.push(tip.oid);
         }
+        // Always include HEAD in all-branches mode — detached-HEAD commits
+        // are reachable from no local head and no remote tip (see the same
+        // block in recent_commits). Explicit mode deliberately omits this:
+        // the user picked specific refs and HEAD wasn't one of them.
+        if let Ok(head) = repo.head() {
+            if let Ok(head_commit) = head.peel_to_commit() {
+                if revwalk.push(head_commit.id()).is_ok() {
+                    pushed += 1;
+                }
+            }
+        }
     }
 
     let remote_badges = build_remote_badge_map(&remote_tips);
 
     if pushed == 0 && remote_tips.is_empty() {
-        // Explicit mode with all refs stale/invalid: return empty rather
-        // than silently rerouting the user to HEAD history — they asked
-        // for specific refs, so "nothing matches" is the honest answer.
-        if explicit_mode {
-            return Ok(Vec::new());
-        }
-        let Ok(head) = repo.head() else {
-            return Ok(Vec::new());
-        };
-        let Ok(head_commit) = head.peel_to_commit() else {
-            return Ok(Vec::new());
-        };
-        revwalk.push(head_commit.id()).context("push HEAD")?;
+        // Explicit mode with all refs stale/invalid — and the all-branches
+        // case where nothing at all was walkable (unborn HEAD, no refs):
+        // "nothing matches" is the honest answer.
+        return Ok(Vec::new());
     }
 
     // Pass 1: collect just the rows we'll return. Cheap — bounded by
-    // max_count and the since cutoff.
+    // max_count and the since cutoff, with the same CUTOFF_SLOP tolerance
+    // as recent_commits (a hard break on the first skew-old commit would
+    // truncate the visible history behind it).
     let mut raw: Vec<(Oid, git2::Commit<'_>)> = Vec::with_capacity(max_count);
+    let mut slop = 0usize;
     for oid in revwalk {
         if raw.len() >= max_count {
             break;
@@ -1127,8 +1144,13 @@ pub fn repo_commits(
             Err(_) => continue,
         };
         if commit.time().seconds() < since_unix_seconds {
-            break;
+            slop += 1;
+            if slop >= CUTOFF_SLOP {
+                break;
+            }
+            continue;
         }
+        slop = 0;
         raw.push((oid, commit));
     }
 
@@ -1238,24 +1260,42 @@ pub fn recent_commits(
     for tip in &remote_tips {
         let _ = revwalk.push(tip.oid);
     }
-    // Fall back to HEAD if for some reason no heads were enumerable
-    // (newly-init'd repo, detached HEAD, etc.) AND no remote tips.
+    // Always include HEAD itself: commits made on a detached HEAD (agents
+    // checking out a SHA / tag, bisect-style loops) are reachable from no
+    // local branch and no remote tip, so without this root they would be
+    // invisible to the timeline. The revwalk dedupes shared history, so
+    // when HEAD sits on a branch the extra root costs nothing. This also
+    // covers the old "no heads, no remote tips" fallback — an unborn HEAD
+    // simply contributes no root and the walk yields nothing.
+    if let Ok(head) = repo.head() {
+        if let Ok(head_commit) = head.peel_to_commit() {
+            if revwalk.push(head_commit.id()).is_ok() {
+                pushed += 1;
+            }
+        }
+    }
+    // Tags are roots too: a commit reachable ONLY from a tag (its branch
+    // was deleted after tagging — release tags routinely outlive branches)
+    // is still part of the repo's truth. It must stay visible, and more
+    // importantly it must be in the live set so the reconcile pass never
+    // deletes its cached row as a "ghost". Old tags cost nothing extra:
+    // sub-cutoff commits are excluded by the slop loop below.
+    for oid in &tagged_oids {
+        if revwalk.push(*oid).is_ok() {
+            pushed += 1;
+        }
+    }
     if pushed == 0 && remote_tips.is_empty() {
-        let head = match repo.head() {
-            Ok(h) => h,
-            Err(_) => return Ok(Vec::new()),
-        };
-        let head_commit = match head.peel_to_commit() {
-            Ok(c) => c,
-            Err(_) => return Ok(Vec::new()),
-        };
-        revwalk.push(head_commit.id()).context("push HEAD")?;
+        return Ok(Vec::new());
     }
 
     // Pass 1: collect the output rows first. Bounded by max_count and the
-    // since cutoff (TIME sort is descending, so once we cross the cutoff
-    // older commits won't reappear later).
+    // since cutoff — with a CUTOFF_SLOP tolerance instead of a hard break,
+    // because committer dates aren't monotone along ancestry and a hard
+    // break on the first old commit would hide live in-window history
+    // behind a skew-dated child (see CUTOFF_SLOP).
     let mut raw: Vec<(Oid, git2::Commit<'_>)> = Vec::with_capacity(max_count);
+    let mut slop = 0usize;
     for oid in revwalk {
         if raw.len() >= max_count {
             break;
@@ -1269,8 +1309,13 @@ pub fn recent_commits(
             Err(_) => continue,
         };
         if commit.time().seconds() < since_unix_seconds {
-            break;
+            slop += 1;
+            if slop >= CUTOFF_SLOP {
+                break;
+            }
+            continue;
         }
+        slop = 0;
         raw.push((oid, commit));
     }
 

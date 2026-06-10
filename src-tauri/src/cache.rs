@@ -1,4 +1,6 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
@@ -89,6 +91,18 @@ fn db_path(app: &AppHandle) -> Result<PathBuf> {
     Ok(dir.join("cache.db"))
 }
 
+/// Paths this process has already migrated. `open()` is called per IPC
+/// command, per watcher refresh and per orchestrator pass — replaying the
+/// whole DDL + ALTER + user_version ritual (which takes an IMMEDIATE write
+/// lock) on every one of those serialized all opens behind any in-flight
+/// writer. The schema can only change across process restarts, so once per
+/// (process, path) is exactly as safe and far cheaper. Keyed by path so
+/// unit tests / multiple profiles each still migrate their own file.
+fn migrated_paths() -> &'static Mutex<HashSet<PathBuf>> {
+    static MIGRATED: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+    MIGRATED.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
 pub fn open(app: &AppHandle) -> Result<Connection> {
     let path = db_path(app)?;
     let mut conn =
@@ -101,6 +115,54 @@ pub fn open(app: &AppHandle) -> Result<Connection> {
     // (slightly longer) write transaction, so this keeps that contention
     // invisible.
     let _ = conn.busy_timeout(Duration::from_secs(5));
+    // WAL lets timeline reads proceed concurrently with the scanner's write
+    // batches (rollback-journal mode blocks readers for the whole write txn,
+    // and pays a journal create+fsync+delete per batch). journal_mode
+    // persists in the DB file but is cheap to re-assert; synchronous is
+    // per-connection so it must be set on every open. Best-effort: a cache
+    // that stays in the old mode is slower, not broken. NORMAL is only
+    // applied when WAL actually took — rollback-journal + NORMAL has a
+    // theoretical corruption window on power loss that FULL doesn't.
+    let wal_ok = conn
+        .query_row("PRAGMA journal_mode=WAL", [], |r| r.get::<_, String>(0))
+        .map(|mode| mode.eq_ignore_ascii_case("wal"))
+        .unwrap_or(false);
+    if wal_ok {
+        let _ = conn.execute_batch("PRAGMA synchronous=NORMAL;");
+    }
+
+    let already_migrated = migrated_paths()
+        .lock()
+        .map(|set| set.contains(&path))
+        .unwrap_or(false);
+    // Self-heal check: the once-per-process guard assumes the file persists
+    // for the process lifetime. If cache.db was deleted/replaced while we
+    // run (manual wipe), Connection::open just recreated an EMPTY file —
+    // without this probe every later query would fail until restart. One
+    // indexed sqlite_master lookup, negligible next to the old full-DDL
+    // replay this guard removed.
+    let schema_present = already_migrated
+        && conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'commits'",
+                [],
+                |_| Ok(()),
+            )
+            .is_ok();
+    if !schema_present {
+        migrate(&mut conn)?;
+        if let Ok(mut set) = migrated_paths().lock() {
+            set.insert(path);
+        }
+    }
+    Ok(conn)
+}
+
+/// One-time-per-process schema setup: tables, idempotent ALTERs, the
+/// user_version-gated `commits` rebuild, and the Windows UNC dedup pass.
+/// Concurrent first opens may both run this — every step is idempotent and
+/// the user_version block serializes via its IMMEDIATE transaction.
+fn migrate(conn: &mut Connection) -> Result<()> {
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS repos (
@@ -297,9 +359,9 @@ pub fn open(app: &AppHandle) -> Result<Connection> {
     // the prefix here once — idempotent on warm DBs that have no
     // prefixed rows.
     #[cfg(target_os = "windows")]
-    dedupe_unc_canonical_paths(&conn);
+    dedupe_unc_canonical_paths(conn);
 
-    Ok(conn)
+    Ok(())
 }
 
 /// Walk every repos row whose canonical_path starts with `\\?\`. If a
@@ -521,6 +583,11 @@ pub fn current_generation(conn: &Connection) -> Result<i64> {
 pub struct UpsertOutcome {
     pub generation: i64,
     pub inserted: usize,
+    /// Rows `reconcile_repo_commits` removed because the repo no longer
+    /// reaches them (amend / rebase rewrote history). Always 0 straight out
+    /// of `upsert_commits`; callers that reconcile after upserting fold the
+    /// reconcile count in before emitting `timeline://invalidated`.
+    pub deleted: usize,
 }
 
 /// Lightweight scanner→UI invalidation signal, emitted as the
@@ -535,6 +602,8 @@ pub struct UpsertOutcome {
 pub struct TimelineInvalidated {
     pub generation: i64,
     pub inserted: usize,
+    /// Ghost commits reconciled away (history was rewritten under us).
+    pub deleted: usize,
     pub repo_path: String,
 }
 
@@ -549,6 +618,7 @@ pub fn upsert_commits(conn: &mut Connection, commits: &[CommitSummary]) -> Resul
         return Ok(UpsertOutcome {
             generation: 0,
             inserted: 0,
+            deleted: 0,
         });
     }
     let tx = conn.transaction()?;
@@ -616,6 +686,121 @@ pub fn upsert_commits(conn: &mut Connection, commits: &[CommitSummary]) -> Resul
     Ok(UpsertOutcome {
         generation,
         inserted,
+        deleted: 0,
+    })
+}
+
+/// Reconcile one repo's cached rows against a freshly-walked live set:
+/// delete every cached commit inside the walked span whose hash the repo no
+/// longer reaches. This is what makes the timeline truthful after an agent
+/// amends or rebases — without it the pre-rewrite commits sit in the
+/// append-only cache forever, and the "did the agent do this right?" glance
+/// shows history the repo no longer contains.
+///
+/// `live` is the complete walk result for `repo_path` (every local head +
+/// remote tip + HEAD, newest-first) bounded by `cutoff`. When the walk hit
+/// its row cap (`walk_capped`), it only proves liveness down to its oldest
+/// returned commit — so the reconcile floor conservatively moves up to just
+/// above that timestamp, and older cached rows are left alone rather than
+/// risk deleting live history the capped walk never reached.
+///
+/// Deletions bump the generation (inside the same transaction) so pinned
+/// windowed readers re-pull a consistent view. Returns the new generation
+/// (0 if nothing was deleted) and the delete count.
+pub fn reconcile_repo_commits(
+    conn: &mut Connection,
+    repo_path: &str,
+    live: &[CommitSummary],
+    cutoff: i64,
+    walk_capped: bool,
+) -> Result<UpsertOutcome> {
+    // An EMPTY live set proves nothing safe to act on: it can mean "the
+    // repo genuinely has no in-window commits" — but it can also mean the
+    // TIME-sorted walk's frontier got exhausted behind skew-dated commits
+    // (CUTOFF_SLOP in git.rs bounds, not eliminates, that hazard), or an
+    // unborn/odd HEAD state. Deleting a repo's entire cached window on an
+    // ambiguous signal is the wrong trade for a read-only glance tool —
+    // skip, and let truly-dead rows age out of the time window instead.
+    if live.is_empty() {
+        return Ok(UpsertOutcome { generation: 0, inserted: 0, deleted: 0 });
+    }
+    let floor = if walk_capped {
+        match live.iter().map(|c| c.timestamp).min() {
+            // Strictly above the boundary: a same-second sibling the capped
+            // walk cut off must survive.
+            Some(oldest) => oldest + 1,
+            None => unreachable!("guarded by the empty-live check above"),
+        }
+    } else {
+        // Uncapped walk: liveness is proven for the whole window — the walk
+        // emits in TIME order and only stops after CUTOFF_SLOP consecutive
+        // sub-cutoff commits, so every commit with timestamp >= cutoff was
+        // reachable-and-emitted (up to pathological >32-deep date skew,
+        // which the slop bounds).
+        cutoff.max(0)
+    };
+
+    // IMMEDIATE: this transaction reads (the cached-hash scan) before it
+    // writes (the deletes). Under WAL a DEFERRED read→write upgrade fails
+    // with SQLITE_BUSY_SNAPSHOT immediately — the busy_timeout never gets
+    // a chance — whenever another writer committed since our snapshot.
+    // Taking the write lock up front keeps the 5s queueing behaviour.
+    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let cached: Vec<String> = {
+        let mut stmt = tx.prepare(
+            "SELECT hash FROM commits WHERE repo_path = ?1 AND timestamp >= ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![repo_path, floor], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    };
+    let live_set: HashSet<&str> = live.iter().map(|c| c.hash.as_str()).collect();
+    let ghosts: Vec<&String> = cached
+        .iter()
+        .filter(|h| !live_set.contains(h.as_str()))
+        .collect();
+    if ghosts.is_empty() {
+        // Nothing to do — don't commit a write or burn a generation.
+        return Ok(UpsertOutcome { generation: 0, inserted: 0, deleted: 0 });
+    }
+    let generation = next_generation(&tx)?;
+    let mut deleted = 0usize;
+    {
+        let mut del = tx.prepare("DELETE FROM commits WHERE repo_path = ?1 AND hash = ?2")?;
+        for h in &ghosts {
+            deleted += del.execute(params![repo_path, h])?;
+        }
+    }
+    tx.commit()?;
+    Ok(UpsertOutcome {
+        generation,
+        inserted: 0,
+        deleted,
+    })
+}
+
+/// Drop every cached commit belonging to `repo_path` — the cache half of
+/// "hide repo". Without this the hidden repo's rows stay in the all-repos
+/// timeline forever (nothing else ever deletes from `commits`). Bumps the
+/// generation when rows were actually removed so windowed readers re-pull
+/// a consistent view.
+pub fn delete_repo_commits(conn: &mut Connection, repo_path: &str) -> Result<UpsertOutcome> {
+    let tx = conn.transaction()?;
+    let deleted = tx.execute(
+        "DELETE FROM commits WHERE repo_path = ?1 \
+         OR repo_id IN (SELECT rowid FROM repos WHERE canonical_path = ?1)",
+        params![repo_path],
+    )?;
+    if deleted == 0 {
+        return Ok(UpsertOutcome { generation: 0, inserted: 0, deleted: 0 });
+    }
+    let generation = next_generation(&tx)?;
+    tx.commit()?;
+    Ok(UpsertOutcome {
+        generation,
+        inserted: 0,
+        deleted,
     })
 }
 
@@ -759,6 +944,15 @@ fn row_to_window_item(row: &rusqlite::Row) -> rusqlite::Result<(CommitSummary, C
 fn build_filter_sql(filters: &TimelineFilters) -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
     let mut sql = String::new();
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    // Defense-in-depth for hidden repos: hide_repo deletes the repo's
+    // cached commits and detaches its watcher, but a refresh already in
+    // flight at hide time can still upsert rows for it afterwards. Never
+    // surface a commit whose repo row is user-removed. repo_id = 0 rows
+    // (repo not yet registered at insert time) pass — they can't be hidden.
+    sql.push_str(
+        " AND repo_id NOT IN (SELECT rowid FROM repos WHERE user_state = 'removed')",
+    );
 
     if let Some(since) = filters.since {
         if since > 0 {
@@ -1239,21 +1433,31 @@ fn unix_now() -> i64 {
 mod tests {
     use super::*;
 
-    /// A fresh in-memory DB carrying just the v4 `commits` schema.
+    /// A fresh in-memory DB carrying the v5 `commits` schema plus the
+    /// minimal `repos` table the window queries' removed-repo guard joins
+    /// against.
     fn test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(COMMITS_SCHEMA_V5).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE repos (path TEXT PRIMARY KEY, name TEXT NOT NULL, \
+             canonical_path TEXT, \
+             user_state TEXT NOT NULL DEFAULT 'normal');",
+        )
+        .unwrap();
         conn
     }
 
-    /// A fresh in-memory DB with the v4 `commits` schema plus the minimal
+    /// A fresh in-memory DB with the v5 `commits` schema plus the minimal
     /// `repos` + `meta` tables `upsert_commits` touches — the `repos` rowid
     /// lookup and the `meta` generation counter respectively.
     fn upsert_test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(COMMITS_SCHEMA_V5).unwrap();
         conn.execute_batch(
-            "CREATE TABLE repos (path TEXT PRIMARY KEY, name TEXT NOT NULL);\
+            "CREATE TABLE repos (path TEXT PRIMARY KEY, name TEXT NOT NULL, \
+             canonical_path TEXT, \
+             user_state TEXT NOT NULL DEFAULT 'normal');\
              CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL, \
              updated_at INTEGER NOT NULL);",
         )
@@ -1509,7 +1713,7 @@ mod tests {
 
         // An empty batch is a no-op: no bump, `generation: 0` sentinel.
         let o3 = upsert_commits(&mut conn, &[]).unwrap();
-        assert_eq!(o3, UpsertOutcome { generation: 0, inserted: 0 });
+        assert_eq!(o3, UpsertOutcome { generation: 0, inserted: 0, deleted: 0 });
         assert_eq!(
             current_generation(&conn).unwrap(),
             2,
@@ -1532,7 +1736,8 @@ mod tests {
             o1,
             UpsertOutcome {
                 generation: 1,
-                inserted: 3
+                inserted: 3,
+                deleted: 0
             }
         );
 
@@ -1546,7 +1751,8 @@ mod tests {
             o2,
             UpsertOutcome {
                 generation: 2,
-                inserted: 1
+                inserted: 1,
+                deleted: 0
             }
         );
 
@@ -1674,5 +1880,146 @@ mod tests {
         assert_eq!(r1.count, 5);
         let r2 = facets.repos.iter().find(|r| r.repo_id == 2).unwrap();
         assert_eq!(r2.count, 4);
+    }
+
+    #[test]
+    fn reconcile_deletes_ghosts_inside_the_window() {
+        let mut conn = upsert_test_db();
+        // Cache: old1/old2 (pre-rewrite) + keep1, all inside the window.
+        let batch = vec![
+            sample_commit("/r", "old1", 1_000),
+            sample_commit("/r", "old2", 1_100),
+            sample_commit("/r", "keep1", 1_200),
+        ];
+        upsert_commits(&mut conn, &batch).unwrap();
+
+        // The agent rebased: old1/old2 vanished, new1 replaced them.
+        let live = vec![
+            sample_commit("/r", "new1", 1_300),
+            sample_commit("/r", "keep1", 1_200),
+        ];
+        upsert_commits(&mut conn, &live).unwrap();
+        let o = reconcile_repo_commits(&mut conn, "/r", &live, 900, false).unwrap();
+        assert_eq!(o.deleted, 2, "both ghosts removed");
+        assert!(o.generation > 0, "deletion bumps the generation");
+
+        let hashes: Vec<String> = conn
+            .prepare("SELECT hash FROM commits WHERE repo_path = '/r' ORDER BY hash")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(hashes, vec!["keep1".to_string(), "new1".to_string()]);
+
+        // Idempotent: a second reconcile finds nothing and burns no generation.
+        let o2 = reconcile_repo_commits(&mut conn, "/r", &live, 900, false).unwrap();
+        assert_eq!(o2.deleted, 0);
+        assert_eq!(o2.generation, 0);
+    }
+
+    #[test]
+    fn reconcile_leaves_other_repos_and_pre_window_rows_alone() {
+        let mut conn = upsert_test_db();
+        let batch = vec![
+            sample_commit("/r", "ancient", 100), // before the cutoff
+            sample_commit("/r", "ghost", 1_000),
+            sample_commit("/other", "ghost", 1_000), // same hash, other repo
+        ];
+        upsert_commits(&mut conn, &batch).unwrap();
+
+        let live: Vec<CommitSummary> = vec![sample_commit("/r", "fresh", 1_500)];
+        let o = reconcile_repo_commits(&mut conn, "/r", &live, 900, false).unwrap();
+        assert_eq!(o.deleted, 1, "only /r's in-window ghost");
+
+        let remaining: Vec<(String, String)> = conn
+            .prepare("SELECT repo_path, hash FROM commits ORDER BY repo_path, hash")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(remaining.contains(&("/other".into(), "ghost".into())));
+        assert!(remaining.contains(&("/r".into(), "ancient".into())));
+        assert!(!remaining.contains(&("/r".into(), "ghost".into())));
+    }
+
+    #[test]
+    fn capped_reconcile_only_trusts_the_covered_span() {
+        let mut conn = upsert_test_db();
+        // Two cached rows: one inside the capped walk's span, one older.
+        let batch = vec![
+            sample_commit("/r", "older_maybe_live", 1_000),
+            sample_commit("/r", "ghost_in_span", 2_000),
+        ];
+        upsert_commits(&mut conn, &batch).unwrap();
+
+        // Capped walk returned only the newest commits, oldest ts = 1_500.
+        // It proves nothing about rows at/below 1_500.
+        let live = vec![
+            sample_commit("/r", "tip", 2_500),
+            sample_commit("/r", "mid", 1_500),
+        ];
+        let o = reconcile_repo_commits(&mut conn, "/r", &live, 0, true).unwrap();
+        assert_eq!(o.deleted, 1, "only the ghost above the proven floor");
+        let survives: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM commits WHERE repo_path = '/r' AND hash = 'older_maybe_live'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(survives, 1, "rows the capped walk never covered survive");
+    }
+
+    #[test]
+    fn reconcile_with_empty_live_set_is_a_noop() {
+        let mut conn = upsert_test_db();
+        upsert_commits(&mut conn, &[sample_commit("/r", "a", 1_000)]).unwrap();
+        // Empty live set = ambiguous walk (skew-stuck frontier, odd HEAD) —
+        // must never wipe the cached window.
+        let o = reconcile_repo_commits(&mut conn, "/r", &[], 0, false).unwrap();
+        assert_eq!(o.deleted, 0);
+        let left: i64 = conn
+            .query_row("SELECT COUNT(*) FROM commits", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(left, 1);
+    }
+
+    #[test]
+    fn removed_repos_are_invisible_to_window_queries() {
+        let conn = test_db();
+        conn.execute_batch(
+            "INSERT INTO repos (path, name, canonical_path, user_state) \
+             VALUES ('/repo/1', 'one', '/repo/1', 'normal');\
+             INSERT INTO repos (path, name, canonical_path, user_state) \
+             VALUES ('/repo/2', 'two', '/repo/2', 'removed');",
+        )
+        .unwrap();
+        // insert() keys repo_path as /repo/<id> and repo_id as given — match
+        // rowids 1 and 2 from the inserts above.
+        insert(&conn, 1, "visible", 1_000, "alice");
+        insert(&conn, 2, "hidden", 1_001, "alice");
+
+        let walked = walk(&conn, &TimelineFilters::default(), 10);
+        assert_eq!(walked, vec!["visible".to_string()]);
+        assert_eq!(count_commits(&conn, &TimelineFilters::default()).unwrap(), 1);
+    }
+
+    #[test]
+    fn delete_repo_commits_clears_only_that_repo() {
+        let mut conn = upsert_test_db();
+        let batch = vec![
+            sample_commit("/r", "a", 1_000),
+            sample_commit("/other", "b", 1_000),
+        ];
+        upsert_commits(&mut conn, &batch).unwrap();
+        let o = delete_repo_commits(&mut conn, "/r").unwrap();
+        assert_eq!(o.deleted, 1);
+        assert!(o.generation > 0);
+        let left: i64 = conn
+            .query_row("SELECT COUNT(*) FROM commits", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(left, 1);
     }
 }

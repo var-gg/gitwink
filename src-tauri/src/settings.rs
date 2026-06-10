@@ -1,10 +1,20 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
+
+/// Serializes every settings round-trip (load → mutate → save) across the
+/// process. Writers run on at least four independent threads — the panel
+/// move-debounce thread, the diff-window persist threads, sync IPC
+/// commands, and the updater snooze/skip paths — and every helper here is
+/// a whole-file read-modify-write: without one lock around the full
+/// round-trip, two interleaved writers silently drop each other's fields
+/// (drag the panel while the Settings slider saves → ui_scale snaps back).
+static SETTINGS_IO: Mutex<()> = Mutex::new(());
 
 /// Default global hotkey to summon the panel. Users can override via the
 /// `panel_hotkey` field in settings.json — see DEFAULT_PANEL_HOTKEY usage
@@ -111,52 +121,116 @@ pub fn ensure_path(app: &AppHandle) -> Result<PathBuf> {
     if !path.exists() {
         // Write whatever load() returns (default if no file) so the user
         // has something to edit rather than opening a non-existent file.
-        let s = load(app);
-        save(app, &s)?;
+        update_with(app, |_| {})?;
     }
     Ok(path)
 }
 
 pub fn load(app: &AppHandle) -> Settings {
+    let _guard = SETTINGS_IO.lock().unwrap_or_else(|p| p.into_inner());
+    load_unlocked(app)
+}
+
+fn load_unlocked(app: &AppHandle) -> Settings {
     let Ok(path) = settings_path(app) else {
         return Settings::default();
     };
     let Ok(bytes) = fs::read(&path) else {
         return Settings::default();
     };
-    serde_json::from_slice::<Settings>(&bytes).unwrap_or_default()
+    parse_or_bak(&path, &bytes)
 }
 
-pub fn save(app: &AppHandle, settings: &Settings) -> Result<()> {
+/// Parse settings bytes; on failure, preserve the original as .bak and fall
+/// back to defaults. A hand-edit typo (the Settings window links straight
+/// to this file) must never silently become a full reset — the next
+/// auto-save (a panel drag suffices) would persist the wipe, so the user's
+/// original is kept next to it.
+fn parse_or_bak(path: &std::path::Path, bytes: &[u8]) -> Settings {
+    match serde_json::from_slice::<Settings>(bytes) {
+        Ok(s) => s,
+        Err(e) => {
+            let bak = path.with_extension("json.bak");
+            let _ = fs::copy(path, &bak);
+            eprintln!(
+                "gitwink: settings.json didn't parse ({e}); using defaults — \
+                 your original was kept at {}",
+                bak.display()
+            );
+            Settings::default()
+        }
+    }
+}
+
+/// Load for a read-modify-write round-trip. Unlike `load_unlocked`, an
+/// EXISTING file we merely failed to READ (AV lock, transient IO error) is
+/// an abort, not a default: returning defaults there would let the very
+/// next save overwrite settings that are still intact on disk.
+fn load_for_update(app: &AppHandle) -> Result<Settings> {
+    let path = settings_path(app)?;
+    let bytes = match fs::read(&path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Settings::default());
+        }
+        Err(e) => {
+            return Err(e).with_context(|| format!("read {}", path.display()));
+        }
+    };
+    Ok(parse_or_bak(&path, &bytes))
+}
+
+fn save_unlocked(app: &AppHandle, settings: &Settings) -> Result<()> {
     let path = settings_path(app)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
     }
     let bytes = serde_json::to_vec_pretty(settings).context("serialize settings")?;
-    fs::write(&path, bytes).with_context(|| format!("write {}", path.display()))?;
+    // Atomic replace: write + fsync the new content beside the file, then
+    // rename over it (std::fs::rename replaces on Windows too). The fsync
+    // matters — without it a power loss shortly after the rename can
+    // publish a tmp file whose CONTENT never hit the platter.
+    let tmp = path.with_extension("json.tmp");
+    {
+        use std::io::Write;
+        let mut f =
+            fs::File::create(&tmp).with_context(|| format!("create {}", tmp.display()))?;
+        f.write_all(&bytes)
+            .with_context(|| format!("write {}", tmp.display()))?;
+        f.sync_all()
+            .with_context(|| format!("fsync {}", tmp.display()))?;
+    }
+    fs::rename(&tmp, &path)
+        .with_context(|| format!("rename {} over {}", tmp.display(), path.display()))?;
     Ok(())
 }
 
+/// The one mutation path: lock → load → mutate → atomic save. Every
+/// save_* helper goes through here so concurrent writers serialize on the
+/// whole round-trip, not just the final write.
+fn update_with(app: &AppHandle, mutate: impl FnOnce(&mut Settings)) -> Result<()> {
+    let _guard = SETTINGS_IO.lock().unwrap_or_else(|p| p.into_inner());
+    let mut s = load_for_update(app)?;
+    mutate(&mut s);
+    save_unlocked(app, &s)
+}
+
 pub fn save_panel_position(app: &AppHandle, x: i32, y: i32) {
-    let mut s = load(app);
-    s.panel_position = Some(PanelPosition { x, y });
-    if let Err(e) = save(app, &s) {
+    if let Err(e) = update_with(app, |s| {
+        s.panel_position = Some(PanelPosition { x, y });
+    }) {
         eprintln!("settings: failed to persist panel position: {e:#}");
     }
 }
 
 pub fn clear_panel_position(app: &AppHandle) {
-    let mut s = load(app);
-    s.panel_position = None;
-    if let Err(e) = save(app, &s) {
+    if let Err(e) = update_with(app, |s| s.panel_position = None) {
         eprintln!("settings: failed to clear panel position: {e:#}");
     }
 }
 
 pub fn save_pinned_repos(app: &AppHandle, pinned: Vec<String>) {
-    let mut s = load(app);
-    s.pinned_repos = pinned;
-    if let Err(e) = save(app, &s) {
+    if let Err(e) = update_with(app, move |s| s.pinned_repos = pinned) {
         eprintln!("settings: failed to persist pinned_repos: {e:#}");
     }
 }
@@ -165,62 +239,69 @@ pub fn save_pinned_repos(app: &AppHandle, pinned: Vec<String>) {
 /// entry entirely — absence means "all branches", so a selection of
 /// "all" and a never-visited repo collapse to the same default.
 pub fn save_branch_selection(app: &AppHandle, repo_path: &str, selection: Vec<String>) {
-    let mut s = load(app);
-    if selection.is_empty() {
-        s.branch_selections.remove(repo_path);
-    } else {
-        s.branch_selections
-            .insert(repo_path.to_string(), selection);
-    }
-    if let Err(e) = save(app, &s) {
+    if let Err(e) = update_with(app, |s| {
+        if selection.is_empty() {
+            s.branch_selections.remove(repo_path);
+        } else {
+            s.branch_selections
+                .insert(repo_path.to_string(), selection);
+        }
+    }) {
         eprintln!("settings: failed to persist branch_selections: {e:#}");
     }
 }
 
 pub fn save_diff_window(app: &AppHandle, state: DiffWindowState) {
-    let mut s = load(app);
-    s.diff_window = Some(state);
-    if let Err(e) = save(app, &s) {
+    if let Err(e) = update_with(app, |s| s.diff_window = Some(state)) {
         eprintln!("settings: failed to persist diff_window: {e:#}");
     }
 }
 
-pub fn save_replace(app: &AppHandle, settings: &Settings) -> Result<()> {
-    save(app, settings)
+/// Flip only the diff window's `maximized` flag, preserving the last
+/// windowed geometry. Used while the window IS maximized — the OS-reported
+/// outer rect is the maximized one, useless for restoring a windowed size.
+pub fn save_diff_window_maximized(app: &AppHandle) {
+    if let Err(e) = update_with(app, |s| {
+        let prev = s.diff_window.unwrap_or(DiffWindowState {
+            x: 200,
+            y: 100,
+            w: 1100,
+            h: 750,
+            maximized: false,
+        });
+        s.diff_window = Some(DiffWindowState {
+            maximized: true,
+            ..prev
+        });
+    }) {
+        eprintln!("settings: failed to persist diff_window maximized: {e:#}");
+    }
 }
 
 /// Persist the version the user chose to skip (or `None` to clear it).
 pub fn save_update_skipped_version(app: &AppHandle, version: Option<String>) {
-    let mut s = load(app);
-    s.update_skipped_version = version;
-    if let Err(e) = save(app, &s) {
+    if let Err(e) = update_with(app, |s| s.update_skipped_version = version) {
         eprintln!("settings: failed to persist update_skipped_version: {e:#}");
     }
 }
 
 /// Persist the "Later" snooze deadline (or `None` to clear it).
 pub fn save_update_snooze_until(app: &AppHandle, until: Option<i64>) {
-    let mut s = load(app);
-    s.update_snooze_until = until;
-    if let Err(e) = save(app, &s) {
+    if let Err(e) = update_with(app, |s| s.update_snooze_until = until) {
         eprintln!("settings: failed to persist update_snooze_until: {e:#}");
     }
 }
 
 /// Persist the UI scale multiplier (or `None` to reset to default).
 pub fn save_ui_scale(app: &AppHandle, scale: Option<f32>) {
-    let mut s = load(app);
-    s.ui_scale = scale;
-    if let Err(e) = save(app, &s) {
+    if let Err(e) = update_with(app, |s| s.ui_scale = scale) {
         eprintln!("settings: failed to persist ui_scale: {e:#}");
     }
 }
 
 /// Persist the diff font family (or `None` for the built-in stack).
 pub fn save_diff_font_family(app: &AppHandle, family: Option<String>) {
-    let mut s = load(app);
-    s.diff_font_family = family;
-    if let Err(e) = save(app, &s) {
+    if let Err(e) = update_with(app, |s| s.diff_font_family = family) {
         eprintln!("settings: failed to persist diff_font_family: {e:#}");
     }
 }
@@ -228,9 +309,7 @@ pub fn save_diff_font_family(app: &AppHandle, family: Option<String>) {
 /// Persist the panel hotkey spec. Registration is the caller's job —
 /// see `set_panel_hotkey` in commands.rs.
 pub fn save_panel_hotkey(app: &AppHandle, spec: Option<String>) {
-    let mut s = load(app);
-    s.panel_hotkey = spec;
-    if let Err(e) = save(app, &s) {
+    if let Err(e) = update_with(app, |s| s.panel_hotkey = spec) {
         eprintln!("settings: failed to persist panel_hotkey: {e:#}");
     }
 }
@@ -241,18 +320,14 @@ pub fn save_panel_hotkey(app: &AppHandle, spec: Option<String>) {
 /// Runtime state flips (atomic + always_on_top) are the caller's job;
 /// see `set_panel_pinned` in commands.rs.
 pub fn save_panel_pinned(app: &AppHandle, pinned: bool) -> Result<()> {
-    let mut s = load(app);
-    s.panel_pinned = Some(pinned);
-    save(app, &s)
+    update_with(app, |s| s.panel_pinned = Some(pinned))
 }
 
 /// Persist the self-update mode (`Enabled` / `Manual` / `Disabled`).
 /// Refreshing the tray indicator + menu is the caller's job — see
 /// `set_update_check` in commands.rs.
 pub fn save_update_check_mode(app: &AppHandle, mode: UpdateCheckMode) {
-    let mut s = load(app);
-    s.update_check = mode;
-    if let Err(e) = save(app, &s) {
+    if let Err(e) = update_with(app, |s| s.update_check = mode) {
         eprintln!("settings: failed to persist update_check: {e:#}");
     }
 }

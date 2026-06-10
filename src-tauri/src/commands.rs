@@ -7,10 +7,20 @@ use tauri_plugin_updater::UpdaterExt;
 
 use crate::{cache, discovery, discovery_orchestrator, git, settings, update, watcher, window};
 
-const MAX_COMMITS_PER_REPO: usize = 10;
+/// Per-repo walk cap for the windowed refill. Sized to swallow a whole
+/// agent burst (30-commit rebase, squash-merge train) in one pass: the walk
+/// result doubles as the live set `reconcile_repo_commits` trusts, and the
+/// old cap of 10 both truncated bursts (only the newest 10 rewritten
+/// commits landed in the cache) and left ghosts below the cap unreconciled.
+const MAX_COMMITS_PER_REPO: usize = 100;
 const MAX_COMMITS_PER_REPO_NO_WINDOW: usize = 1_000;
 const TIMELINE_WINDOW_DAYS: i64 = 7;
-const TIMELINE_MAX_TOTAL: usize = 50;
+/// Merged upsert cap across all repos per refill sweep. Raised from 50
+/// alongside the per-repo cap — since the refill stopped returning rows
+/// over IPC (`refresh_recent_commits`), the only cost is the SQLite upsert,
+/// and 50 was silently dropping most of a busy multi-repo week from the
+/// cache.
+const TIMELINE_MAX_TOTAL: usize = 500;
 const TIMELINE_MAX_TOTAL_NO_WINDOW: usize = 5_000;
 /// In single-repo mode the user has explicitly drilled into one repo, so
 /// the per-repo cap that protects the all-repos timeline (= 10) is way too
@@ -94,34 +104,85 @@ pub async fn list_recent_commits_cached(
     .map_err(|e| e.to_string())?
 }
 
+/// Shared body of `recent_commits` / `refresh_recent_commits`: walk every
+/// cached repo, reconcile each repo's cached window against its walk (so
+/// amended/rebased-away commits leave the cache), then upsert the merged
+/// result. A repo whose walk ERRORS (locked, deleted mid-scan) is skipped
+/// entirely — an error must never be mistaken for "no live commits", which
+/// would wrongly reconcile-delete its whole cached window.
+fn scan_and_cache_recent_commits(
+    app: &AppHandle,
+    window_days: Option<i64>,
+) -> Result<Vec<git::CommitSummary>, String> {
+    let mut conn = cache::open(app).map_err(|e| e.to_string())?;
+    let repos = cache::list_repos(&conn).map_err(|e| e.to_string())?;
+    let cutoff = cutoff_for(window_days);
+    let per_repo = per_repo_cap(window_days);
+    let total = total_cap(window_days);
+
+    let mut all: Vec<git::CommitSummary> = Vec::new();
+    for repo in repos {
+        let Ok(commits) = git::recent_commits(Path::new(&repo.path), per_repo, cutoff) else {
+            continue;
+        };
+        let commits: Vec<git::CommitSummary> = commits
+            .into_iter()
+            .map(|mut c| {
+                c.repo_name = repo.name.clone();
+                c
+            })
+            .collect();
+        let walk_capped = commits.len() >= per_repo;
+        if let Ok(o) =
+            cache::reconcile_repo_commits(&mut conn, &repo.path, &commits, cutoff, walk_capped)
+        {
+            // Deletions must be announced: nothing else tells a pinned
+            // reader its count shrank (the generation pin doesn't mask
+            // physical deletes), and the frontend's delete-burst path
+            // does an in-place re-pull off this event.
+            if o.deleted > 0 {
+                let _ = app.emit(
+                    "timeline://invalidated",
+                    cache::TimelineInvalidated {
+                        generation: o.generation,
+                        inserted: 0,
+                        deleted: o.deleted,
+                        repo_path: repo.path.clone(),
+                    },
+                );
+            }
+        }
+        all.extend(commits);
+    }
+    all.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    all.truncate(total);
+
+    let _ = cache::upsert_commits(&mut conn, &all).map_err(|e| e.to_string())?;
+    Ok(all)
+}
+
 #[tauri::command]
 pub async fn recent_commits(
     app: AppHandle,
     window_days: Option<i64>,
 ) -> Result<Vec<git::CommitSummary>, String> {
-    let app = app.clone();
-    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<git::CommitSummary>, String> {
-        let conn = cache::open(&app).map_err(|e| e.to_string())?;
-        let repos = cache::list_repos(&conn).map_err(|e| e.to_string())?;
-        let cutoff = cutoff_for(window_days);
-        let per_repo = per_repo_cap(window_days);
-        let total = total_cap(window_days);
+    tauri::async_runtime::spawn_blocking(move || scan_and_cache_recent_commits(&app, window_days))
+        .await
+        .map_err(|e| e.to_string())?
+}
 
-        let mut all: Vec<git::CommitSummary> = Vec::new();
-        for repo in repos {
-            let commits =
-                git::recent_commits(Path::new(&repo.path), per_repo, cutoff).unwrap_or_default();
-            for mut c in commits {
-                c.repo_name = repo.name.clone();
-                all.push(c);
-            }
-        }
-        all.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-        all.truncate(total);
-
-        let mut conn = cache::open(&app).map_err(|e| e.to_string())?;
-        let _ = cache::upsert_commits(&mut conn, &all).map_err(|e| e.to_string())?;
-        Ok(all)
+/// Summon-path refill: the exact scan + reconcile + upsert of
+/// `recent_commits`, returning only the merged row count. The windowed UI
+/// re-pulls everything it shows from the cache, so the full row array the
+/// old refill shipped over IPC — up to 5,000 CommitSummary structs per
+/// panel summon — was serialized, parsed, and immediately garbage.
+#[tauri::command]
+pub async fn refresh_recent_commits(
+    app: AppHandle,
+    window_days: Option<i64>,
+) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        scan_and_cache_recent_commits(&app, window_days).map(|rows| rows.len())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1092,6 +1153,7 @@ pub async fn discover_repos(app: AppHandle) -> Result<usize, String> {
                             cache::TimelineInvalidated {
                                 generation: o.generation,
                                 inserted: o.inserted,
+                                deleted: 0,
                                 repo_path: path_str.clone(),
                             },
                         );

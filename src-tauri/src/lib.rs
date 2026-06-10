@@ -209,19 +209,7 @@ pub fn run() {
                                 // a "windowed" size next time. Only persist geometry
                                 // when not maximized; persist the flag either way.
                                 if maximized {
-                                    let mut s = settings::load(&h);
-                                    let prev = s.diff_window.unwrap_or(settings::DiffWindowState {
-                                        x: 200,
-                                        y: 100,
-                                        w: 1100,
-                                        h: 750,
-                                        maximized: false,
-                                    });
-                                    s.diff_window = Some(settings::DiffWindowState {
-                                        maximized: true,
-                                        ..prev
-                                    });
-                                    let _ = settings::save_replace(&h, &s);
+                                    settings::save_diff_window_maximized(&h);
                                 } else if let (Ok(pos), Ok(size)) =
                                     (w.outer_position(), w.outer_size())
                                 {
@@ -302,6 +290,7 @@ pub fn run() {
             commands::discover_repos,
             commands::list_recent_commits_cached,
             commands::recent_commits,
+            commands::refresh_recent_commits,
             commands::list_commits_window,
             commands::list_commits_around_anchor,
             commands::list_commits_at_rank,
