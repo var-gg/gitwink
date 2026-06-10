@@ -230,5 +230,7 @@ export interface CommitAround {
 export interface TimelineInvalidated {
   generation: number;
   inserted: number;
+  /** Ghost commits reconciled away (history was rewritten under us). */
+  deleted: number;
   repoPath: string;
 }

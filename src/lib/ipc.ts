@@ -48,6 +48,15 @@ export async function recentCommits(
   return invoke<CommitSummary[]>("recent_commits", { windowDays });
 }
 
+/** Side-effect-only refill: same git→cache scan as `recentCommits`, but the
+ *  backend returns just the merged row count. The windowed timeline re-pulls
+ *  rows from the cache, so the full array over IPC was pure overhead. */
+export async function refreshRecentCommits(
+  windowDays: number | null,
+): Promise<number> {
+  return invoke<number>("refresh_recent_commits", { windowDays });
+}
+
 export async function listBranches(repoPath: string): Promise<BranchInfo[]> {
   return invoke<BranchInfo[]>("list_branches", { repoPath });
 }

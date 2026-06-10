@@ -23,7 +23,7 @@ import {
   listCommitsAroundAnchor,
   listCommitsAtRank,
   listCommitsWindow,
-  recentCommits,
+  refreshRecentCommits,
 } from "./ipc";
 
 /** Rows fetched per keyset extend page. */
@@ -97,6 +97,9 @@ export interface TimelineWindowState {
   /** re-pin the generation and reload from the newest commit — the "N new"
    *  pill and at-top invalidation; diffs freshly-arrived commits. */
   reloadLatest: () => void;
+  /** quiet in-place re-pull at the current viewport rank — no scroll-to.
+   *  Used when ghost commits were reconciled away mid-scroll. */
+  reloadInPlace: () => void;
   /** commits beyond the pinned snapshot — the "N new" pill count. */
   countNew: () => Promise<number>;
 }
@@ -234,6 +237,20 @@ export function useTimelineWindow(
           // jump) — this page no longer abuts the window. Drop it so `rows`
           // stays one contiguous slice.
           if (!sameCursor(cur.endCursor, endCursor)) return;
+          // Physical deletions (ghost reconcile, hide-repo) are NOT masked
+          // by the generation pin, so the pinned `count` can be stale-high.
+          // An empty page with hasOlder=false means this window edge IS the
+          // end of the data: clamp count to it. Without the clamp the
+          // reconcile loop re-requests this same empty page forever (an
+          // empty page changes no state, and `finally` reconciles again).
+          if (win.rows.length === 0 && !win.hasOlder) {
+            const trueCount = cur.baseIndex + cur.rows.length;
+            if (trueCount < cur.count) {
+              windowRef.current = { ...cur, count: trueCount };
+              setCount(trueCount);
+            }
+            return;
+          }
           let rows = [...cur.rows, ...win.rows];
           let baseIndex = cur.baseIndex;
           let startCursor = cur.startCursor;
@@ -503,6 +520,15 @@ export function useTimelineWindow(
     void machinery.reload("top", true, true);
   }, [machinery]);
 
+  /** Quiet in-place re-pull at the current viewport rank — no scroll-to,
+   *  fresh markers preserved. Used when the scanner reconciled ghost
+   *  commits away (history was rewritten) while the reader is mid-scroll:
+   *  the rows under them no longer exist, so waiting for the next summon
+   *  would keep showing history the repo doesn't contain. */
+  const reloadInPlace = useCallback(() => {
+    void machinery.reload("current", true, false);
+  }, [machinery]);
+
   const countNew = useCallback(() => machinery.countNew(), [machinery]);
 
   // (Re)load whenever the filters or refreshNonce change. We tell three
@@ -554,7 +580,7 @@ export function useTimelineWindow(
       // refresh could join a newer filter-change reload and clobber its
       // recovery with a rank-based "current" reload.
       if (!res.applied || seq !== effectSeqRef.current || !needsRefill) return;
-      recentCommits(paramsRef.current.windowDays)
+      refreshRecentCommits(paramsRef.current.windowDays)
         .then(() => {
           if (seq === effectSeqRef.current && res.qid === queryRef.current) {
             void machinery.reload("current", false, false);
@@ -592,6 +618,7 @@ export function useTimelineWindow(
     recovery,
     requestRange,
     reloadLatest,
+    reloadInPlace,
     countNew,
   };
 }
