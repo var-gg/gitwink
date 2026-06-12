@@ -2687,3 +2687,41 @@ body,
 .warp-back:hover {
   background: rgba(80, 130, 240, 0.26);
 }
+
+/* Header search toggle — the discoverable way into `/`. */
+.panel-search-btn {
+  flex-shrink: 0;
+  width: calc(22px * var(--ui-scale, 1));
+  height: calc(22px * var(--ui-scale, 1));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: calc(15px * var(--ui-scale, 1));
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+  opacity: 0.45;
+}
+
+.panel-search-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  opacity: 0.8;
+}
+
+.panel-search-btn.active {
+  opacity: 1;
+  color: rgb(80, 130, 240);
+}
+
+@media (prefers-color-scheme: dark) {
+  .panel-search-btn:hover {
+    background: rgba(255, 255, 255, 0.10);
+  }
+  .panel-search-btn.active {
+    color: rgb(140, 180, 255);
+  }
+}

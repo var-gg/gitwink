@@ -64,6 +64,10 @@ interface Props {
   onShowAllTime?: () => void;
   /** empty-state action: clear the author filter back to "all" */
   onClearAuthors?: () => void;
+  /** empty-state action: open commit search — the moment someone stares
+   *  at "no commits" hunting for one is exactly when they should learn
+   *  search exists. */
+  onOpenSearch?: () => void;
   /** free-text search filter — search-results rendering of the timeline */
   query?: string | null;
   /** pure cache re-query: never chain the git→cache refill (search view) */
@@ -121,6 +125,7 @@ export function TimelineWindowed({
   onSelectRepo,
   onShowAllTime,
   onClearAuthors,
+  onOpenSearch,
   query,
   skipRefill,
   searchMode,
@@ -773,7 +778,7 @@ export function TimelineWindowed({
             {authors != null &&
               ` Filtered to ${authors.length} author${authors.length === 1 ? "" : "s"}.`}
           </p>
-          {(windowDays != null || authors != null) && (
+          {(windowDays != null || authors != null || onOpenSearch) && (
             <p className="panel-empty-actions">
               {windowDays != null && onShowAllTime && (
                 <button
@@ -791,6 +796,16 @@ export function TimelineWindowed({
                   onClick={onClearAuthors}
                 >
                   Clear author filter
+                </button>
+              )}
+              {onOpenSearch && (
+                <button
+                  type="button"
+                  className="panel-empty-action"
+                  onClick={onOpenSearch}
+                  title="Search commits — message, author, SHA (/)"
+                >
+                  Search commits
                 </button>
               )}
             </p>

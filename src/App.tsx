@@ -537,6 +537,14 @@ function App() {
     setSearchCount(null);
   }, []);
 
+  // Every visible way into search funnels here — header button, empty-
+  // state action, `/` hotkey — so they all focus the input the same way.
+  const openSearch = useCallback(() => {
+    setOpenChip(null);
+    setSearchOpen(true);
+    setSearchFocusNonce((n) => n + 1);
+  }, []);
+
   // ----- single-repo mode: upstream status (selection-aware) -----
   // Refetches whenever the repo OR the BranchChip selection changes. Logic:
   //   • "all" or multi-select → HEAD (fall back so the default view shows
@@ -758,13 +766,11 @@ function App() {
       if (!slash && !ctrlF) return;
       if (updateModal) return;
       e.preventDefault();
-      setOpenChip(null);
-      setSearchOpen(true);
-      setSearchFocusNonce((n) => n + 1);
+      openSearch();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [updateModal]);
+  }, [updateModal, openSearch]);
 
   // ----- ESC layer cascade: chip → expansion (in Timeline) → search →
   // warp-return → single-repo → hide panel -----
@@ -1028,6 +1034,16 @@ function App() {
         {upToDate && !scanning && (
           <span className="panel-status">✓ Up to date</span>
         )}
+        {/* The always-visible way into commit search — the `/` shortcut
+            alone is invisible to anyone who hasn't read the docs. */}
+        <button
+          type="button"
+          className={"panel-search-btn" + (searchOpen ? " active" : "")}
+          onClick={() => (searchOpen ? closeSearch() : openSearch())}
+          title="Search commits — message, author, SHA (/)"
+        >
+          ⌕
+        </button>
         <button
           type="button"
           className={"panel-pin" + (pinned ? " pinned" : "")}
@@ -1124,39 +1140,43 @@ function App() {
                 {selectedBranches !== "all" &&
                   ` Filtered to ${selectedBranches.length} branch${selectedBranches.length === 1 ? "" : "es"}.`}
               </p>
-              {(windowDays !== "all" ||
-                selectedAuthors !== "all" ||
-                selectedBranches !== "all") && (
-                <p className="panel-empty-actions">
-                  {windowDays !== "all" && (
-                    <button
-                      type="button"
-                      className="panel-empty-action"
-                      onClick={() => changeWindowDays("all")}
-                    >
-                      Show all time
-                    </button>
-                  )}
-                  {selectedAuthors !== "all" && (
-                    <button
-                      type="button"
-                      className="panel-empty-action"
-                      onClick={() => changeAuthors("all")}
-                    >
-                      Clear author filter
-                    </button>
-                  )}
-                  {selectedBranches !== "all" && (
-                    <button
-                      type="button"
-                      className="panel-empty-action"
-                      onClick={() => handleBranchChange("all")}
-                    >
-                      All branches
-                    </button>
-                  )}
-                </p>
-              )}
+              <p className="panel-empty-actions">
+                {windowDays !== "all" && (
+                  <button
+                    type="button"
+                    className="panel-empty-action"
+                    onClick={() => changeWindowDays("all")}
+                  >
+                    Show all time
+                  </button>
+                )}
+                {selectedAuthors !== "all" && (
+                  <button
+                    type="button"
+                    className="panel-empty-action"
+                    onClick={() => changeAuthors("all")}
+                  >
+                    Clear author filter
+                  </button>
+                )}
+                {selectedBranches !== "all" && (
+                  <button
+                    type="button"
+                    className="panel-empty-action"
+                    onClick={() => handleBranchChange("all")}
+                  >
+                    All branches
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="panel-empty-action"
+                  onClick={openSearch}
+                  title="Search commits — message, author, SHA (/)"
+                >
+                  Search commits
+                </button>
+              </p>
             </div>
           ) : (
             <Timeline
@@ -1177,6 +1197,7 @@ function App() {
             onSelectRepo={changeRepoPath}
             onShowAllTime={() => changeWindowDays("all")}
             onClearAuthors={() => changeAuthors("all")}
+            onOpenSearch={openSearch}
           />
         )}
         {allRepos.length > 0 && (
