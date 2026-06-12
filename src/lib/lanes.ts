@@ -27,6 +27,16 @@ export interface LaneEdge {
   fromLane: number;
   toLane: number;
   color: string;
+  /** Hidden commits sit between child and parent (an author-filtered
+   * view bridged over them) — drawn dashed. */
+  bridged: boolean;
+}
+
+/** A (possibly rewritten) parent link. `hash: null` = the ancestry leaves
+ *  the rendered window entirely; the lane just runs off the bottom. */
+export interface ParentLink {
+  hash: string | null;
+  bridged: boolean;
 }
 
 export interface LaneGraphData {
@@ -38,6 +48,11 @@ export interface LaneGraphData {
 export function computeLanes(
   commits: CommitSummary[],
   colorForCommit: (c: CommitSummary) => string,
+  // Parent links per commit — defaults to the commit's real parents.
+  // An author-filtered view passes bridged links (see lib/bridge.ts) so
+  // the walk never waits on a commit the filter removed.
+  parentsOf: (c: CommitSummary) => ParentLink[] = (c) =>
+    c.parents.map((hash) => ({ hash, bridged: false })),
 ): LaneGraphData {
   const indexOf = new Map<string, number>();
   commits.forEach((c, i) => indexOf.set(c.hash, i));
@@ -68,16 +83,26 @@ export function computeLanes(
     laneCommits.push({ commit: c, lane: myLane, color });
 
     // 2. Resolve a lane for each parent.
-    c.parents.forEach((parentHash, pi) => {
-      const parentIdx = indexOf.get(parentHash) ?? -1;
-      let parentLane = openLanes.findIndex((h) => h === parentHash);
+    parentsOf(c).forEach((link, pi) => {
+      const parentHash = link.hash;
+      const parentIdx =
+        parentHash != null ? indexOf.get(parentHash) ?? -1 : -1;
+      // A null hash must never match the empty (null) lane slots — only
+      // look up a reusable lane for a real parent hash.
+      let parentLane =
+        parentHash != null
+          ? openLanes.findIndex((h) => h === parentHash)
+          : -1;
       if (parentLane === -1) {
         if (pi === 0) {
           parentLane = myLane;
         } else {
           parentLane = takeFreeLane();
         }
-        openLanes[parentLane] = parentHash;
+        // Off-window links occupy their lane with a sentinel no commit
+        // hash can equal, so the lane visibly runs off the bottom without
+        // ever being matched.
+        openLanes[parentLane] = parentHash ?? `\u0000off:${idx}:${pi}`;
       }
       edges.push({
         fromIdx: idx,
@@ -85,6 +110,7 @@ export function computeLanes(
         fromLane: myLane,
         toLane: parentLane,
         color,
+        bridged: link.bridged,
       });
     });
   });

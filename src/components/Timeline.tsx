@@ -21,6 +21,7 @@ import {
   useState,
 } from "react";
 
+import { bridgeParents } from "../lib/bridge";
 import { colorForBranch } from "../lib/colors";
 import {
   buildCommitMenuItems,
@@ -43,8 +44,13 @@ const OVERSCAN = 8;
 const EDGE_CHUNK = 512;
 
 interface Props {
-  /** The repo's full commit list, newest-first. */
+  /** The rows to render, newest-first (author filter already applied). */
   commits: CommitSummary[];
+  /** The unfiltered list `commits` was narrowed from. When it differs
+   *  from `commits`, the rows are not ancestry-closed — parent links are
+   *  bridged through the hidden commits (lib/bridge.ts) so the DAG stays
+   *  coherent instead of leaking a lane per filtered-out parent. */
+  allCommits?: CommitSummary[];
   /** Branch list — colors the DAG lanes by branch identity. */
   branches?: BranchInfo[];
   /** Filter signature (branch / window / author). A change means the user
@@ -77,7 +83,7 @@ function formatFullTime(unixSeconds: number): string {
   });
 }
 
-export function Timeline({ commits, branches, resetKey }: Props) {
+export function Timeline({ commits, allCommits, branches, resetKey }: Props) {
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportH, setViewportH] = useState(0);
   const [selected, setSelected] = useState(0);
@@ -114,11 +120,19 @@ export function Timeline({ commits, branches, resetKey }: Props) {
 
   // ----- lane layout: precomputed once over the full history -----
   const headBranch = branches?.find((b) => b.isHead)?.name ?? null;
-  const graph = useMemo(
-    () =>
-      computeLanes(commits, (c) => colorForBranch(c.branchLabel ?? headBranch)),
-    [commits, headBranch],
-  );
+  const graph = useMemo(() => {
+    const colorFn = (c: CommitSummary) =>
+      colorForBranch(c.branchLabel ?? headBranch);
+    // Author-filtered view (rows ⊂ allCommits): bridge parent links
+    // through the hidden commits. The unfiltered case passes the same
+    // array reference, skipping the walk entirely.
+    if (allCommits && allCommits !== commits) {
+      const visible = new Set(commits.map((c) => c.hash));
+      const effective = bridgeParents(allCommits, (c) => visible.has(c.hash));
+      return computeLanes(commits, colorFn, (c) => effective.get(c.hash) ?? []);
+    }
+    return computeLanes(commits, colorFn);
+  }, [commits, allCommits, headBranch]);
 
   // Edge bucket index — each edge is filed under every row-index chunk it
   // spans. The visible-edge query then reads just the chunk(s) the viewport

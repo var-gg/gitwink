@@ -897,6 +897,7 @@ function App() {
             <Timeline
               key={`single:${selectedRepoPath}`}
               commits={filteredCommits}
+              allCommits={commits ?? undefined}
               branches={branches}
               resetKey={`${JSON.stringify(selectedBranches)}|${windowDays}|${JSON.stringify(selectedAuthors)}`}
             />

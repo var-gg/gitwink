@@ -86,7 +86,11 @@ export function LaneGraph({
             stroke={e.color}
             strokeWidth={1.5}
             fill="none"
-            strokeOpacity={0.85}
+            // Bridged = hidden commits elided between child and parent
+            // (author-filtered view) — dashed and dimmer, so a direct
+            // parent link stays visually distinct.
+            strokeOpacity={e.bridged ? 0.55 : 0.85}
+            strokeDasharray={e.bridged ? "4 3" : undefined}
           />
         );
       })}
