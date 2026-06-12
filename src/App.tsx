@@ -14,7 +14,10 @@ import {
   TimelineWindowed,
   type SearchControl,
 } from "./components/TimelineWindowed";
-import { TimeRangeChip } from "./components/TimeRangeChip";
+import {
+  TimeRangeChip,
+  WINDOW_DAY_PRESETS,
+} from "./components/TimeRangeChip";
 import {
   currentUpstreamStatus,
   dismissPanel,
@@ -135,7 +138,7 @@ function windowCovering(current: WindowDays, commitTs: number): WindowDays {
   if (current === "all") return "all";
   const ageDays = (Date.now() / 1000 - commitTs) / 86_400 + 0.25;
   if (ageDays < current) return current;
-  for (const preset of [1, 3, 7, 30] as const) {
+  for (const preset of WINDOW_DAY_PRESETS) {
     if (ageDays < preset) return preset;
   }
   return "all";

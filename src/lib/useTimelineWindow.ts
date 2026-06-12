@@ -555,12 +555,16 @@ export function useTimelineWindow(
   // changed time window. A repo / author chip change is a pure re-query of
   // the already-cached commits, so it skips the refill. The refill (and its
   // quiet in-place re-pull) is sequenced strictly AFTER the primary reload.
+  // skipRefill is constant for an instance today, but it feeds the
+  // needsRefill decision below — keep it in the key so a future caller
+  // that toggles it gets a correct reload instead of a stale closure.
   const filterKey = JSON.stringify([
     repoIds,
     authors,
     windowDays,
     refreshNonce,
     query,
+    skipRefill ?? false,
   ]);
   const filtersKey = JSON.stringify([repoIds, authors, windowDays, query]);
   const reloadKeyRef = useRef<{
