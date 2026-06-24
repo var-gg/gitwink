@@ -70,6 +70,23 @@ export function SearchBar({
           }
         }}
       />
+      {value !== "" && (
+        <button
+          type="button"
+          className="search-bar-clear"
+          aria-label="Clear search"
+          title="Clear search"
+          // preventDefault on mousedown keeps focus in the input (so the
+          // bar doesn't blur-close), then we re-focus after clearing.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            onChange("");
+            inputRef.current?.focus();
+          }}
+        >
+          ✕
+        </button>
+      )}
       {value.trim() !== "" && (
         <span className="search-bar-count" aria-live="polite">
           {count == null ? "…" : `${count} match${count === 1 ? "" : "es"}`}
