@@ -825,6 +825,9 @@ pub struct AppSettings {
     /// One-shot `git fetch` of the viewed repo on panel summon (single-repo
     /// mode only). Default ON. See `maybe_fetch_repo` / `fetch.rs`.
     pub auto_fetch_on_show: bool,
+    /// Whether the one-time auto-fetch disclosure banner has been dismissed.
+    /// Default false (show it once). Persisted via `ack_auto_fetch_notice`.
+    pub auto_fetch_notice_seen: bool,
     /// Self-update behaviour. Serialized as "enabled" / "manual" /
     /// "disabled" via the enum's lowercase rename. Meaningful only when
     /// `updater_available` is true.
@@ -854,6 +857,7 @@ pub fn get_settings(
             .unwrap_or_else(|| settings::DEFAULT_PANEL_HOTKEY.to_string()),
         panel_pinned: s.panel_pinned.unwrap_or(false),
         auto_fetch_on_show: s.auto_fetch_on_show.unwrap_or(true),
+        auto_fetch_notice_seen: s.auto_fetch_notice_seen.unwrap_or(false),
         update_check: s.update_check,
         updater_available: !update::installed_via_scoop() && !update::installed_via_msix(),
     }
@@ -877,6 +881,11 @@ pub fn set_live_settings(
         s.panel_hotkey = Some(next.panel_hotkey);
         s.panel_pinned = Some(next.panel_pinned);
         s.auto_fetch_on_show = Some(next.auto_fetch_on_show);
+        // One-way latch: a stale Settings window (opened before the banner
+        // was dismissed) must never un-acknowledge it. Only false→true.
+        if next.auto_fetch_notice_seen {
+            s.auto_fetch_notice_seen = Some(true);
+        }
         s.update_check = next.update_check;
     });
 }
@@ -1035,10 +1044,22 @@ pub fn set_auto_fetch_on_show(app: AppHandle, enabled: bool) {
     }
 }
 
+/// Mark the one-time auto-fetch disclosure banner as dismissed. Persists and
+/// updates the live cache so it never reappears (and so a Settings window
+/// opened later reflects it). No network or fetch side effects.
+#[tauri::command]
+pub fn ack_auto_fetch_notice(app: AppHandle) {
+    settings::save_auto_fetch_notice_seen(&app, true);
+    if let Some(live) = app.try_state::<LiveSettings>() {
+        live.with_mut(|s| s.auto_fetch_notice_seen = Some(true));
+    }
+}
+
 /// Called by the panel on summon (single-repo mode) with the viewed repo.
-/// Gated on the `auto_fetch_on_show` setting + per-repo cooldown, then spawns
-/// a non-blocking system `git fetch`. Returns immediately; the fetch runs
-/// detached and its `refs/remotes/*` update flows through the existing
+/// Gated on the `auto_fetch_on_show` setting + per-repo cooldown + a global
+/// concurrency cap, then spawns a non-blocking system `git fetch origin`.
+/// Returns immediately; the fetch runs detached and its
+/// `refs/remotes/origin/*` + `FETCH_HEAD` update flows through the existing
 /// watcher → timeline refresh. Silent no-op when disabled / on cooldown /
 /// path empty. NOTE: this is the one place gitwink reaches a git remote —
 /// it never merges, pushes, or rewrites, so it cannot alter your work.
@@ -1047,21 +1068,28 @@ pub fn maybe_fetch_repo(app: AppHandle, repo_path: String) {
     if repo_path.trim().is_empty() {
         return;
     }
-    let enabled = app
-        .try_state::<LiveSettings>()
-        .map(|live| live.snapshot().auto_fetch_on_show.unwrap_or(true))
-        .unwrap_or(true);
-    if !enabled {
+    // Fail closed: if the live-settings state is somehow missing, do NOT
+    // reach the network. An UNSET setting still resolves to the product
+    // default (on); only managed-state absence is the closed case.
+    let Some(live) = app.try_state::<LiveSettings>() else {
+        return;
+    };
+    if !live.snapshot().auto_fetch_on_show.unwrap_or(true) {
         return;
     }
     let Some(cooldown) = app.try_state::<crate::fetch::FetchCooldown>() else {
         return;
     };
     let repo = std::path::PathBuf::from(&repo_path);
-    if !cooldown.try_claim(&repo, crate::fetch::FETCH_COOLDOWN) {
+    // Claim a per-repo cooldown slot + a global concurrency slot. The guard
+    // is moved into the blocking task and releases the slot when it returns.
+    let Some(guard) = cooldown.try_claim(&repo, crate::fetch::FETCH_COOLDOWN) else {
         return;
-    }
-    tauri::async_runtime::spawn_blocking(move || crate::fetch::git_fetch_one_shot(&repo));
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = guard;
+        crate::fetch::git_fetch_one_shot(&repo);
+    });
 }
 
 /// Reveal `settings.json` in the user's default editor (or the OS file

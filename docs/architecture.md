@@ -31,14 +31,16 @@
   pushes, or rewrites — it cannot alter or lose your repo. `git.rs` must never
   call any `git2` API that mutates a repo or touches the network (no commits,
   no fetch, no merges, no working-tree writes); libgit2 here is built without
-  a network transport. The one network touch against a repo is the **optional**
-  panel-open fetch — it shells out to the system `git` in `fetch.rs`, only
-  updates the remote-tracking mirror, and still never touches branches, the
-  working tree, or history.
+  a network transport. The one network touch against a repo is the panel-open
+  fetch (on by default, toggleable) — it shells out to the system `git` in
+  `fetch.rs`, pinned to `origin` with a branch-only refspec so it can only
+  write `refs/remotes/origin/*`, with repo hooks disabled and submodule
+  recursion off, and still never touches branches, the working tree, or
+  history.
 - **No telemetry, no analytics, no auto-uploads**, and no repo data ever
-  leaves the machine to us. The only outbound network is the optional
-  self-updater (GitHub Releases) and the optional auto-fetch (your own
-  remotes, via your own Git credentials).
+  leaves the machine to us. The only outbound network is the self-updater
+  (GitHub Releases) and the panel-open auto-fetch (your repo's own `origin`,
+  via your own Git credentials).
 - **Cold start ≤300ms / idle RAM ≤100MB.** Architecture preserves this:
   - Lazy-load git data, eager-load only the cached timeline.
   - No long-lived per-repo polling; rely on `notify` (v0.2) for refresh.

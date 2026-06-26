@@ -345,13 +345,17 @@ export function Settings() {
             checked={settings.autoFetchOnShow}
             onChange={(e) => setAutoFetch(e.target.checked)}
           />
-          <span className="settings-radio-label">Fetch on panel open</span>
+          <span className="settings-radio-label">
+            Fetch on panel open <span className="settings-radio-default">(on by default)</span>
+          </span>
           <span className="settings-radio-hint">
             When viewing a single repo, run a quiet background{" "}
-            <code>git fetch</code> as the panel opens, so a teammate's
-            just-pushed commit shows up. Never blocks the panel, stays silent
-            if it needs a password or has no network, and skips repos fetched
-            in the last few minutes. The all-repos view never fetches.
+            <code>git fetch origin</code> as the panel opens, so a teammate's
+            just-pushed commit shows up. Only updates the remote-tracking
+            mirror (<code>refs/remotes/origin/*</code>) — never your local
+            branches, tags, or working tree. Never blocks the panel, stays
+            silent if it needs a password or has no network, and skips repos
+            fetched in the last few minutes. The all-repos view never fetches.
             (gitwink still never merges, pushes, or rewrites your work.)
           </span>
         </label>

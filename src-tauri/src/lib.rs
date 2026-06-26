@@ -331,6 +331,7 @@ pub fn run() {
             commands::open_settings_window,
             commands::set_update_check,
             commands::set_auto_fetch_on_show,
+            commands::ack_auto_fetch_notice,
             commands::maybe_fetch_repo,
             commands::open_settings_file,
             commands::set_live_settings,

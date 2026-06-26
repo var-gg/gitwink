@@ -93,6 +93,12 @@ pub struct Settings {
     /// default (resolved in `get_settings`).
     #[serde(default)]
     pub auto_fetch_on_show: Option<bool>,
+    /// Whether the user has dismissed the one-time "gitwink now fetches the
+    /// open repo's remote" disclosure banner. `None`/`false` ⇒ not yet seen
+    /// (show it); `true` ⇒ acknowledged. Doubles as the upgrade-time notice
+    /// for users who installed under the old no-network framing.
+    #[serde(default)]
+    pub auto_fetch_notice_seen: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -336,6 +342,14 @@ pub fn save_panel_pinned(app: &AppHandle, pinned: bool) -> Result<()> {
 pub fn save_auto_fetch_on_show(app: &AppHandle, enabled: bool) {
     if let Err(e) = update_with(app, |s| s.auto_fetch_on_show = Some(enabled)) {
         eprintln!("settings: failed to persist auto_fetch_on_show: {e:#}");
+    }
+}
+
+/// Persist the one-time auto-fetch disclosure acknowledgement. Updating the
+/// live cache is the caller's job — see `ack_auto_fetch_notice` in commands.rs.
+pub fn save_auto_fetch_notice_seen(app: &AppHandle, seen: bool) {
+    if let Err(e) = update_with(app, |s| s.auto_fetch_notice_seen = Some(seen)) {
+        eprintln!("settings: failed to persist auto_fetch_notice_seen: {e:#}");
     }
 }
 

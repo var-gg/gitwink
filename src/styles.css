@@ -141,8 +141,9 @@ body,
 
 /* Upstream ahead/behind badge in single-repo mode. Read-only — sits next
  * to the BranchChip and shows how far the local branch has drifted from
- * its origin/<branch> tracking ref. Tooltip explains the local-only,
- * no-fetch caveat. Deliberately not a button: it's an info badge. */
+ * its origin/<branch> tracking ref. Counts come from local refs and reflect
+ * the last fetch; the tooltip spells that out (auto-fetch refreshes it on
+ * panel open). Deliberately not a button: it's an info badge. */
 .upstream-badge {
   display: inline-flex;
   align-items: center;
@@ -207,6 +208,79 @@ body,
   font-size: calc(11px * var(--ui-scale, 1));
   opacity: 0.6;
   flex-shrink: 0;
+}
+
+/* ----- one-time auto-fetch disclosure banner ----- */
+
+.autofetch-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(10px * var(--ui-scale, 1));
+  padding: calc(8px * var(--ui-scale, 1)) calc(12px * var(--ui-scale, 1));
+  font-size: calc(11.5px * var(--ui-scale, 1));
+  line-height: 1.4;
+  background: #fff8e6;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  color: #5c4a16;
+}
+
+.autofetch-notice code {
+  font-size: 0.92em;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.autofetch-notice-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.autofetch-notice-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: calc(6px * var(--ui-scale, 1));
+  align-items: center;
+}
+
+.autofetch-notice-link,
+.autofetch-notice-dismiss {
+  flex-shrink: 0;
+  padding: calc(2px * var(--ui-scale, 1)) calc(8px * var(--ui-scale, 1));
+  font-size: calc(11px * var(--ui-scale, 1));
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.autofetch-notice-link {
+  border: none;
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  text-decoration: underline;
+}
+
+.autofetch-notice-dismiss {
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: rgba(255, 255, 255, 0.6);
+  color: inherit;
+  font-weight: 500;
+}
+
+@media (prefers-color-scheme: dark) {
+  .autofetch-notice {
+    background: #2a2410;
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+    color: #e0cf9a;
+  }
+  .autofetch-notice code {
+    background: rgba(255, 255, 255, 0.1);
+  }
+  .autofetch-notice-dismiss {
+    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+  }
 }
 
 .panel-close {
@@ -2881,6 +2955,11 @@ body,
 
 .settings-radio-label {
   font-size: 13px;
+}
+
+.settings-radio-default {
+  font-weight: 400;
+  opacity: 0.5;
 }
 
 .settings-radio-hint {

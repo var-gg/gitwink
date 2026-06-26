@@ -137,8 +137,8 @@ side-by-side diff, 바이너리 자산의 인라인 이미지 프리뷰, 위치/
 
 Tauri 2 · Rust · React + TypeScript · `git2` · SQLite · 커스텀
 SVG DAG 드로어 · 읽기 전용(merge·push·재작성 안 함) · 텔레메트리·애널리틱스
-없음 — 네트워크는 선택적·최소한: 앱 업데이트 확인(GitHub)과 보고 있는
-repo의 auto-fetch뿐, 둘 다 끌 수 있음.
+없음 — 네트워크는 최소한이며 끌 수 있음: 앱 업데이트 확인(GitHub)과 보고
+있는 repo의 `origin` auto-fetch(기본 켜짐)뿐, 둘 다 off 가능.
 
 ## 개발
 

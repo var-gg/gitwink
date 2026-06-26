@@ -375,6 +375,12 @@ export async function onPanelShown(cb: () => void): Promise<UnlistenFn> {
   return listen("panel://shown", () => cb());
 }
 
+/** Dismiss the one-time auto-fetch disclosure banner (persists so it never
+ *  reappears). No fetch or network side effects. */
+export async function ackAutoFetchNotice(): Promise<void> {
+  return invoke("ack_auto_fetch_notice");
+}
+
 // ----- self-update -----
 
 /** Snapshot the updater state for the modal: the pending update (if any)

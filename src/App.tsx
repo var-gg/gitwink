@@ -19,6 +19,7 @@ import {
   WINDOW_DAY_PRESETS,
 } from "./components/TimeRangeChip";
 import {
+  ackAutoFetchNotice,
   currentUpstreamStatus,
   dismissPanel,
   explicitAddRepo,
@@ -157,6 +158,14 @@ interface WarpReturn {
   authors: string[] | "all";
 }
 
+/** Tolerant repo-path equality: the backend's cache key and the frontend's
+ *  selected path can differ in separator (\ vs /) or case on Windows. */
+function samePath(a: string, b: string): boolean {
+  if (a === b) return true;
+  const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  return norm(a) === norm(b);
+}
+
 function App() {
   const [scanning, setScanning] = useState(false);
   const [commits, setCommits] = useState<CommitSummary[] | null>(null);
@@ -191,6 +200,26 @@ function App() {
   // author facet, and the single-repo commits effect all depend on it, so
   // re-showing the panel re-pulls (covering anything the watcher missed).
   const [refreshNonce, setRefreshNonce] = useState(0);
+
+  // Bumped only when the VIEWED repo's refs actually change under us (a
+  // watcher invalidation for that repo — a local commit, or an auto-fetch
+  // landing). The branch LIST and the upstream badge (ahead/behind +
+  // fetch-age) depend on this, NOT on every summon, so they refresh exactly
+  // when refs move and stay cheap on a plain re-show.
+  const [refsNonce, setRefsNonce] = useState(0);
+
+  // One-time disclosure: gitwink now fetches the open repo's remote on view.
+  // Show it once while auto-fetch is on and unacknowledged — this is also the
+  // upgrade-time heads-up for anyone who installed under the old no-network
+  // framing. Read from the (already-loaded) settings snapshot at mount.
+  const [showAutoFetchNotice, setShowAutoFetchNotice] = useState(() => {
+    const s = getCurrentSettings();
+    return s.autoFetchOnShow && !s.autoFetchNoticeSeen;
+  });
+  const dismissAutoFetchNotice = useCallback(() => {
+    setShowAutoFetchNotice(false);
+    void ackAutoFetchNotice().catch(() => {});
+  }, []);
 
   // ----- commit search (the `/` summon) + warp -----
   // `searchInput` is the live keystrokes; `searchQuery` is its debounced
@@ -363,10 +392,16 @@ function App() {
       // the auto-fetch above landing a teammate's commit — wouldn't surface
       // until the next summon. Bump the nonce so it updates live. All-repos
       // mode is left to TimelineWindowed's own invalidation listener.
-      unTimelineInvalidated = await onTimelineInvalidated(() => {
-        if (mounted && selectedRepoPathRef.current) {
-          setRefreshNonce((n) => n + 1);
-        }
+      unTimelineInvalidated = await onTimelineInvalidated((p) => {
+        if (!mounted) return;
+        const cur = selectedRepoPathRef.current;
+        if (!cur) return;
+        // Only react to the repo we're actually viewing — the event carries
+        // its own repoPath, so an unrelated repo's change can't trigger a
+        // needless rescan of the open one.
+        if (p.repoPath && !samePath(p.repoPath, cur)) return;
+        setRefreshNonce((n) => n + 1); // commits re-pull
+        setRefsNonce((n) => n + 1); // branch list + upstream badge re-eval
       });
 
       // Updater: backend asks the panel to surface the modal (tray
@@ -484,13 +519,13 @@ function App() {
     };
   }, [singleMode, windowDays, refreshNonce]);
 
-  // ----- single-repo mode: branch list + saved selection -----
-  // Both depend ONLY on the repo — the branch set is window-independent,
-  // so refetching when the time window changes would be wasteful. On
-  // repo change we reset selectedBranches to "all" up front so the
-  // commits effect never fires with a stale per-repo selection, then
-  // restore this repo's saved selection if it has one. Absence of a
-  // saved selection ⇒ "all", the first-entry default.
+  // ----- single-repo mode: saved branch SELECTION -----
+  // On repo change, reset selectedBranches to "all" up front so the commits
+  // effect never fires with a stale per-repo selection, then restore this
+  // repo's saved selection if it has one. Absence of a saved selection ⇒
+  // "all", the first-entry default. The branch LIST itself loads in the
+  // effect below (kept separate so a refs change can refresh the list
+  // without clobbering this selection).
   useEffect(() => {
     if (!singleMode || !selectedRepoPath) {
       setBranches([]);
@@ -500,7 +535,7 @@ function App() {
     setSelectedBranches("all");
     // A warp forced "all branches" so its target commit is reachable —
     // consume the one-shot flag instead of re-applying the repo's saved
-    // selection over it. (The branch LIST still loads for the chip.)
+    // selection over it. (The branch LIST still loads below for the chip.)
     const suppressSaved = suppressBranchRestoreRef.current;
     suppressBranchRestoreRef.current = false;
     let cancelled = false;
@@ -511,6 +546,22 @@ function App() {
           if (!cancelled && saved.length > 0) setSelectedBranches(saved);
         }
       } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [singleMode, selectedRepoPath]);
+
+  // ----- single-repo mode: branch LIST for the chip -----
+  // Window-independent (so windowDays is intentionally absent), but DOES
+  // depend on refsNonce: when an auto-fetch lands new remote branches — or a
+  // local branch op happens — under us, the chip's list refreshes. Kept
+  // apart from the selection-reset effect above so this refresh never resets
+  // the user's current branch filter.
+  useEffect(() => {
+    if (!singleMode || !selectedRepoPath) return;
+    let cancelled = false;
+    (async () => {
       try {
         const bs = await listBranches(selectedRepoPath);
         if (!cancelled) setBranches(bs);
@@ -519,7 +570,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [singleMode, selectedRepoPath]);
+  }, [singleMode, selectedRepoPath, refsNonce]);
 
   // Persist the BranchChip selection per repo so it survives across
   // sessions. "all" is stored as an empty list (absence ⇒ "all"), so the
@@ -640,7 +691,10 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [selectedRepoPath, singleMode, selectedBranches]);
+    // refsNonce: recompute ahead/behind + fetch-age when refs move under us
+    // (an auto-fetch landing, a local commit) — but NOT on a plain summon, so
+    // the potentially-pricey graph walk stays off the re-show hot path.
+  }, [selectedRepoPath, singleMode, selectedBranches, refsNonce]);
 
   // ----- single-repo mode: commits (depends on repo, branches, window) -----
   // All three dimensions of the filter must be in the dep list — otherwise
@@ -1168,6 +1222,32 @@ function App() {
           onMove={(d) => searchControlRef.current?.moveSelection(d)}
           onActivate={() => searchControlRef.current?.activateSelected()}
         />
+      )}
+      {showAutoFetchNotice && (
+        <div className="autofetch-notice" role="status">
+          <span className="autofetch-notice-text">
+            gitwink now fetches the open repo from <code>origin</code> when you
+            view it, so a teammate's pushed commits show up. It only updates the
+            remote-tracking mirror — it never merges, pushes, or changes your
+            repo.
+          </span>
+          <span className="autofetch-notice-actions">
+            <button
+              type="button"
+              className="autofetch-notice-link"
+              onClick={() => void invoke("open_settings_window")}
+            >
+              Settings
+            </button>
+            <button
+              type="button"
+              className="autofetch-notice-dismiss"
+              onClick={dismissAutoFetchNotice}
+            >
+              Got it
+            </button>
+          </span>
+        </div>
       )}
       <section className="panel-body">
         {allRepos.length === 0 && !singleMode ? (

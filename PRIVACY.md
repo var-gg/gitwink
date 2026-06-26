@@ -1,6 +1,6 @@
 # gitwink Privacy Policy
 
-_Last updated: 2026-06-24_
+_Last updated: 2026-06-26_
 
 gitwink is a tray-resident, read-only tool for glancing at recent commit
 activity across your local Git repositories.
@@ -10,10 +10,11 @@ activity across your local Git repositories.
 gitwink is **read-only** — it never merges, pushes, rebases, or rewrites, so
 it cannot alter or lose your work. It has no telemetry or analytics and sends
 no information about you or your repositories to us. Its network use is
-limited and optional, and goes only to services you already use: a check for
-app updates (GitHub) and, if you enable it, a `git fetch` of the repository
-you're viewing (your own remote, via your own Git credentials). See
-[Network activity](#network-activity) below.
+limited and goes only to services you already use: a check for app updates
+(GitHub) and an automatic `git fetch` of the repository you're viewing — on
+by default, talking to that repo's own `origin` remote via your own Git
+credentials, and easily turned off. See [Network activity](#network-activity)
+below.
 
 ## What gitwink accesses
 
@@ -26,9 +27,9 @@ folders:
 - File contents and diffs, when you open a commit to inspect it.
 
 This information is read directly from your local `.git` directories and is
-**never** sent to us or any third party. (If you enable auto-fetch, a
-`git fetch` talks only to the Git remote you already configured for that
-repository — see [Network activity](#network-activity).)
+**never** sent to us or any third party. (When auto-fetch is on — the default
+— a `git fetch` talks only to that repository's `origin` remote; see
+[Network activity](#network-activity).)
 
 ## What gitwink stores
 
@@ -46,9 +47,9 @@ that folder removes them.
 ## Network activity
 
 gitwink has no account, no telemetry, no analytics, and no advertising, and
-it sends no information about you or your repositories to us. It makes only
-two kinds of network request — both optional, both to services you already
-use:
+it sends no information about you or your repositories to us. The only network
+activity it initiates is two features — both to services you already use, and
+both easily turned off:
 
 1. **App update check** — gitwink may contact GitHub to see whether a newer
    release is available and, if you choose to update, to download it. These
@@ -56,13 +57,17 @@ use:
    [GitHub's Privacy Statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement);
    no information about you or your repositories is included in them. Set the
    update checker to manual or off in `settings.json`.
-2. **Auto-fetch on panel open** _(optional)_ — when you're viewing a single
-   repository, gitwink can run a quiet `git fetch` as the panel opens, so a
+2. **Auto-fetch on panel open** _(on by default)_ — when you're viewing a
+   single repository, gitwink runs a quiet `git fetch` as the panel opens, so a
    teammate's just-pushed commit shows up. It uses your system `git` and your
-   existing Git credentials to talk only to the remote you already configured
-   for that repository — gitwink adds no destination of its own, and includes
-   no extra data. It only **reads** remote state; it never pushes, merges, or
-   rewrites. Turn it off in Settings → Auto-fetch (or `settings.json`).
+   existing Git credentials, pinned to that repository's `origin` remote with a
+   branch-only refspec — gitwink adds no destination of its own and sends
+   nothing beyond what a normal fetch negotiates (e.g. which commit IDs you
+   already have). Locally it updates only the remote-tracking mirror
+   (`refs/remotes/origin/*`); it never touches your branches, working tree, or
+   history, and never pushes, merges, or rewrites. A repository without an
+   `origin` remote isn't fetched. Turn it off in Settings → Auto-fetch (or
+   `settings.json`).
 
 ## Third-party components
 

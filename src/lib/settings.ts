@@ -17,6 +17,9 @@ export interface AppSettings {
   /** One-shot `git fetch` of the viewed repo on panel open (single-repo
    *  mode only). Default ON. */
   autoFetchOnShow: boolean;
+  /** Whether the one-time auto-fetch disclosure banner has been dismissed.
+   *  Default false ⇒ show it once (also the upgrade-time disclosure). */
+  autoFetchNoticeSeen: boolean;
   updateCheck: UpdateCheckMode;
   /** False for Scoop / Microsoft Store installs — the Updates section
    *  of the Settings window hides because those channels manage their
@@ -35,6 +38,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   panelHotkey: "CmdOrCtrl+Shift+G",
   panelPinned: false,
   autoFetchOnShow: true,
+  autoFetchNoticeSeen: false,
   updateCheck: "enabled",
   updaterAvailable: true,
 };
