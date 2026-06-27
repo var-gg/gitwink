@@ -1441,8 +1441,9 @@ function App() {
               commits={filteredCommits}
               allCommits={commits ?? undefined}
               branches={branches}
-              resetKey={`${JSON.stringify(selectedBranches)}|${windowDays}|${JSON.stringify(selectedAuthors)}`}
+              resetKey={`${fileHistory ? `file:${fileHistory.filePath}` : ""}${JSON.stringify(selectedBranches)}|${windowDays}|${JSON.stringify(selectedAuthors)}`}
               anchor={warpAnchor}
+              linear={fileHistory != null}
             />
           )
         ) : (

@@ -63,6 +63,12 @@ interface Props {
    *  `hash` is selected, centred in the viewport and pulsed — retried as
    *  `commits` refreshes until the hash is actually loaded. */
   anchor?: { hash: string; nonce: number } | null;
+  /** File-history "thread" mode: the rows are a sparse subset of history
+   *  (the commits that touched one file), so their real parents aren't in
+   *  the list and the DAG would shatter into disconnected lanes. Instead we
+   *  draw a single spine linking each revision to the next older one —
+   *  dashed, to signal the (untouching) commits bridged over. */
+  linear?: boolean;
 }
 
 function timeAgo(unixSeconds: number): string {
@@ -93,6 +99,7 @@ export function Timeline({
   branches,
   resetKey,
   anchor,
+  linear,
 }: Props) {
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportH, setViewportH] = useState(0);
@@ -133,6 +140,19 @@ export function Timeline({
   const graph = useMemo(() => {
     const colorFn = (c: CommitSummary) =>
       colorForBranch(c.branchLabel ?? headBranch);
+    // File-history thread: link each revision to the NEXT older one in the
+    // list, ignoring the real DAG (whose parents aren't in this sparse set).
+    // One straight spine, dashed like a bridged view.
+    if (linear) {
+      const nextHash = new Map<string, string>();
+      for (let i = 0; i < commits.length - 1; i++) {
+        nextHash.set(commits[i].hash, commits[i + 1].hash);
+      }
+      return computeLanes(commits, colorFn, (c) => {
+        const n = nextHash.get(c.hash);
+        return n ? [{ hash: n, bridged: true }] : [];
+      });
+    }
     // Author-filtered view (rows ⊂ allCommits): bridge parent links
     // through the hidden commits. The unfiltered case passes the same
     // array reference, skipping the walk entirely.
@@ -142,7 +162,7 @@ export function Timeline({
       return computeLanes(commits, colorFn, (c) => effective.get(c.hash) ?? []);
     }
     return computeLanes(commits, colorFn);
-  }, [commits, allCommits, headBranch]);
+  }, [commits, allCommits, headBranch, linear]);
 
   // Edge bucket index — each edge is filed under every row-index chunk it
   // spans. The visible-edge query then reads just the chunk(s) the viewport
