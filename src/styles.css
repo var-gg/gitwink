@@ -2161,9 +2161,10 @@ body,
 .sbs-cols {
   flex: 1;
   display: grid;
-  /* Inline style overrides the columns with the persisted split; this is
-     the fallback and defines the resizer's fixed middle track width. */
-  grid-template-columns: 1fr 8px 1fr;
+  /* The split is carried by --sbs-l / --sbs-r so the resizer drag can rewrite
+     it via ref WITHOUT a React re-render (the killer for a big diff); the
+     component sets the same vars inline for the initial/persisted value. */
+  grid-template-columns: var(--sbs-l, 1fr) 8px var(--sbs-r, 1fr);
   /* One viewport-height row so each column box stays the viewport height —
      its taller content scrolls inside it (vertical), and its horizontal bar
      pins to the viewport bottom rather than sinking below the content. */
@@ -2346,9 +2347,33 @@ body,
 
 /* Sized to the widest line so every row's tint spans the full scroll
    width — short rows would otherwise show untinted gaps when scrolled. */
+/* The virtualization track: fixed full height (set inline) so the scroller's
+   scrollHeight is real (the minimap + scroll-sync read it), `position:
+   relative` so the absolutely-positioned rows resolve against it, and
+   `max-content` width driven by the in-flow `.sbs-probe` so the horizontal
+   scrollbar stays put as the vertical window slides. */
 .sbs-col-inner {
+  position: relative;
   width: max-content;
   min-width: 100%;
+}
+
+/* Each rendered row is positioned by an inline top/height; only the rows in
+   the viewport (plus overscan) are mounted. */
+.sbs-col-inner > .sbs-line,
+.sbs-col-inner > .sbs-hunk-header {
+  position: absolute;
+  left: 0;
+  overflow: hidden;
+}
+
+/* Hidden width probe — in flow (static) and zero-height so it adds no
+   vertical space yet still forces the track to the widest line's width. */
+.sbs-col-inner > .sbs-line.sbs-probe {
+  position: static;
+  height: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .sbs-hunk-header {
@@ -2382,9 +2407,10 @@ body,
   display: grid;
   grid-template-columns: calc(44px * var(--ui-scale, 1)) calc(16px * var(--ui-scale, 1)) max-content;
   width: 100%;
-  align-items: baseline;
+  align-items: center;
   padding: 0 6px;
-  min-height: calc(18px * var(--ui-scale, 1));
+  /* Height is set inline (sbsLineH) so it matches the virtualization offsets
+     exactly; the row is one monospace line tall and never wraps. */
   white-space: pre;
 }
 

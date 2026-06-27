@@ -54,6 +54,20 @@ export function timelineRowH(scale: number): number {
   return Math.round(BASE_TIMELINE_ROW_H * scale);
 }
 
+/** Side-by-side diff row geometry at scale 1.0. Each visual row is a fixed
+ *  pixel height so the diff can virtualize like the timeline: a line is one
+ *  monospace line tall, a hunk header a touch taller for its padding+border.
+ *  The SAME integers drive BOTH the inline row `height` and the prefix-sum
+ *  offsets, so the JS geometry and the rendered DOM cannot drift apart. */
+export const BASE_SBS_LINE_H = 18;
+export const BASE_SBS_HEADER_H = 24;
+export function sbsLineH(scale: number): number {
+  return Math.round(BASE_SBS_LINE_H * scale);
+}
+export function sbsHeaderH(scale: number): number {
+  return Math.round(BASE_SBS_HEADER_H * scale);
+}
+
 /** Scale any chip-dropdown base px (row height, viewport cap) by the
  *  current --ui-scale and round to an integer.
  *

@@ -12,13 +12,9 @@
 
 import { useEffect, useRef, useState } from "react";
 
-export interface MinimapSegment {
-  /** distance from the top of the diff, as a percentage of total height */
-  topPct: number;
-  /** segment span, as a percentage of total height */
-  heightPct: number;
-  type: "add" | "delete" | "change";
-}
+import type { MinimapSegment } from "../lib/diffView";
+
+export type { MinimapSegment };
 
 interface Props {
   segments: MinimapSegment[];
