@@ -15,6 +15,9 @@ interface Props {
   count: number | null;
   /** bumped to re-focus the input (pressing `/` while the bar is open) */
   focusNonce: number;
+  /** Explicit query scope. Search intentionally ignores time/author/branch
+   * lenses, so this label prevents the hidden-mode semantic mismatch. */
+  scopeLabel: string;
   onChange: (v: string) => void;
   onClose: () => void;
   /** move the result selection (↑/↓ from the input) */
@@ -27,6 +30,7 @@ export function SearchBar({
   value,
   count,
   focusNonce,
+  scopeLabel,
   onChange,
   onClose,
   onMove,
@@ -97,6 +101,9 @@ export function SearchBar({
           {count == null ? "…" : `${count} match${count === 1 ? "" : "es"}`}
         </span>
       )}
+      <span className="search-bar-scope" title={`Search scope: ${scopeLabel}`}>
+        {scopeLabel}
+      </span>
       {count != null && count > 0 && (
         <span
           className="search-bar-hint"

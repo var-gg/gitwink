@@ -1205,10 +1205,10 @@ pub struct RepoCommitCount {
     pub count: i64,
 }
 
-/// The timeline's filter facets: author tallies + per-repo commit counts
-/// under `filters`. Phase 3's windowed timeline drops the full client-side
-/// commit array, so the AuthorsChip / RepoChip can't tally these
-/// themselves — this is their facet source, computed in one call.
+/// The timeline's contextual filter facets: author tallies + per-repo commit
+/// counts. Phase 3's windowed timeline drops the full client-side commit
+/// array, so the AuthorsChip / RepoChip can't tally these themselves — this
+/// is their facet source, computed in one call.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FilterFacets {
@@ -1216,24 +1216,33 @@ pub struct FilterFacets {
     pub repos: Vec<RepoCommitCount>,
 }
 
-/// Compute the author + repo facets under `filters`. Authors come back
-/// most-recent-activity first. Callers pass the time window (`since`) but
-/// typically leave `repo_ids` / `authors` unset, so each facet covers
-/// every selectable value.
+/// Compute contextual author + repo facets. Each facet applies every active
+/// dimension except its own:
+///
+/// - author tallies respect repo/time/query/generation, but ignore the current
+///   author selection so another author remains selectable;
+/// - repo tallies respect author/time/query/generation, but ignore the current
+///   repo selection so another repo remains selectable.
+///
+/// This is the standard faceted-filter contract: OR within one dimension,
+/// AND across dimensions, and no facet hides the options needed to widen
+/// itself.
 pub fn list_filter_facets(
     conn: &Connection,
     filters: &TimelineFilters,
 ) -> Result<FilterFacets> {
-    let (filter_sql, bind) = build_filter_sql(filters);
+    let mut author_filters = filters.clone();
+    author_filters.authors = None;
+    let (author_filter_sql, author_bind) = build_filter_sql(&author_filters);
 
     let authors_sql = format!(
         "SELECT author, COUNT(*) AS cnt, MAX(timestamp) AS last \
-         FROM commits WHERE 1=1{filter_sql} \
+         FROM commits WHERE 1=1{author_filter_sql} \
          GROUP BY author ORDER BY last DESC"
     );
     let mut stmt = conn.prepare(&authors_sql)?;
     let authors = stmt
-        .query_map(rusqlite::params_from_iter(bind.iter()), |r| {
+        .query_map(rusqlite::params_from_iter(author_bind.iter()), |r| {
             Ok(AuthorTally {
                 name: r.get(0)?,
                 count: r.get(1)?,
@@ -1243,13 +1252,16 @@ pub fn list_filter_facets(
         .collect::<Result<Vec<_>, _>>()?;
     drop(stmt);
 
+    let mut repo_filters = filters.clone();
+    repo_filters.repo_ids = None;
+    let (repo_filter_sql, repo_bind) = build_filter_sql(&repo_filters);
     let repos_sql = format!(
         "SELECT repo_id, COUNT(*) AS cnt \
-         FROM commits WHERE 1=1{filter_sql} GROUP BY repo_id"
+         FROM commits WHERE 1=1{repo_filter_sql} GROUP BY repo_id"
     );
     let mut stmt = conn.prepare(&repos_sql)?;
     let repos = stmt
-        .query_map(rusqlite::params_from_iter(bind.iter()), |r| {
+        .query_map(rusqlite::params_from_iter(repo_bind.iter()), |r| {
             Ok(RepoCommitCount {
                 repo_id: r.get(0)?,
                 count: r.get(1)?,
@@ -2067,6 +2079,73 @@ mod tests {
         assert_eq!(r1.count, 5);
         let r2 = facets.repos.iter().find(|r| r.repo_id == 2).unwrap();
         assert_eq!(r2.count, 4);
+    }
+
+    #[test]
+    fn filter_facets_apply_other_dimensions_but_not_their_own() {
+        let conn = test_db();
+        // repo 1: alice 3 + bob 2. repo 2: alice 4.
+        for i in 0..3 {
+            insert(&conn, 1, &format!("a{i}"), 1_000 + i, "alice");
+        }
+        for i in 0..2 {
+            insert(&conn, 1, &format!("b{i}"), 2_000 + i, "bob");
+        }
+        for i in 0..4 {
+            insert(&conn, 2, &format!("c{i}"), 3_000 + i, "alice");
+        }
+
+        let facets = list_filter_facets(
+            &conn,
+            &TimelineFilters {
+                repo_ids: Some(vec![1]),
+                authors: Some(vec!["alice".to_string()]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        // Author facet ignores the selected author, but respects repo 1.
+        assert_eq!(facets.authors.len(), 2);
+        assert_eq!(
+            facets
+                .authors
+                .iter()
+                .find(|author| author.name == "alice")
+                .unwrap()
+                .count,
+            3
+        );
+        assert_eq!(
+            facets
+                .authors
+                .iter()
+                .find(|author| author.name == "bob")
+                .unwrap()
+                .count,
+            2
+        );
+
+        // Repo facet ignores repo 1, but respects the selected author.
+        assert_eq!(facets.repos.len(), 2);
+        assert_eq!(
+            facets
+                .repos
+                .iter()
+                .find(|repo| repo.repo_id == 1)
+                .unwrap()
+                .count,
+            3
+        );
+        assert_eq!(
+            facets
+                .repos
+                .iter()
+                .find(|repo| repo.repo_id == 2)
+                .unwrap()
+                .count,
+            4
+        );
     }
 
     #[test]

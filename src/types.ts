@@ -152,8 +152,8 @@ export interface RepoCommitCount {
   count: number;
 }
 
-/** The timeline's filter facets (author tallies + per-repo commit counts)
- * — mirrors `cache::FilterFacets`. */
+/** Contextual author tallies + per-repo commit counts — mirrors
+ * `cache::FilterFacets`. Each facet excludes its own active dimension. */
 export interface FilterFacets {
   authors: AuthorTally[];
   repos: RepoCommitCount[];

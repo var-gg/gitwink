@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { AuthorTally } from "../types";
+import {
+  removeUnavailableFacetValue,
+  toggleFacetValue,
+  unavailableFacetValues,
+} from "../lib/facetSelection";
 import { ChipDropdown } from "./ChipDropdown";
 import { VirtualChipList, type VirtualChipRow } from "./VirtualChipList";
 import { chipRowH, useUiScale } from "../lib/settings";
@@ -8,6 +13,7 @@ import { chipRowH, useUiScale } from "../lib/settings";
 // Virtualised-row BASE heights (px) at scale 1.0 — chipRowH scales them
 // against the current --ui-scale so JS row heights match the CSS content.
 const ITEM_H_BASE = 26; // .chip-item — one-line author entry
+const HEADER_H_BASE = 25; // .chip-section-header — unavailable selection label
 const EMPTY_H_BASE = 34; // .chip-empty — "No authors match."
 
 // Author list ordering. With "all repo / all branch" the author list can be
@@ -74,38 +80,46 @@ export function AuthorsChip({
     return list.sort(cmp);
   }, [authors, query, sort]);
 
+  const authorNames = useMemo(
+    () => authors.map((author) => author.name),
+    [authors],
+  );
+  const unavailableSelected = useMemo(
+    () => unavailableFacetValues(authorNames, selected),
+    [authorNames, selected],
+  );
+  const visibleUnavailable = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q
+      ? unavailableSelected.filter((name) => name.toLowerCase().includes(q))
+      : unavailableSelected;
+  }, [query, unavailableSelected]);
+
   const label =
     selected === "all"
       ? "All authors"
       : selected.length === 0
         ? "No authors"
         : selected.length === 1
-          ? selected[0]
-          : `${selected.length} authors`;
+          ? unavailableSelected.length === 1
+            ? `${selected[0]} · 0`
+            : selected[0]
+          : unavailableSelected.length > 0
+            ? `${selected.length} authors · ${unavailableSelected.length} unavailable`
+            : `${selected.length} authors`;
 
   const toggle = useCallback(
     (name: string) => {
-      if (selected === "all") {
-        // From "all", clicking an author means "show only this one" — the
-        // same focus pattern BranchChip uses. (The old behaviour unchecked
-        // just this one from everybody, which turned isolating one author
-        // into a chore of unchecking the rest.)
-        onChange([name]);
-        return;
-      }
-      const set = new Set(selected);
-      if (set.has(name)) set.delete(name);
-      else set.add(name);
-      const next = Array.from(set);
-      onChange(next.length === authors.length ? "all" : next);
+      onChange(toggleFacetValue(selected, name, authorNames));
     },
-    [selected, authors, onChange],
+    [selected, authorNames, onChange],
   );
 
   // Flatten into virtual rows: the "All authors" reset button, then one
   // row per author, then the empty-state line when nothing matches.
   const rows = useMemo<VirtualChipRow[]>(() => {
     const ITEM_H = chipRowH(scale, ITEM_H_BASE);
+    const HEADER_H = chipRowH(scale, HEADER_H_BASE);
     const EMPTY_H = chipRowH(scale, EMPTY_H_BASE);
 
     const out: VirtualChipRow[] = [];
@@ -125,6 +139,40 @@ export function AuthorsChip({
         </button>
       ),
     });
+    if (visibleUnavailable.length > 0) {
+      out.push({
+        key: "__unavailable",
+        height: HEADER_H,
+        render: () => (
+          <div
+            className="chip-section-header chip-section-warning"
+            title="Selected authors with no commits in the current repo, branch and time scope"
+          >
+            Selected · unavailable in this scope
+          </div>
+        ),
+      });
+      for (const name of visibleUnavailable) {
+        out.push({
+          key: "unavailable-author:" + name,
+          height: ITEM_H,
+          render: () => (
+            <button
+              type="button"
+              className="chip-item checked chip-item-unavailable"
+              title={`${name} has no commits in the current scope. Click to remove this filter.`}
+              onClick={() => {
+                onChange(removeUnavailableFacetValue(selected, name));
+              }}
+            >
+              <span className="chip-check">✓</span>
+              <span className="chip-item-name">{name}</span>
+              <span className="chip-item-count">0</span>
+            </button>
+          ),
+        });
+      }
+    }
     for (const a of visible) {
       const { name, count } = a;
       // In "all" the top row carries the highlight; individual rows aren't
@@ -154,12 +202,17 @@ export function AuthorsChip({
             >
               only
             </span>
-            <span className="chip-item-count">{count}</span>
+            <span
+              className="chip-item-count"
+              title="Commits in the current repository and time scope"
+            >
+              {count}
+            </span>
           </button>
         ),
       });
     }
-    if (visible.length === 0) {
+    if (visible.length === 0 && visibleUnavailable.length === 0) {
       out.push({
         key: "__empty",
         height: EMPTY_H,
@@ -167,7 +220,15 @@ export function AuthorsChip({
       });
     }
     return out;
-  }, [visible, selected, onChange, onClose, toggle, scale]);
+  }, [
+    visible,
+    visibleUnavailable,
+    selected,
+    onChange,
+    onClose,
+    toggle,
+    scale,
+  ]);
 
   return (
     <ChipDropdown

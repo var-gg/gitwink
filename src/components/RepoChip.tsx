@@ -169,7 +169,7 @@ export function RepoChip({
         className="chip-clear"
         onClick={(e) => {
           e.stopPropagation();
-          onSelect(null);
+          onSelectAll();
         }}
         title="Back to All repos"
       >
@@ -205,13 +205,13 @@ export function RepoChip({
     const ALL_H = chipRowH(scale, ALL_H_BASE);
     const EMPTY_H = chipRowH(scale, EMPTY_H_BASE);
 
-    const repoRow = (r: Repo, withCount: boolean): VirtualChipRow => ({
+    const repoRow = (r: Repo): VirtualChipRow => ({
       key: "repo:" + r.path,
       height: REPO_ROW_H,
       render: () => (
         <RepoItem
           repo={r}
-          count={withCount ? repoCounts.get(r.id) : undefined}
+          count={repoCounts.get(r.id)}
           pinned={livePinned.has(r.path)}
           active={selectedPath === r.path}
           selected={
@@ -246,9 +246,7 @@ export function RepoChip({
         height: SECTION_H,
         render: () => <div className="chip-section">📌 Pinned</div>,
       });
-      // Pinned repos carry the commit-count facet badge; the (unbounded)
-      // All section does not — keeps the long list visually quiet.
-      for (const r of pinnedRepos) out.push(repoRow(r, true));
+      for (const r of pinnedRepos) out.push(repoRow(r));
     }
     out.push({
       key: "__all",
@@ -269,7 +267,7 @@ export function RepoChip({
         </button>
       ),
     });
-    for (const r of otherRepos) out.push(repoRow(r, false));
+    for (const r of otherRepos) out.push(repoRow(r));
     if (pinnedRepos.length === 0 && otherRepos.length === 0) {
       out.push({
         key: "__empty",
@@ -437,7 +435,12 @@ function RepoItem({
             )}
           </span>
           {count != null && (
-            <span className="chip-item-count">{count}</span>
+            <span
+              className="chip-item-count"
+              title="Commits matching the current author and time filters"
+            >
+              {count}
+            </span>
           )}
         </span>
         <span className="chip-item-path">{repo.path}</span>

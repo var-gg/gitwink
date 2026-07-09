@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { DiscoveredRepo, Repo } from "../types";
-import { repoCatalogReducer } from "./repoCatalog";
+import {
+  repoCatalogReducer,
+  resolveRepoIds,
+  sameCanonicalPath,
+} from "./repoCatalog";
 
 const alpha: Repo = {
   id: 1,
@@ -55,5 +59,19 @@ describe("repoCatalogReducer", () => {
 
     expect(both).toHaveLength(2);
     expect(oneRemoved.map((repo) => repo.path)).toEqual([lower.path]);
+  });
+
+  it("never widens an unresolved repo selection to all repos", () => {
+    expect(resolveRepoIds([alpha.path], [{ ...alpha, id: 0 }])).toEqual([]);
+    expect(resolveRepoIds(["/repos/missing"], [alpha])).toEqual([]);
+    expect(resolveRepoIds([alpha.path], [alpha])).toEqual([alpha.id]);
+    expect(resolveRepoIds("all", [alpha])).toBeNull();
+  });
+
+  it("matches path case only on Windows", () => {
+    expect(sameCanonicalPath("/repos/Foo", "/repos/foo", false)).toBe(false);
+    expect(sameCanonicalPath("C:\\Repos\\Foo", "c:/repos/foo/", true)).toBe(
+      true,
+    );
   });
 });

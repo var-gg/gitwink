@@ -43,18 +43,50 @@ body,
   overflow: visible;
 }
 
-/* ----- header (title + chips on one row) ----- */
+/* ----- header (stable chrome row + contextual filter row) ----- */
 
 .panel-header {
   display: flex;
-  align-items: stretch;
-  gap: calc(8px * var(--ui-scale, 1));
-  padding: calc(6px * var(--ui-scale, 1)) calc(12px * var(--ui-scale, 1));
+  flex-direction: column;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   cursor: default;
   user-select: none;
   -webkit-user-select: none;
-  min-height: calc(36px * var(--ui-scale, 1));
+  min-height: calc(62px * var(--ui-scale, 1));
+}
+
+.panel-chrome-row,
+.panel-filter-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.panel-chrome-row {
+  flex: 0 0 calc(30px * var(--ui-scale, 1));
+  gap: calc(8px * var(--ui-scale, 1));
+  padding: calc(4px * var(--ui-scale, 1))
+    calc(10px * var(--ui-scale, 1)) 0;
+}
+
+.panel-filter-row {
+  flex: 0 0 calc(32px * var(--ui-scale, 1));
+  padding: calc(3px * var(--ui-scale, 1))
+    calc(10px * var(--ui-scale, 1))
+    calc(5px * var(--ui-scale, 1));
+}
+
+.panel-filter-row-search {
+  padding-top: 0;
+}
+
+.panel-chrome-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: calc(4px * var(--ui-scale, 1));
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -119,10 +151,8 @@ body,
   display: flex;
   align-items: center;
   gap: calc(4px * var(--ui-scale, 1));
-  /* Shrink (but don't grow) so long repo / branch names truncate instead of
-     shoving the search / pin / close actions off the right edge. The
-     drag-handle to our right fills the slack when chips are short. */
-  flex: 0 1 auto;
+  width: 100%;
+  flex: 1 1 auto;
   min-width: 0;
 }
 /* Every chip slot may shrink below its content, so the labels (which
@@ -139,11 +169,22 @@ body,
   min-width: 0;
 }
 
-/* Upstream ahead/behind badge in single-repo mode. Read-only — sits next
- * to the BranchChip and shows how far the local branch has drifted from
- * its origin/<branch> tracking ref. Counts come from local refs and reflect
- * the last fetch; the tooltip spells that out (auto-fetch refreshes it on
- * panel open). Deliberately not a button: it's an info badge. */
+/* Repo/branch carry the current scope and get first claim on filter-row
+ * width. Time stays compact; a long author selection yields before scope. */
+.panel-filter-row .chip-wrap[data-chip="repo"],
+.panel-filter-row .chip-slot-primary {
+  flex: 1 1 120px;
+}
+.panel-filter-row .chip-slot-time {
+  flex: 0 0 auto;
+}
+.panel-filter-row .chip-slot-authors {
+  flex: 0 1 auto;
+  max-width: calc(150px * var(--ui-scale, 1));
+}
+
+/* Upstream ahead/behind badge in single-repo mode. Read-only — lives in the
+ * chrome status area so Branch/Repo filters keep the full second row. */
 .upstream-badge {
   display: inline-flex;
   align-items: center;
@@ -162,6 +203,7 @@ body,
 /* Explicit "fetch origin now" — sits right after the upstream badge. Spins
    while the fetch runs; flashes ✓ / ! on the outcome, then decays to ↻. */
 .fetch-now-btn {
+  flex-shrink: 0;
   border: none;
   background: transparent;
   color: inherit;
@@ -813,6 +855,18 @@ body,
 
 .chip-item.checked {
   font-weight: 600;
+}
+
+.chip-item-unavailable {
+  color: rgba(170, 95, 35, 1);
+  background: rgba(220, 150, 50, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  .chip-item-unavailable {
+    color: rgba(255, 185, 105, 1);
+    background: rgba(255, 175, 70, 0.1);
+  }
 }
 
 .chip-item-name {
@@ -2049,6 +2103,17 @@ body,
 .context-menu-item.disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.chip-section-warning {
+  color: rgba(170, 95, 35, 1);
+  opacity: 0.75;
+}
+
+@media (prefers-color-scheme: dark) {
+  .chip-section-warning {
+    color: rgba(255, 185, 105, 1);
+  }
 }
 
 .context-menu-description {
@@ -3490,6 +3555,14 @@ body,
   flex-shrink: 0;
 }
 
+/* Search is the filter row's active mode, not a third header row. */
+.panel-filter-row .search-bar {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border-bottom: 0;
+}
+
 .search-bar-icon {
   opacity: 0.5;
   font-size: calc(14px * var(--ui-scale, 1));
@@ -3515,6 +3588,18 @@ body,
   font-size: calc(11px * var(--ui-scale, 1));
   opacity: 0.6;
   white-space: nowrap;
+}
+
+.search-bar-scope {
+  min-width: 0;
+  max-width: calc(155px * var(--ui-scale, 1));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-left: calc(7px * var(--ui-scale, 1));
+  border-left: 1px solid rgba(0, 0, 0, 0.1);
+  font-size: calc(10px * var(--ui-scale, 1));
+  opacity: 0.52;
 }
 
 .search-bar-clear {
@@ -3554,13 +3639,30 @@ body,
   .search-bar-clear:hover {
     background: rgba(255, 255, 255, 0.12);
   }
+  .search-bar-scope {
+    border-left-color: rgba(255, 255, 255, 0.12);
+  }
 }
 
-/* A view lens the active search bypasses — visibly inert. */
-.chip-dimmed {
-  display: inline-flex;
-  opacity: 0.4;
-  pointer-events: none;
+@media (max-width: 420px) {
+  .panel-chrome-row,
+  .panel-filter-row {
+    padding-right: calc(7px * var(--ui-scale, 1));
+    padding-left: calc(7px * var(--ui-scale, 1));
+  }
+  .panel-filter-row .chip-slot-authors {
+    max-width: calc(92px * var(--ui-scale, 1));
+  }
+  .panel-filter-row .chip {
+    padding-right: calc(7px * var(--ui-scale, 1));
+    padding-left: calc(7px * var(--ui-scale, 1));
+  }
+  .search-bar-hint {
+    display: none;
+  }
+  .search-bar-scope {
+    max-width: calc(96px * var(--ui-scale, 1));
+  }
 }
 
 /* Search-result rows carry a 6th column: the jump affordance. */
@@ -3666,6 +3768,13 @@ body,
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
+}
+.filehist-chip-scope {
+  flex-shrink: 0;
+  padding-left: 5px;
+  border-left: 1px solid rgba(120, 90, 25, 0.22);
+  font-size: 0.85em;
+  opacity: 0.58;
 }
 .filehist-chip-x {
   flex-shrink: 0;

@@ -426,9 +426,8 @@ export async function getTimelineGeneration(): Promise<number> {
   return invoke<number>("get_timeline_generation");
 }
 
-/** The timeline's filter facets (author tallies + per-repo commit counts)
- * under `filters` — the AuthorsChip + RepoChip count sources. The windowed
- * timeline holds no full client-side commit array to tally itself. */
+/** Contextual filter facets. Each result applies the other active dimensions
+ * but excludes its own, so users can widen Repo/Author selections. */
 export async function listFilterFacets(
   filters: TimelineFilters,
 ): Promise<FilterFacets> {

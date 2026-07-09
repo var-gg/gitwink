@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { countBranchCommits } from "../lib/ipc";
+import {
+  removeUnavailableFacetValue,
+  toggleFacetValue,
+  unavailableFacetValues,
+} from "../lib/facetSelection";
 import { chipRowH, useUiScale } from "../lib/settings";
 import { compactAge, fullDateTime } from "../lib/time";
 import type { BranchInfo } from "../types";
@@ -27,6 +32,12 @@ function countLabel(b: BranchInfo, counts: Map<string, number>): string {
   return c > cap ? `${cap.toLocaleString()}+` : c.toLocaleString();
 }
 
+function displayRefName(refName: string): string {
+  return refName
+    .replace(/^refs\/heads\//, "")
+    .replace(/^refs\/remotes\//, "");
+}
+
 interface Props {
   open: boolean;
   onToggle: () => void;
@@ -34,6 +45,9 @@ interface Props {
   /** Repo the branches belong to — needed to lazily count commits per ref. */
   repoPath: string;
   branches: BranchInfo[];
+  /** True while the current repo's ref list is loading. Prevents a saved
+   * selection from being mislabeled unavailable during the async handoff. */
+  loading: boolean;
   /** Array of refNames (e.g. "refs/heads/main", "refs/remotes/origin/main")
    * or the "all" sentinel. We key by refName so a local "main" and a
    * remote "origin/main" never collide. */
@@ -47,6 +61,7 @@ export function BranchChip({
   onClose,
   repoPath,
   branches,
+  loading,
   selected,
   onChange,
 }: Props) {
@@ -159,36 +174,44 @@ export function BranchChip({
     };
   }, [branches, query, snapshot]);
 
+  const branchRefNames = useMemo(
+    () => branches.map((branch) => branch.refName),
+    [branches],
+  );
+  const unavailableSelected = useMemo(
+    () => (loading ? [] : unavailableFacetValues(branchRefNames, selected)),
+    [branchRefNames, selected, loading],
+  );
+  const visibleUnavailable = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q
+      ? unavailableSelected.filter((refName) =>
+          displayRefName(refName).toLowerCase().includes(q),
+        )
+      : unavailableSelected;
+  }, [query, unavailableSelected]);
+
   // Label adapts to the count. For a single selection we show the branch
   // name itself — minimum cognitive load — and fall back to a count when
   // multiple are picked.
   const label = useMemo(() => {
+    if (loading && branches.length === 0) return "Loading branches…";
     if (selected === "all") return `All branches (${branches.length})`;
     if (selected.length === 0) return "No branches";
     if (selected.length === 1) {
       const only = branches.find((b) => b.refName === selected[0]);
-      return only?.name ?? "1 branch";
+      return only?.name ?? `${displayRefName(selected[0])} · unavailable`;
     }
-    return `${selected.length} branches`;
-  }, [selected, branches]);
+    return unavailableSelected.length > 0
+      ? `${selected.length} branches · ${unavailableSelected.length} unavailable`
+      : `${selected.length} branches`;
+  }, [selected, branches, unavailableSelected, loading]);
 
   const toggle = useCallback(
     (refName: string) => {
-      if (selected === "all") {
-        // GitLens / IDE sidebar pattern: clicking a branch from the "all"
-        // state means "focus on THIS one". The previous "everything except
-        // this one" behaviour was a multi-select-with-checkboxes mental
-        // model that doesn't match what users expect from a branch filter.
-        onChange([refName]);
-        return;
-      }
-      const set = new Set(selected);
-      if (set.has(refName)) set.delete(refName);
-      else set.add(refName);
-      const next = Array.from(set);
-      onChange(next.length === branches.length ? "all" : next);
+      onChange(toggleFacetValue(selected, refName, branchRefNames));
     },
-    [selected, branches, onChange],
+    [selected, branchRefNames, onChange],
   );
 
   // Flatten the two sections into one virtual-row list. The Local / Remote
@@ -228,7 +251,10 @@ export function BranchChip({
               >
                 {compactAge(b.lastActivity)}
               </span>
-              <span className="chip-branch-count" title="Reachable commits">
+              <span
+                className="chip-branch-count"
+                title="Reachable commits across all time (independent of the time filter)"
+              >
                 {countLabel(b, counts)}
               </span>
             </span>
@@ -254,6 +280,40 @@ export function BranchChip({
         </button>
       ),
     });
+    if (visibleUnavailable.length > 0) {
+      out.push({
+        key: "__unavailable",
+        height: HEADER_H,
+        render: () => (
+          <div
+            className="chip-section-header chip-section-warning"
+            title="Selected refs that no longer exist in this repository"
+          >
+            Selected · unavailable refs
+          </div>
+        ),
+      });
+      for (const refName of visibleUnavailable) {
+        out.push({
+          key: "unavailable-branch:" + refName,
+          height: ITEM_H,
+          render: () => (
+            <button
+              type="button"
+              className="chip-item checked chip-item-unavailable"
+              title={`${refName} no longer exists. Click to remove this filter.`}
+              onClick={() => {
+                onChange(removeUnavailableFacetValue(selected, refName));
+              }}
+            >
+              <span className="chip-check">✓</span>
+              <span className="chip-item-name">{displayRefName(refName)}</span>
+              <span className="chip-item-count">missing</span>
+            </button>
+          ),
+        });
+      }
+    }
     if (localBranches.length > 0) {
       out.push({
         key: "__local",
@@ -277,7 +337,17 @@ export function BranchChip({
       });
       for (const b of remoteBranches) out.push(branchRow(b));
     }
-    if (localBranches.length === 0 && remoteBranches.length === 0) {
+    if (loading && localBranches.length === 0 && remoteBranches.length === 0) {
+      out.push({
+        key: "__loading",
+        height: EMPTY_H,
+        render: () => <div className="chip-empty">Loading branches…</div>,
+      });
+    } else if (
+      localBranches.length === 0 &&
+      remoteBranches.length === 0 &&
+      visibleUnavailable.length === 0
+    ) {
       out.push({
         key: "__empty",
         height: EMPTY_H,
@@ -288,6 +358,8 @@ export function BranchChip({
   }, [
     localBranches,
     remoteBranches,
+    visibleUnavailable,
+    loading,
     selected,
     onChange,
     onClose,
