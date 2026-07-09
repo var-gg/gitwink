@@ -6,6 +6,7 @@ import {
   useSettingsSnapshot,
   type UpdateCheckMode,
 } from "../lib/settings";
+import { ExcludedReposSection } from "./settings/ExcludedReposSection";
 
 /** UI-scale slider bounds — mirror UI_SCALE_MIN/MAX in commands.rs. 100%
  *  is the floor: the diff/timeline default is the most compact legible
@@ -298,6 +299,8 @@ export function Settings() {
           and won't react.
         </p>
       </section>
+
+      <ExcludedReposSection />
 
       {settings.updaterAvailable && (
         <section className="settings-section">

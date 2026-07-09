@@ -12,6 +12,7 @@ mod discovery_orchestrator;
 mod discovery_sources;
 mod fetch;
 mod git;
+mod repo_exclusions;
 mod settings;
 mod tray;
 mod update;
@@ -310,7 +311,9 @@ pub fn run() {
             commands::count_branch_commits,
             commands::current_upstream_status,
             commands::explicit_add_repo,
-            commands::hide_repo,
+            commands::list_excluded_repos,
+            commands::exclude_repo,
+            commands::restore_repo,
             commands::repo_commits,
             commands::changed_files,
             commands::changed_files_batch,

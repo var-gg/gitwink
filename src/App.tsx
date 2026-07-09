@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -23,6 +30,7 @@ import {
   ackAutoFetchNotice,
   currentUpstreamStatus,
   dismissPanel,
+  excludeRepo,
   explicitAddRepo,
   fetchRepoNow,
   fileHistory as fetchFileHistory,
@@ -30,14 +38,15 @@ import {
   repoRefsFingerprint,
   getPinnedRepos,
   getScanState,
-  hideRepo,
   listBranches,
   listFilterFacets,
   listRepos,
   onFileHistoryOpen,
   onOrchestratorProgress,
   onPanelShown,
+  onRepoCatalogChanged,
   onRepoDiscovered,
+  onRepoStatus,
   onTimelineInvalidated,
   onUpdateIndicator,
   onUpdateNone,
@@ -54,12 +63,16 @@ import {
   getCurrentSettings,
   usePanelPinned,
 } from "./lib/settings";
+import { repoCatalogReducer } from "./lib/repoCatalog";
+import {
+  pruneRepoFromViewHistory,
+  type ViewSnapshot,
+} from "./lib/viewHistory";
 import { UpdateModal } from "./components/UpdateModal";
 import type {
   AuthorTally,
   BranchInfo,
   CommitSummary,
-  Repo,
   UpdateStatePayload,
   UpstreamStatus,
   WindowDays,
@@ -154,20 +167,6 @@ function windowCovering(current: WindowDays, commitTs: number): WindowDays {
   return "all";
 }
 
-/** The view state a warp replaces — restored by Esc (back to search). */
-/** A complete snapshot of the panel's view — everything that decides what the
- *  timeline shows. The unified back/forward history is a stack of these. */
-interface ViewSnapshot {
-  repoPath: string | null;
-  repoPaths: string[] | "all";
-  branches: string[] | "all";
-  windowDays: WindowDays;
-  authors: string[] | "all";
-  fileHistory: { repoPath: string; filePath: string } | null;
-  searchOpen: boolean;
-  searchInput: string;
-}
-
 /** Cap on each direction of the view-history stack — deep enough to never bite
  *  in practice, bounded so a long session can't grow it without limit. */
 const VIEW_HISTORY_MAX = 50;
@@ -206,8 +205,7 @@ function App() {
   // Refs fingerprint the current `commits` were walked from — a same-view
   // re-pull with an unchanged fingerprint skips the multi-MB IPC re-ship.
   const commitsRefsFpRef = useRef<string | null>(null);
-  const [allRepos, setAllRepos] = useState<Repo[]>([]);
-  const [discoveredCount, setDiscoveredCount] = useState<number | null>(null);
+  const [allRepos, dispatchRepoCatalog] = useReducer(repoCatalogReducer, []);
   const [pinnedRepos, setPinnedRepos] = useState<string[]>([]);
   // All-repos filter facets — the windowed timeline keeps no full client-
   // side commit array, so the AuthorsChip list + the RepoChip per-repo
@@ -417,6 +415,7 @@ function App() {
     let unProgress: UnlistenFn | undefined;
     let unDiscovered: UnlistenFn | undefined;
     let unStatus: UnlistenFn | undefined;
+    let unCatalogChanged: UnlistenFn | undefined;
     let unShown: UnlistenFn | undefined;
     let unTimelineInvalidated: UnlistenFn | undefined;
     let unFileHistory: UnlistenFn | undefined;
@@ -428,8 +427,7 @@ function App() {
       try {
         const repos = await listRepos();
         if (mounted) {
-          setAllRepos(repos);
-          setDiscoveredCount(repos.length);
+          dispatchRepoCatalog({ type: "replace", repos });
         }
       } catch {}
 
@@ -455,7 +453,6 @@ function App() {
       }
       unProgress = await onOrchestratorProgress((p) => {
         if (!mounted) return;
-        setDiscoveredCount(p.reposFound);
         setScanning(p.state === "scanning");
         // Scan finished — refresh the repo list so newly-found repos carry
         // their real ids (needed to filter the windowed timeline by repo)
@@ -464,8 +461,7 @@ function App() {
           void listRepos()
             .then((repos) => {
               if (mounted) {
-                setAllRepos(repos);
-                setDiscoveredCount(repos.length);
+                dispatchRepoCatalog({ type: "replace", repos });
               }
             })
             .catch(() => {});
@@ -563,51 +559,29 @@ function App() {
       // the newly-discovered repo without a manual reload.
       unDiscovered = await onRepoDiscovered((p) => {
         if (!mounted) return;
-        setAllRepos((prev) => {
-          if (prev.some((r) => r.path === p.path)) return prev;
-          // Orchestrator only emits for validated repos, so status='active'
-          // is correct on insert. The id is unknown until the scan-complete
-          // listRepos() refresh backfills it — harmless, the windowed
-          // timeline's repo filter ignores id 0.
-          const next = [
-            ...prev,
-            { id: 0, path: p.path, name: p.name, status: "active" as const },
-          ];
-          // Keep stable display order to avoid jitter in the chip dropdown.
-          next.sort((a, b) => a.name.localeCompare(b.name));
-          return next;
-        });
-        setDiscoveredCount((prev) => (prev ?? 0) + 1);
+        dispatchRepoCatalog({ type: "discovered", repo: p });
       });
 
       // Repo status transitions (active ↔ missing ↔ removed) — backend
       // emits one event per row that changed. Patch allRepos in place
       // so the RepoChip row greys out / restores / drops without a
       // full reload.
-      const { listen } = await import("@tauri-apps/api/event");
-      unStatus = await listen<{ canonicalPath: string; status: string }>(
-        "timeline://repo-status",
-        (e) => {
-          if (!mounted) return;
-          const { canonicalPath, status } = e.payload;
-          if (status === "removed") {
-            setAllRepos((prev) => prev.filter((r) => r.path !== canonicalPath));
-            setDiscoveredCount((prev) =>
-              prev != null ? Math.max(0, prev - 1) : prev,
-            );
-            return;
-          }
-          if (status === "active" || status === "missing") {
-            setAllRepos((prev) =>
-              prev.map((r) =>
-                r.path === canonicalPath
-                  ? { ...r, status: status as "active" | "missing" }
-                  : r,
-              ),
-            );
-          }
-        },
-      );
+      unStatus = await onRepoStatus((payload) => {
+        if (!mounted) return;
+        dispatchRepoCatalog({ type: "status", payload });
+      });
+
+      // Settings can restore an excluded repo while the panel webview stays
+      // mounted. Re-pull the canonical catalog so ids/status are authoritative.
+      unCatalogChanged = await onRepoCatalogChanged(() => {
+        if (!mounted) return;
+        setRefreshNonce((nonce) => nonce + 1);
+        void listRepos()
+          .then((repos) => {
+            if (mounted) dispatchRepoCatalog({ type: "replace", repos });
+          })
+          .catch(() => {});
+      });
 
     })();
 
@@ -616,6 +590,7 @@ function App() {
       unProgress?.();
       unDiscovered?.();
       unStatus?.();
+      unCatalogChanged?.();
       unShown?.();
       unTimelineInvalidated?.();
       unFileHistory?.();
@@ -1023,19 +998,11 @@ function App() {
       // registration, so a user-initiated add must not depend on it.
       // The onRepoDiscovered listener dedups by path, so a later event
       // for the same repo is harmless.
-      setAllRepos((prev) => {
-        if (prev.some((r) => r.path === repo.path)) return prev;
-        const next = [
-          ...prev,
-          { id: 0, path: repo.path, name: repo.name, status: "active" as const },
-        ];
-        next.sort((a, b) => a.name.localeCompare(b.name));
-        return next;
-      });
+      dispatchRepoCatalog({ type: "discovered", repo });
       // Refresh so the new repo carries its real id — the windowed timeline
       // filters by id, not path.
       void listRepos()
-        .then((repos) => setAllRepos(repos))
+        .then((repos) => dispatchRepoCatalog({ type: "replace", repos }))
         .catch(() => {});
       setAddError(null);
       return true;
@@ -1409,7 +1376,35 @@ function App() {
     });
   }
 
-  const repoCount = discoveredCount ?? allRepos.length;
+  const handleExcludeRepo = useCallback(async (path: string) => {
+    // Commit backend state first. A failed command leaves the visible catalog,
+    // current scope and navigation history untouched, so no partial rollback
+    // path exists.
+    await excludeRepo(path);
+    dispatchRepoCatalog({
+      type: "status",
+      payload: { canonicalPath: path, status: "removed" },
+    });
+
+    const current = viewRef.current;
+    if (current.repoPath === path) {
+      setWarpAnchor(null);
+      setSelectedRepoPath(null);
+    }
+    if (current.fileHistory?.repoPath === path) {
+      setFileHistory(null);
+    }
+    if (Array.isArray(current.repoPaths) && current.repoPaths.includes(path)) {
+      const remaining = current.repoPaths.filter((repoPath) => repoPath !== path);
+      setSelectedRepoPaths(remaining.length === 0 ? "all" : remaining);
+    }
+    setViewBack((views) => pruneRepoFromViewHistory(views, path));
+    setViewFwd((views) => pruneRepoFromViewHistory(views, path));
+  }, []);
+
+  // The visible catalog is the single source of truth for the chip count.
+  // Scan progress remains a separate presentation state and can never skew it.
+  const repoCount = allRepos.length;
 
   return (
     <main className={"panel" + (singleMode ? " single-mode" : "")}>
@@ -1421,7 +1416,7 @@ function App() {
           // Chips have their own dropdown behaviour; the close button is
           // its own action. Right-click anywhere else on the header
           // (empty space, drag handle, icon, status, badge) opens the menu.
-          if (target.closest(".chip-wrap, .panel-close")) return;
+          if (target.closest(".chip-wrap, .panel-close, .context-menu")) return;
           e.preventDefault();
           setHeaderCtxMenu({
             x: e.clientX,
@@ -1516,19 +1511,7 @@ function App() {
             onSelectMulti={changeRepoPaths}
             onSelectAll={resetRepoScope}
             onTogglePin={togglePin}
-            onHide={(path) => {
-              // Optimistic: drop from local list immediately; backend
-              // will tombstone so it stays gone across restarts.
-              setAllRepos((prev) => prev.filter((r) => r.path !== path));
-              setDiscoveredCount((prev) =>
-                prev != null ? Math.max(0, prev - 1) : prev,
-              );
-              void hideRepo(path).catch(() => {
-                // If the backend rejects (race / already gone), fall
-                // back to re-fetching the list so UI matches truth.
-                void listRepos().then((r) => setAllRepos(r));
-              });
-            }}
+            onExclude={handleExcludeRepo}
             totalRepoCount={repoCount}
           />
           {singleMode && (

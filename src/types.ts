@@ -11,9 +11,29 @@ export interface Repo {
   name: string;
   /** Lifecycle status. "active" = on disk and validates as a git repo,
    * "missing" = previously seen but path no longer exists (greyed in
-   * UI), "removed" = user explicitly hid it (filtered out, won't auto-
+   * UI), "removed" = user excluded it (filtered out, won't auto-
    * rediscover). Older cache rows default to "active". */
   status: "active" | "missing" | "removed";
+}
+
+/** A recoverable repository exclusion shown in Settings. Excluding only
+ * suspends discovery/watching and cached timeline rows; the folder and
+ * durable per-repo preferences stay untouched. */
+export interface ExcludedRepo {
+  path: string;
+  name: string;
+  excludedAt: number;
+  folderAvailable: boolean;
+}
+
+export interface RepoStatusPayload {
+  canonicalPath: string;
+  status: "active" | "missing" | "removed";
+}
+
+export interface RepoCatalogChangedPayload {
+  canonicalPath: string;
+  change: "excluded" | "restored";
 }
 
 export interface ScanProgress {

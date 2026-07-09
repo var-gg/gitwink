@@ -5,7 +5,9 @@ export interface MenuItem {
   /** Accessible name override. Set when the visible label carries a
    *  decorative emoji a screen reader would otherwise announce. */
   ariaLabel?: string;
-  onClick?: () => void;
+  /** Optional consequence/help text rendered as a quieter second line. */
+  description?: string;
+  onClick?: () => void | Promise<void>;
   disabled?: boolean;
   divider?: boolean;
 }
@@ -38,6 +40,12 @@ export function ContextMenu({ items, x, y, onClose }: Props) {
   }, [x, y]);
 
   useEffect(() => {
+    menuRef.current
+      ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+      ?.focus();
+  }, []);
+
+  useEffect(() => {
     function onDown(e: MouseEvent) {
       const target = e.target as HTMLElement | null;
       if (!target?.closest(".context-menu")) onClose();
@@ -47,7 +55,26 @@ export function ContextMenu({ items, x, y, onClose }: Props) {
         onClose();
         e.preventDefault();
         e.stopPropagation();
+        return;
       }
+      if (!menuRef.current) return;
+      const items = Array.from(
+        menuRef.current.querySelectorAll<HTMLButtonElement>(
+          'button:not(:disabled)',
+        ),
+      );
+      if (items.length === 0) return;
+      const current = items.indexOf(document.activeElement as HTMLButtonElement);
+      let next: number | null = null;
+      if (e.key === "ArrowDown") next = (current + 1) % items.length;
+      else if (e.key === "ArrowUp")
+        next = (current <= 0 ? items.length : current) - 1;
+      else if (e.key === "Home") next = 0;
+      else if (e.key === "End") next = items.length - 1;
+      if (next == null) return;
+      items[next].focus();
+      e.preventDefault();
+      e.stopPropagation();
     }
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -61,8 +88,10 @@ export function ContextMenu({ items, x, y, onClose }: Props) {
     <div
       ref={menuRef}
       className="context-menu"
+      role="menu"
       style={{ left: pos.x, top: pos.y }}
       onContextMenu={(e) => e.preventDefault()}
+      data-no-drag
     >
       {items.map((item, i) =>
         item.divider ? (
@@ -71,6 +100,7 @@ export function ContextMenu({ items, x, y, onClose }: Props) {
           <button
             key={i}
             type="button"
+            role="menuitem"
             className={
               "context-menu-item" + (item.disabled ? " disabled" : "")
             }
@@ -78,11 +108,16 @@ export function ContextMenu({ items, x, y, onClose }: Props) {
             disabled={item.disabled}
             onClick={() => {
               if (item.disabled) return;
-              item.onClick?.();
+              void item.onClick?.();
               onClose();
             }}
           >
             {item.label}
+            {item.description && (
+              <span className="context-menu-description">
+                {item.description}
+              </span>
+            )}
           </button>
         ),
       )}

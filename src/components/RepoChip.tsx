@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { Repo } from "../types";
 import { ChipDropdown } from "./ChipDropdown";
+import { ContextMenu } from "./ContextMenu";
 import { VirtualChipList, type VirtualChipRow } from "./VirtualChipList";
 import { chipRowH, useUiScale } from "../lib/settings";
 
@@ -29,7 +30,7 @@ interface Props {
    *  view-history entry) — not an onSelect + onSelectMulti pair. */
   onSelectAll: () => void;
   onTogglePin: (path: string) => void;
-  onHide: (path: string) => void;
+  onExclude: (path: string) => Promise<void>;
   totalRepoCount: number;
 }
 
@@ -46,15 +47,44 @@ export function RepoChip({
   onSelectMulti,
   onSelectAll,
   onTogglePin,
-  onHide,
+  onExclude,
   totalRepoCount,
 }: Props) {
   const [query, setQuery] = useState("");
+  const [contextTarget, setContextTarget] = useState<{
+    path: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [excludingPath, setExcludingPath] = useState<string | null>(null);
+  const [excludeError, setExcludeError] = useState<string | null>(null);
   const scale = useUiScale();
 
   useEffect(() => {
-    if (!open) setQuery("");
+    if (!open) {
+      setQuery("");
+      setContextTarget(null);
+      setExcludeError(null);
+    }
   }, [open]);
+
+  const requestExclude = useCallback(
+    async (path: string) => {
+      if (excludingPath) return;
+      setExcludingPath(path);
+      setExcludeError(null);
+      try {
+        await onExclude(path);
+      } catch (error) {
+        setExcludeError(
+          error instanceof Error ? error.message : String(error),
+        );
+      } finally {
+        setExcludingPath(null);
+      }
+    },
+    [excludingPath, onExclude],
+  );
 
   // Snapshot of `pinned` taken when the dropdown opens. Section
   // membership (Pinned vs All) is decided against this snapshot, so
@@ -200,7 +230,11 @@ export function RepoChip({
             onSelectMulti(next.length === 0 ? "all" : next);
           }}
           onPin={() => onTogglePin(r.path)}
-          onHide={() => onHide(r.path)}
+          excluding={excludingPath === r.path}
+          onExclude={() => void requestExclude(r.path)}
+          onRowContextMenu={(x, y) =>
+            setContextTarget({ path: r.path, x, y })
+          }
         />
       ),
     });
@@ -256,30 +290,54 @@ export function RepoChip({
     onSelectMulti,
     onSelectAll,
     onTogglePin,
-    onHide,
+    excludingPath,
+    requestExclude,
     onClose,
     scale,
   ]);
 
   return (
-    <ChipDropdown
-      id="repo"
-      label={label}
-      open={open}
-      onToggle={onToggle}
-      onClose={onClose}
-      active={selectedPath != null || selectedPaths !== "all"}
-    >
-      <div className="chip-search">
-        <input
-          autoFocus
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search repos…"
+    <>
+      <ChipDropdown
+        id="repo"
+        label={label}
+        open={open}
+        onToggle={onToggle}
+        onClose={onClose}
+        active={selectedPath != null || selectedPaths !== "all"}
+      >
+        <div className="chip-search">
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search repos…"
+          />
+        </div>
+        {excludeError && (
+          <div className="chip-action-error" role="alert">
+            Couldn't exclude repository: {excludeError}
+          </div>
+        )}
+        <VirtualChipList rows={rows} resetKey={query} />
+      </ChipDropdown>
+      {contextTarget && (
+        <ContextMenu
+          x={contextTarget.x}
+          y={contextTarget.y}
+          items={[
+            {
+              label: "Exclude from gitwink",
+              description:
+                "Keeps the folder and preferences. Restore later in Settings.",
+              disabled: excludingPath != null,
+              onClick: () => requestExclude(contextTarget.path),
+            },
+          ]}
+          onClose={() => setContextTarget(null)}
         />
-      </div>
-      <VirtualChipList rows={rows} resetKey={query} />
-    </ChipDropdown>
+      )}
+    </>
   );
 }
 
@@ -293,7 +351,9 @@ function RepoItem({
   onSelect,
   onToggleSelect,
   onPin,
-  onHide,
+  excluding,
+  onExclude,
+  onRowContextMenu,
 }: {
   repo: Repo;
   /** commit count in the active window, or undefined when the repo has
@@ -306,7 +366,9 @@ function RepoItem({
   onSelect: () => void;
   onToggleSelect: () => void;
   onPin: () => void;
-  onHide: () => void;
+  excluding: boolean;
+  onExclude: () => void;
+  onRowContextMenu: (x: number, y: number) => void;
 }) {
   const isMissing = repo.status === "missing";
   return (
@@ -317,6 +379,10 @@ function RepoItem({
         (isMissing ? " missing" : "") +
         (selected ? " selected" : "")
       }
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onRowContextMenu(e.clientX, e.clientY);
+      }}
     >
       <button
         type="button"
@@ -352,14 +418,14 @@ function RepoItem({
         className="chip-item"
         // A missing repo can't be opened — selecting it would only produce
         // an error view, so the row is informational (tooltip explains how
-        // to relink) and ✕ hides it.
+        // to relink) and ✕ excludes it.
         onClick={() => {
           if (!isMissing) onSelect();
         }}
         aria-disabled={isMissing || undefined}
         title={
           isMissing
-            ? `${repo.path} — moved or deleted on disk. Drop the new path on the panel to relink, or click ✕ to hide.`
+            ? `${repo.path} — moved or deleted on disk. Drop the new path on the panel to relink, or click ✕ to exclude it.`
             : repo.path
         }
       >
@@ -380,13 +446,14 @@ function RepoItem({
         <button
           type="button"
           className="chip-hide"
+          disabled={excluding}
           onClick={(e) => {
             e.stopPropagation();
-            onHide();
+            onExclude();
           }}
-          title="Hide this repo (won't auto-rediscover)"
+          title="Exclude from gitwink (restore later in Settings)"
         >
-          ✕
+          {excluding ? "…" : "✕"}
         </button>
       ) : (
         <button

@@ -579,6 +579,24 @@ body,
   border-color: rgba(80, 130, 240, 0.6);
 }
 
+.chip-action-error {
+  padding: calc(5px * var(--ui-scale, 1))
+    calc(8px * var(--ui-scale, 1));
+  border-bottom: 1px solid rgba(190, 50, 50, 0.2);
+  background: rgba(190, 50, 50, 0.08);
+  color: rgba(170, 40, 40, 1);
+  font-size: calc(10px * var(--ui-scale, 1));
+  line-height: 1.35;
+}
+
+@media (prefers-color-scheme: dark) {
+  .chip-action-error {
+    border-bottom-color: rgba(255, 130, 130, 0.22);
+    background: rgba(255, 130, 130, 0.1);
+    color: rgba(255, 150, 150, 1);
+  }
+}
+
 .chip-list {
   max-height: calc(320px * var(--ui-scale, 1));
   overflow-y: auto;
@@ -2031,6 +2049,16 @@ body,
 .context-menu-item.disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.context-menu-description {
+  display: block;
+  max-width: 230px;
+  margin-top: 2px;
+  white-space: normal;
+  font-size: 10px;
+  line-height: 1.3;
+  opacity: 0.58;
 }
 
 @media (prefers-color-scheme: dark) {

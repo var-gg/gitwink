@@ -167,7 +167,7 @@ impl RepoWatcher {
     }
 
     /// Detach `repo_path`'s interest in every watched dir — the watcher
-    /// half of "hide repo". Without this a hidden repo's .git stays
+    /// half of "exclude repo". Without this an excluded repo's .git stays
     /// subscribed and every new agent commit in it re-inserts rows the
     /// user asked to remove. Refcounted: a dir other repos still depend on
     /// (a common gitdir shared by a main repo and its worktrees) keeps its

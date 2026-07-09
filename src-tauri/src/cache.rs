@@ -471,7 +471,7 @@ fn dedupe_unc_canonical_paths(conn: &Connection) {
 // ----- repos -----
 
 pub fn list_repos(conn: &Connection) -> Result<Vec<Repo>> {
-    // Filter out user-removed (tombstoned) rows so a deleted repo
+    // Filter out user-excluded (tombstoned) rows so an ignored repo
     // doesn't reappear in the chip dropdown. Missing rows DO come
     // through — the UI greys them out so the user can decide.
     let mut stmt = conn.prepare(
@@ -813,7 +813,7 @@ pub fn reconcile_repo_commits(
 }
 
 /// Drop every cached commit belonging to `repo_path` — the cache half of
-/// "hide repo". Without this the hidden repo's rows stay in the all-repos
+/// "exclude repo". Without this the excluded repo's rows stay in the all-repos
 /// timeline forever (nothing else ever deletes from `commits`). Bumps the
 /// generation when rows were actually removed so windowed readers re-pull
 /// a consistent view.
@@ -1000,11 +1000,11 @@ fn build_filter_sql(filters: &TimelineFilters) -> (String, Vec<Box<dyn rusqlite:
     let mut sql = String::new();
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
-    // Defense-in-depth for hidden repos: hide_repo deletes the repo's
+    // Defense-in-depth for excluded repos: exclude_repo deletes the repo's
     // cached commits and detaches its watcher, but a refresh already in
-    // flight at hide time can still upsert rows for it afterwards. Never
+    // flight at exclude time can still upsert rows for it afterwards. Never
     // surface a commit whose repo row is user-removed. repo_id = 0 rows
-    // (repo not yet registered at insert time) pass — they can't be hidden.
+    // (repo not yet registered at insert time) pass — they can't be excluded.
     sql.push_str(
         " AND repo_id NOT IN (SELECT rowid FROM repos WHERE user_state = 'removed')",
     );

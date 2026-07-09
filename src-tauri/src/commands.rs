@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_updater::UpdaterExt;
 
-use crate::{cache, discovery, discovery_orchestrator, git, settings, update, watcher, window};
+use crate::{
+    cache, discovery, discovery_orchestrator, git, repo_exclusions, settings, update, watcher,
+    window,
+};
 
 /// Per-repo walk cap for the windowed refill. Sized to swallow a whole
 /// agent burst (30-commit rebase, squash-merge train) in one pass: the walk
@@ -474,17 +477,44 @@ pub async fn explicit_add_repo(
     .map_err(|e| e.to_string())?
 }
 
-/// Hide a repo from the panel and prevent auto-rediscovery. Tombstoned;
-/// the user can bring it back with explicit_add_repo. Used by the
-/// "hide" affordance on missing-status rows in the RepoChip.
+/// List recoverable repository exclusions for the Settings window.
 #[tauri::command]
-pub async fn hide_repo(
+pub async fn list_excluded_repos(
+    app: AppHandle,
+) -> Result<Vec<repo_exclusions::ExcludedRepo>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        repo_exclusions::list_excluded_repos(&app).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Exclude a repo from discovery/watching without touching its folder or
+/// durable preferences. The Settings window can restore it later.
+#[tauri::command]
+pub async fn exclude_repo(
     app: AppHandle,
     canonical_path: String,
 ) -> Result<(), String> {
     let app2 = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        discovery_orchestrator::hide_repo(&app2, &canonical_path)
+        repo_exclusions::exclude_repo(&app2, &canonical_path)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Restore a previously excluded repo and resume discovery/watching. A
+/// disconnected path returns as `missing` so it can recover when available.
+#[tauri::command]
+pub async fn restore_repo(
+    app: AppHandle,
+    canonical_path: String,
+) -> Result<(), String> {
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        repo_exclusions::restore_repo(&app2, &canonical_path)
             .map_err(|e| e.to_string())
     })
     .await

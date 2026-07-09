@@ -1,0 +1,95 @@
+.settings-exclusions-intro {
+  margin-bottom: 10px;
+}
+
+.settings-exclusions-empty {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed rgba(0, 0, 0, 0.14);
+  border-radius: 6px;
+  font-size: 12px;
+  opacity: 0.58;
+}
+
+.settings-exclusions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.settings-exclusion-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.018);
+}
+
+.settings-exclusion-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-exclusion-name {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.settings-exclusion-path,
+.settings-exclusion-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  opacity: 0.56;
+}
+
+.settings-exclusion-path {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
+}
+
+.settings-exclusion-restore {
+  flex-shrink: 0;
+  padding: 4px 9px;
+  border: 1px solid rgba(80, 130, 240, 0.45);
+  border-radius: 5px;
+  background: rgba(80, 130, 240, 0.08);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.settings-exclusion-restore:hover:not(:disabled) {
+  background: rgba(80, 130, 240, 0.16);
+}
+
+.settings-exclusion-restore:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+@media (prefers-color-scheme: dark) {
+  .settings-exclusions-empty {
+    border-color: rgba(255, 255, 255, 0.14);
+  }
+
+  .settings-exclusion-row {
+    border-color: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.025);
+  }
+
+  .settings-exclusion-restore {
+    border-color: rgba(140, 180, 255, 0.5);
+    background: rgba(140, 180, 255, 0.1);
+  }
+
+  .settings-exclusion-restore:hover:not(:disabled) {
+    background: rgba(140, 180, 255, 0.18);
+  }
+}

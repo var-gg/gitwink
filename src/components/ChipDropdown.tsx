@@ -41,7 +41,12 @@ export function ChipDropdown({
     if (!open) return;
     function handler(e: MouseEvent) {
       if (!ref.current) return;
-      if (!ref.current.contains(e.target as Node)) onClose();
+      if (ref.current.contains(e.target as Node)) return;
+      // Repo row actions render as a fixed sibling so dropdown transforms do
+      // not skew their coordinates. The action menu still belongs to this
+      // dropdown layer and must not trigger an outside close.
+      if ((e.target as HTMLElement | null)?.closest?.(".context-menu")) return;
+      onClose();
     }
     function key(e: KeyboardEvent) {
       // The Esc that cancels an IME composition (in the chip's search input)
@@ -51,6 +56,7 @@ export function ChipDropdown({
         // The update modal is the topmost layer — it must win Esc even if a
         // dropdown was left open beneath it.
         if (document.querySelector(".update-modal")) return;
+        if (document.querySelector(".context-menu")) return;
         onClose();
         // One Esc = one layer: without this, the same keypress fell through
         // to App's cascade and ALSO collapsed the open commit expansion —

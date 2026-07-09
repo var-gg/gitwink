@@ -11,9 +11,12 @@ import type {
   CommitWindow,
   Cursor,
   DiscoveredRepo,
+  ExcludedRepo,
   FilterFacets,
   OrchestratorScanProgress,
   Repo,
+  RepoCatalogChangedPayload,
+  RepoStatusPayload,
   ScanComplete,
   ScanProgress,
   TimelineFilters,
@@ -103,11 +106,17 @@ export async function explicitAddRepo(path: string): Promise<DiscoveredRepo> {
   return invoke<DiscoveredRepo>("explicit_add_repo", { path });
 }
 
-/** Hide a repo from the panel and prevent auto-rediscovery. Used by
- * the "hide" affordance on missing rows in the RepoChip. The user can
- * always bring it back by dropping/pasting the path again. */
-export async function hideRepo(canonicalPath: string): Promise<void> {
-  await invoke("hide_repo", { canonicalPath });
+/** Reversibly exclude a repo from discovery, watching and the panel. */
+export async function excludeRepo(canonicalPath: string): Promise<void> {
+  await invoke("exclude_repo", { canonicalPath });
+}
+
+export async function listExcludedRepos(): Promise<ExcludedRepo[]> {
+  return invoke<ExcludedRepo[]>("list_excluded_repos");
+}
+
+export async function restoreRepo(canonicalPath: string): Promise<void> {
+  await invoke("restore_repo", { canonicalPath });
 }
 
 export async function repoCommits(
@@ -337,6 +346,20 @@ export async function onRepoDiscovered(
   cb: (p: DiscoveredRepo) => void,
 ): Promise<UnlistenFn> {
   return listen<DiscoveredRepo>("timeline://repo-discovered", (e) => cb(e.payload));
+}
+
+export async function onRepoStatus(
+  cb: (payload: RepoStatusPayload) => void,
+): Promise<UnlistenFn> {
+  return listen<RepoStatusPayload>("timeline://repo-status", (e) => cb(e.payload));
+}
+
+export async function onRepoCatalogChanged(
+  cb: (payload: RepoCatalogChangedPayload) => void,
+): Promise<UnlistenFn> {
+  return listen<RepoCatalogChangedPayload>("timeline://repo-catalog-changed", (e) =>
+    cb(e.payload),
+  );
 }
 
 // ----- windowed-pull timeline (Phase 1-3) -----
