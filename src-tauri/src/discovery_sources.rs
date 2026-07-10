@@ -295,9 +295,7 @@ fn file_uri_to_path(uri: &str) -> Option<PathBuf> {
         // starts with the server name directly when it's a true UNC URI;
         // we don't reach this branch for POSIX-style /tmp/... paths.)
         if !decoded.is_empty() && !decoded.starts_with('/') {
-            return Some(PathBuf::from(
-                format!("\\\\{}", decoded).replace('/', "\\"),
-            ));
+            return Some(PathBuf::from(format!("\\\\{}", decoded).replace('/', "\\")));
         }
         // POSIX-style /tmp/... on Windows isn't a valid local path —
         // drop it instead of inventing a fake UNC.
@@ -555,9 +553,7 @@ mod tests {
     fn expand_code_workspace_caps_folder_count() {
         let tmp = TempDir::new().unwrap();
         let ws_path = tmp.path().join("many.code-workspace");
-        let folders: Vec<String> = (0..50)
-            .map(|i| format!(r#"{{"path": "f{i}"}}"#))
-            .collect();
+        let folders: Vec<String> = (0..50).map(|i| format!(r#"{{"path": "f{i}"}}"#)).collect();
         let json = format!(r#"{{"folders":[{}]}}"#, folders.join(","));
         fs::write(&ws_path, json).unwrap();
 

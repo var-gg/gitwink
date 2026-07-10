@@ -3,14 +3,14 @@
 
 <#
 .SYNOPSIS
-  Fetch the exact latest Microsoft Store MSIX bundle that CI built, for manual
-  Partner Center upload — removing the "which file?" risk from manual submission.
+  Fetch the exact latest Microsoft Store MSIX bundle that CI built for a manual
+  Partner Center fallback — removing the "which file?" risk after auto-publish fails.
 
 .DESCRIPTION
-  The Store auto-publish path (store.yml -> msstore) is blocked on Microsoft Entra
-  app association, so Store submission stays manual for now. The risky part of a
-  manual upload was *picking the right file* (correct version + the x64/arm64
-  .msixbundle, not a stray local build). This removes that risk:
+  The normal Store path is automated (store.yml -> msstore -> Partner Center).
+  If that final submission step fails after CI produced a valid package, the risky
+  part of a manual fallback is *picking the right file* (correct version + the
+  x64/arm64 .msixbundle, not a stray local build). This removes that risk:
 
     1. Find the newest non-expired `gitwink-msix` artifact (by artifact date, NOT
        run conclusion -- see note below).
@@ -19,14 +19,14 @@
        pre-selected and open the Partner Center product page.
 
   You then drag that ONE file into the submission's Packages step and submit.
-  Every other channel (GitHub Release, winget, Scoop) is already fully automated by
-  release.yml on tag push -- this covers only the Store (MSIX) channel.
+  GitHub Release, the in-app updater, winget and the Store workflows start from a
+  release tag; the Scoop bucket's Excavator follows the published GitHub release.
+  This helper covers only the Store (MSIX) fallback path.
 
-  NOTE on "by artifact, not run conclusion": store.yml's run turns red when the
-  (still-unconfigured) Store auth/publish step fails, but the MSIX build + artifact
-  upload run BEFORE that step and succeed. Filtering on conclusion=success would
-  therefore grab a stale OLDER release (e.g. v0.4.0 instead of v0.5.0). So we
-  resolve the artifact directly and ignore run color.
+  NOTE on "by artifact, not run conclusion": a Store auth/publish failure can turn
+  the run red even though the MSIX build + artifact upload steps before it
+  succeeded. Filtering on conclusion=success could therefore grab a stale older
+  release. We resolve the artifact directly and ignore run color.
 
 .PARAMETER Tag
   Optional. Restrict to artifacts whose run was on this ref (e.g. v0.5.0 -- only

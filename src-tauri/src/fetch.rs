@@ -146,7 +146,12 @@ pub fn git_fetch_one_shot(repo: &Path) -> bool {
         // This lets a slow-but-progressing large fetch of a long-stale repo
         // finish, instead of a fixed wall-clock kill cutting it off mid-pack.
         // SSH remotes ignore these and lean on the FETCH_TIMEOUT backstop.
-        .args(["-c", "http.lowSpeedLimit=1000", "-c", "http.lowSpeedTime=20"])
+        .args([
+            "-c",
+            "http.lowSpeedLimit=1000",
+            "-c",
+            "http.lowSpeedTime=20",
+        ])
         // Don't let a fetch kick off background repo maintenance / repacking —
         // we promise not to churn the user's repo, and it'd hurt the "instant"
         // feel. Belt-and-suspenders against either knob.

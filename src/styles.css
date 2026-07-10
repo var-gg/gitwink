@@ -9,6 +9,25 @@
   box-sizing: border-box;
 }
 
+/* Mouse users keep the quiet chrome; keyboard users always get a stable,
+   high-contrast locator across header actions, chips and overlay options. */
+button:focus-visible {
+  outline: 2px solid rgba(80, 130, 240, 0.95);
+  outline-offset: 1px;
+}
+
+.chip-item:focus-visible,
+.chip-author-toggle:focus-visible,
+.context-menu-item:focus-visible {
+  outline-offset: -2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  button:focus-visible {
+    outline-color: rgba(145, 180, 255, 1);
+  }
+}
+
 html,
 body,
 #root {
@@ -43,18 +62,61 @@ body,
   overflow: visible;
 }
 
-/* ----- header (title + chips on one row) ----- */
+/* ----- header (stable chrome row + contextual filter row) ----- */
 
 .panel-header {
   display: flex;
-  align-items: stretch;
-  gap: calc(8px * var(--ui-scale, 1));
-  padding: calc(6px * var(--ui-scale, 1)) calc(12px * var(--ui-scale, 1));
+  flex-direction: column;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   cursor: default;
   user-select: none;
   -webkit-user-select: none;
-  min-height: calc(36px * var(--ui-scale, 1));
+  min-height: calc(62px * var(--ui-scale, 1));
+}
+
+.panel-chrome-row,
+.panel-filter-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.panel-chrome-row {
+  flex: 0 0 calc(30px * var(--ui-scale, 1));
+  gap: calc(8px * var(--ui-scale, 1));
+  padding: calc(4px * var(--ui-scale, 1))
+    calc(10px * var(--ui-scale, 1)) 0;
+  overflow: hidden;
+}
+
+.panel-filter-row {
+  flex: 0 0 calc(32px * var(--ui-scale, 1));
+  padding: calc(3px * var(--ui-scale, 1))
+    calc(10px * var(--ui-scale, 1))
+    calc(5px * var(--ui-scale, 1));
+}
+
+.panel-filter-row-search {
+  padding-top: 0;
+}
+
+.panel-chrome-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: calc(4px * var(--ui-scale, 1));
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.panel-chrome-status.has-repo-sync {
+  /* The upstream text may collapse, but the explicit refresh action must
+     never be clipped out of the compact chrome. */
+  min-width: calc(20px * var(--ui-scale, 1));
 }
 
 @media (prefers-color-scheme: dark) {
@@ -84,6 +146,13 @@ body,
 }
 .panel-header-iconwrap.has-update {
   cursor: pointer;
+}
+
+.panel-header-update-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
 }
 
 /* Passive "update available" badge — an orange ! at the icon's corner,
@@ -119,10 +188,8 @@ body,
   display: flex;
   align-items: center;
   gap: calc(4px * var(--ui-scale, 1));
-  /* Shrink (but don't grow) so long repo / branch names truncate instead of
-     shoving the search / pin / close actions off the right edge. The
-     drag-handle to our right fills the slack when chips are short. */
-  flex: 0 1 auto;
+  width: 100%;
+  flex: 1 1 auto;
   min-width: 0;
 }
 /* Every chip slot may shrink below its content, so the labels (which
@@ -139,11 +206,22 @@ body,
   min-width: 0;
 }
 
-/* Upstream ahead/behind badge in single-repo mode. Read-only — sits next
- * to the BranchChip and shows how far the local branch has drifted from
- * its origin/<branch> tracking ref. Counts come from local refs and reflect
- * the last fetch; the tooltip spells that out (auto-fetch refreshes it on
- * panel open). Deliberately not a button: it's an info badge. */
+/* Repo/branch carry the current scope and get first claim on filter-row
+ * width. Time stays compact; a long author selection yields before scope. */
+.panel-filter-row .chip-wrap[data-chip="repo"],
+.panel-filter-row .chip-slot-primary {
+  flex: 1 1 120px;
+}
+.panel-filter-row .chip-slot-time {
+  flex: 0 0 auto;
+}
+.panel-filter-row .chip-slot-authors {
+  flex: 0 1 auto;
+  max-width: calc(150px * var(--ui-scale, 1));
+}
+
+/* Upstream ahead/behind badge in single-repo mode. Read-only — lives in the
+ * chrome status area so Branch/Repo filters keep the full second row. */
 .upstream-badge {
   display: inline-flex;
   align-items: center;
@@ -157,11 +235,16 @@ body,
   cursor: help;
   user-select: none;
   white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 auto;
+  overflow: hidden;
 }
 
 /* Explicit "fetch origin now" — sits right after the upstream badge. Spins
    while the fetch runs; flashes ✓ / ! on the outcome, then decays to ↻. */
 .fetch-now-btn {
+  flex-shrink: 0;
   border: none;
   background: transparent;
   color: inherit;
@@ -239,6 +322,7 @@ body,
 
 .panel-drag-handle {
   flex: 1;
+  min-width: 0;
   cursor: grab;
   align-self: stretch;
 }
@@ -326,6 +410,70 @@ body,
   }
 }
 
+/* Contextual facet failures are uncommon, but must be visible: silently
+   replacing the active scope with zero badges makes a correct timeline look
+   internally inconsistent. Keep this one-line and directly recoverable. */
+.facet-error-notice,
+.history-index-notice,
+.history-coverage,
+.filehist-coverage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(8px * var(--ui-scale, 1));
+  padding: calc(5px * var(--ui-scale, 1)) calc(10px * var(--ui-scale, 1));
+  border-bottom: 1px solid rgba(150, 100, 10, 0.16);
+  background: rgba(235, 175, 45, 0.10);
+  color: rgba(90, 62, 8, 0.88);
+  font-size: calc(10.5px * var(--ui-scale, 1));
+  line-height: 1.35;
+  text-align: center;
+}
+
+.facet-error-retry,
+.history-index-retry {
+  flex: none;
+  border: none;
+  border-radius: 5px;
+  padding: calc(2px * var(--ui-scale, 1)) calc(6px * var(--ui-scale, 1));
+  background: rgba(150, 100, 10, 0.12);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.history-index-notice-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.facet-error-retry:hover,
+.history-index-retry:hover {
+  background: rgba(150, 100, 10, 0.22);
+}
+
+@media (prefers-color-scheme: dark) {
+  .facet-error-notice,
+  .history-index-notice,
+  .history-coverage,
+  .filehist-coverage {
+    border-bottom-color: rgba(255, 205, 100, 0.14);
+    background: rgba(215, 155, 35, 0.10);
+    color: rgba(245, 215, 145, 0.88);
+  }
+
+  .facet-error-retry,
+  .history-index-retry {
+    background: rgba(255, 215, 130, 0.12);
+  }
+
+  .facet-error-retry:hover,
+  .history-index-retry:hover {
+    background: rgba(255, 215, 130, 0.20);
+  }
+}
+
 .panel-close {
   flex-shrink: 0;
   width: calc(22px * var(--ui-scale, 1));
@@ -403,6 +551,28 @@ body,
   min-width: 0;
 }
 
+/* A filtered repo chip is a compound control: disclosure and clear are two
+   sibling buttons, never nested interactive content. Keep their shared pill
+   within the same width budget as a regular chip. */
+.chip-control {
+  display: inline-flex;
+  min-width: 0;
+  max-width: calc(190px * var(--ui-scale, 1));
+}
+
+.chip-control > .chip {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
+.single-mode .chip-wrap[data-chip="repo"] .chip-control {
+  max-width: calc(130px * var(--ui-scale, 1));
+}
+
+.single-mode .chip-wrap[data-chip="repo"] .chip-control > .chip {
+  max-width: none;
+}
+
 .chip {
   display: inline-flex;
   align-items: center;
@@ -423,6 +593,62 @@ body,
    * so wider text at high scale still fits proportionally. */
   max-width: calc(190px * var(--ui-scale, 1));
   min-width: 0;
+}
+
+.chip-with-clear {
+  border-right: 0;
+  border-radius: 12px 0 0 12px;
+  padding-right: calc(6px * var(--ui-scale, 1));
+}
+
+.chip-clear-button {
+  flex: 0 0 auto;
+  width: calc(22px * var(--ui-scale, 1));
+  min-width: calc(18px * var(--ui-scale, 1));
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-left-color: rgba(0, 0, 0, 0.08);
+  border-radius: 0 12px 12px 0;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  font-size: calc(9px * var(--ui-scale, 1));
+  cursor: pointer;
+  opacity: 0.72;
+}
+
+.chip-clear-button:hover {
+  background: rgba(190, 65, 65, 0.12);
+  color: rgb(170, 45, 45);
+  opacity: 1;
+}
+
+.chip-clear-button.open {
+  background: rgba(80, 130, 240, 0.16);
+  border-color: rgba(80, 130, 240, 0.55);
+}
+
+.chip-clear-button.active:not(.open) {
+  border-color: rgba(91, 93, 240, 0.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  .chip-clear-button {
+    background: #2a2a2c;
+    border-color: rgba(255, 255, 255, 0.14);
+    border-left-color: rgba(255, 255, 255, 0.08);
+  }
+  .chip-clear-button:hover {
+    background: rgba(255, 110, 110, 0.14);
+    color: rgb(255, 150, 150);
+  }
+  .chip-clear-button.open {
+    background: rgba(140, 180, 255, 0.2);
+    border-color: rgba(140, 180, 255, 0.55);
+  }
+  .chip-clear-button.active:not(.open) {
+    border-color: rgba(140, 160, 255, 0.6);
+  }
 }
 
 /* Single-repo mode priority: the repo is fixed context here, the branch is
@@ -525,8 +751,16 @@ body,
   position: absolute;
   top: calc(100% + calc(4px * var(--ui-scale, 1)));
   z-index: 50;
-  width: calc(280px * var(--ui-scale, 1));
-  max-height: calc(320px * var(--ui-scale, 1));
+  /* JS sets exact values from the anchor geometry. These viewport guards are
+     also a safe first-paint fallback before the layout effect runs. */
+  width: min(
+    calc(280px * var(--ui-scale, 1)),
+    calc(100vw - 16px)
+  );
+  max-height: min(
+    calc(320px * var(--ui-scale, 1)),
+    calc(100vh - 16px)
+  );
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -553,6 +787,7 @@ body,
 }
 
 .chip-search {
+  flex: none;
   padding: calc(6px * var(--ui-scale, 1));
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
@@ -579,16 +814,44 @@ body,
   border-color: rgba(80, 130, 240, 0.6);
 }
 
+.chip-search input:focus-visible {
+  outline: 2px solid rgba(80, 130, 240, 0.55);
+  outline-offset: -1px;
+}
+
+.chip-action-error {
+  flex: none;
+  padding: calc(5px * var(--ui-scale, 1))
+    calc(8px * var(--ui-scale, 1));
+  border-bottom: 1px solid rgba(190, 50, 50, 0.2);
+  background: rgba(190, 50, 50, 0.08);
+  color: rgba(170, 40, 40, 1);
+  font-size: calc(10px * var(--ui-scale, 1));
+  line-height: 1.35;
+}
+
+@media (prefers-color-scheme: dark) {
+  .chip-action-error {
+    border-bottom-color: rgba(255, 130, 130, 0.22);
+    background: rgba(255, 130, 130, 0.1);
+    color: rgba(255, 150, 150, 1);
+  }
+}
+
 .chip-list {
   max-height: calc(320px * var(--ui-scale, 1));
   overflow-y: auto;
   overflow-x: hidden;
 }
 
-/* Virtualised chip dropdown: the height is set inline to the computed
- * viewport, and flex:none stops the flex column from shrinking it. */
+/* Virtualised chip dropdown: the height is set inline to its preferred
+ * viewport and may shrink only when the anchored overlay runs out of room. */
 .chip-vlist {
-  flex: none;
+  /* Preserve the virtualizer's inline preferred height, but allow the list
+     to shrink when the anchored dropdown has less vertical room. Its track
+     remains full-height, so every row is still reachable by scrolling. */
+  flex: 0 1 auto;
+  min-height: 0;
 }
 
 /* Full-height spacer track — its height is the sum of every row, so the
@@ -797,6 +1060,18 @@ body,
   font-weight: 600;
 }
 
+.chip-item-unavailable {
+  color: rgba(170, 95, 35, 1);
+  background: rgba(220, 150, 50, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  .chip-item-unavailable {
+    color: rgba(255, 185, 105, 1);
+    background: rgba(255, 175, 70, 0.1);
+  }
+}
+
 .chip-item-name {
   font-weight: 500;
   white-space: nowrap;
@@ -820,6 +1095,23 @@ body,
   font-variant-numeric: tabular-nums;
   font-size: calc(10px * var(--ui-scale, 1));
   opacity: 0.6;
+}
+
+.chip-item-count.loading {
+  min-width: 1.5em;
+  text-align: center;
+  animation: facet-count-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes facet-count-pulse {
+  from { opacity: 0.3; }
+  to { opacity: 0.75; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chip-item-count.loading {
+    animation: none;
+  }
 }
 
 /* BranchChip row tail: "last activity" age + lazily-loaded commit count,
@@ -861,6 +1153,7 @@ body,
   letter-spacing: 0.04em;
   border-radius: 4px;
   border: 1px solid rgba(80, 130, 240, 0.5);
+  background: transparent;
   color: rgba(80, 130, 240, 1);
   opacity: 0;
   cursor: pointer;
@@ -868,12 +1161,38 @@ body,
 .chip-item:hover .chip-only {
   opacity: 0.8;
 }
+.chip-only:focus-visible {
+  opacity: 1;
+}
 .chip-only:hover {
   opacity: 1;
   background: rgba(80, 130, 240, 0.14);
 }
 .chip-only + .chip-item-count {
   margin-left: 0;
+}
+
+/* Author rows need two independent keyboard actions: toggle membership and
+   isolate just this author. The visual row owns hover/selection paint while
+   both real sibling buttons remain independently focusable. */
+.chip-author-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: stretch;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chip-author-toggle .chip-item-name {
+  flex: 1 1 auto;
 }
 @media (prefers-color-scheme: dark) {
   .chip-only {
@@ -887,6 +1206,7 @@ body,
 
 /* Sort segmented control inside the AuthorsChip dropdown. */
 .chip-sort {
+  flex: none;
   display: flex;
   align-items: center;
   gap: calc(4px * var(--ui-scale, 1));
@@ -1358,6 +1678,38 @@ body,
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+.search-results-host {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.search-results-pending .timeline-scroll {
+  pointer-events: none;
+  opacity: 0.28;
+}
+
+.search-resolving-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.48);
+  color: rgba(0, 0, 0, 0.62);
+  font-size: calc(11px * var(--ui-scale, 1));
+  backdrop-filter: blur(1px);
+}
+
+@media (prefers-color-scheme: dark) {
+  .search-resolving-cover {
+    background: rgba(20, 20, 22, 0.55);
+    color: rgba(255, 255, 255, 0.7);
+  }
 }
 
 .timeline-windowed-list {
@@ -1993,14 +2345,21 @@ body,
 .context-menu {
   position: fixed;
   z-index: 1000;
-  min-width: 200px;
-  padding: 4px 0;
+  min-width: min(
+    calc(200px * var(--ui-scale, 1)),
+    calc(100vw - 8px)
+  );
+  max-width: calc(100vw - 8px);
+  max-height: calc(100vh - 8px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: calc(4px * var(--ui-scale, 1)) 0;
   background: #fff;
   border: 1px solid rgba(0, 0, 0, 0.18);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--ui-scale, 1));
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
   user-select: none;
-  font-size: 12px;
+  font-size: calc(12px * var(--ui-scale, 1));
 }
 
 @media (prefers-color-scheme: dark) {
@@ -2014,12 +2373,13 @@ body,
 .context-menu-item {
   display: block;
   width: 100%;
-  padding: 5px 12px;
+  padding: calc(5px * var(--ui-scale, 1))
+    calc(12px * var(--ui-scale, 1));
   border: none;
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--ui-scale, 1));
   text-align: left;
   cursor: pointer;
 }
@@ -2033,6 +2393,30 @@ body,
   cursor: not-allowed;
 }
 
+.chip-section-warning {
+  color: rgba(170, 95, 35, 1);
+  opacity: 0.75;
+}
+
+@media (prefers-color-scheme: dark) {
+  .chip-section-warning {
+    color: rgba(255, 185, 105, 1);
+  }
+}
+
+.context-menu-description {
+  display: block;
+  max-width: min(
+    calc(230px * var(--ui-scale, 1)),
+    calc(100vw - 32px)
+  );
+  margin-top: calc(2px * var(--ui-scale, 1));
+  white-space: normal;
+  font-size: calc(10px * var(--ui-scale, 1));
+  line-height: 1.3;
+  opacity: 0.58;
+}
+
 @media (prefers-color-scheme: dark) {
   .context-menu-item:hover:not(.disabled) {
     background: rgba(140, 180, 255, 0.22);
@@ -2042,7 +2426,7 @@ body,
 .context-menu-divider {
   height: 1px;
   background: rgba(0, 0, 0, 0.08);
-  margin: 4px 0;
+  margin: calc(4px * var(--ui-scale, 1)) 0;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -3053,7 +3437,8 @@ body,
 .update-modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  /* Above context menus (1000) and chip dropdowns (50). */
+  z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3460,6 +3845,16 @@ body,
   padding: calc(6px * var(--ui-scale, 1)) 12px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   flex-shrink: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Search is the filter row's active mode, not a third header row. */
+.panel-filter-row .search-bar {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border-bottom: 0;
 }
 
 .search-bar-icon {
@@ -3483,10 +3878,35 @@ body,
   opacity: 0.45;
 }
 
+.search-bar-input:focus-visible {
+  outline: 2px solid rgba(80, 130, 240, 0.7);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .search-bar-input:focus-visible,
+  .chip-search input:focus-visible {
+    outline-color: rgba(145, 180, 255, 0.85);
+  }
+}
+
 .search-bar-count {
   font-size: calc(11px * var(--ui-scale, 1));
   opacity: 0.6;
   white-space: nowrap;
+}
+
+.search-bar-scope {
+  min-width: 0;
+  max-width: calc(155px * var(--ui-scale, 1));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-left: calc(7px * var(--ui-scale, 1));
+  border-left: 1px solid rgba(0, 0, 0, 0.1);
+  font-size: calc(10px * var(--ui-scale, 1));
+  opacity: 0.52;
 }
 
 .search-bar-clear {
@@ -3526,13 +3946,88 @@ body,
   .search-bar-clear:hover {
     background: rgba(255, 255, 255, 0.12);
   }
+  .search-bar-scope {
+    border-left-color: rgba(255, 255, 255, 0.12);
+  }
 }
 
-/* A view lens the active search bypasses — visibly inert. */
-.chip-dimmed {
-  display: inline-flex;
-  opacity: 0.4;
-  pointer-events: none;
+@media (max-width: 460px) {
+  /* At maximum UI scale the action cluster otherwise steals nearly half the
+     banner's line width and turns a one-time disclosure into a wall of text.
+     Give the copy the full row, then keep the actions compact underneath. */
+  .autofetch-notice {
+    flex-direction: column;
+    gap: calc(4px * var(--ui-scale, 1));
+  }
+  .autofetch-notice-actions {
+    align-self: flex-end;
+  }
+  .panel-chrome-row,
+  .panel-filter-row {
+    padding-right: calc(7px * var(--ui-scale, 1));
+    padding-left: calc(7px * var(--ui-scale, 1));
+  }
+  .panel-chrome-row {
+    gap: calc(4px * var(--ui-scale, 1));
+  }
+  .panel-chrome-status {
+    gap: calc(2px * var(--ui-scale, 1));
+  }
+  /* Keep transient status announcements accessible without letting them
+     displace navigation/window controls in a 360–420px panel. */
+  .panel-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .view-nav-btn {
+    padding-right: calc(4px * var(--ui-scale, 1));
+    padding-left: calc(4px * var(--ui-scale, 1));
+  }
+  .upstream-badge {
+    padding-right: calc(4px * var(--ui-scale, 1));
+    padding-left: calc(4px * var(--ui-scale, 1));
+  }
+  .header-chips {
+    gap: calc(3px * var(--ui-scale, 1));
+  }
+  .panel-filter-row .chip-slot-time {
+    flex: 0 1 auto;
+  }
+  .panel-filter-row .chip-slot-authors {
+    max-width: calc(92px * var(--ui-scale, 1));
+  }
+  .panel-filter-row .chip {
+    padding-right: calc(7px * var(--ui-scale, 1));
+    padding-left: calc(7px * var(--ui-scale, 1));
+  }
+  .search-bar-hint {
+    display: none;
+  }
+  .search-bar-scope {
+    flex: 0 1 calc(96px * var(--ui-scale, 1));
+    max-width: calc(96px * var(--ui-scale, 1));
+  }
+}
+
+@media (max-width: 380px) {
+  .panel-chrome-row,
+  .panel-filter-row {
+    padding-right: calc(5px * var(--ui-scale, 1));
+    padding-left: calc(5px * var(--ui-scale, 1));
+  }
+  .panel-chrome-row {
+    gap: calc(3px * var(--ui-scale, 1));
+  }
+  .search-bar-icon {
+    display: none;
+  }
 }
 
 /* Search-result rows carry a 6th column: the jump affordance. */
@@ -3541,6 +4036,9 @@ body,
 }
 
 .row-jump {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: transparent;
   color: inherit;
@@ -3582,6 +4080,7 @@ body,
    mirroring a browser's nav buttons. Disabled when that direction is empty. */
 .view-nav {
   display: inline-flex;
+  flex: none;
   align-self: center;
   gap: calc(2px * var(--ui-scale, 1));
 }
@@ -3638,6 +4137,13 @@ body,
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
+}
+.filehist-chip-scope {
+  flex-shrink: 0;
+  padding-left: 5px;
+  border-left: 1px solid rgba(120, 90, 25, 0.22);
+  font-size: 0.85em;
+  opacity: 0.58;
 }
 .filehist-chip-x {
   flex-shrink: 0;

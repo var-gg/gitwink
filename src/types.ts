@@ -11,9 +11,38 @@ export interface Repo {
   name: string;
   /** Lifecycle status. "active" = on disk and validates as a git repo,
    * "missing" = previously seen but path no longer exists (greyed in
-   * UI), "removed" = user explicitly hid it (filtered out, won't auto-
+   * UI), "removed" = user excluded it (filtered out, won't auto-
    * rediscover). Older cache rows default to "active". */
   status: "active" | "missing" | "removed";
+}
+
+/** A recoverable repository exclusion shown in Settings. Excluding only
+ * suspends discovery/watching and cached timeline rows; the folder and
+ * durable per-repo preferences stay untouched. */
+export interface ExcludedRepo {
+  path: string;
+  name: string;
+  excludedAt: number;
+  /** null = deliberately not probed while listing (dead shares stay instant). */
+  folderAvailable: boolean | null;
+}
+
+export interface ReplacementConfirmation {
+  canonicalPath: string;
+  repoName: string;
+  storageIdentity: string;
+  refsFingerprint: string;
+  lifecycleEpoch: number;
+}
+
+export interface RepoStatusPayload {
+  canonicalPath: string;
+  status: "active" | "missing" | "removed";
+}
+
+export interface RepoCatalogChangedPayload {
+  canonicalPath: string;
+  change: "excluded" | "restored" | "replaced";
 }
 
 export interface ScanProgress {
@@ -132,11 +161,40 @@ export interface RepoCommitCount {
   count: number;
 }
 
-/** The timeline's filter facets (author tallies + per-repo commit counts)
- * — mirrors `cache::FilterFacets`. */
+/** Contextual author tallies + per-repo commit counts — mirrors
+ * `cache::FilterFacets`. Each facet excludes its own active dimension. */
 export interface FilterFacets {
   authors: AuthorTally[];
   repos: RepoCommitCount[];
+}
+
+export type FileHistoryTruncation =
+  | "match_limit"
+  | "scan_limit"
+  | "incomplete"
+  | "shallow_boundary";
+
+/** File-history rows plus an explicit coverage contract. A null
+ * `truncated` is the only state that means every reachable root was
+ * exhausted. Mirrors `git::FileHistoryResult`. */
+export interface FileHistoryResult {
+  rows: CommitSummary[];
+  commitsScanned: number;
+  truncated: FileHistoryTruncation | null;
+  remoteRefsIncluded: number;
+  followsRenames: boolean;
+}
+
+/** Single-repository walk rows plus an explicit cap contract. `truncated`
+ * means the requested branch/time scope contains more rows than `limit`;
+ * callers must never present that result as exhaustive history. */
+export interface RepoCommitsResult {
+  rows: CommitSummary[];
+  truncated: boolean;
+  /** Ref/revwalk/cutoff uncertainty means this is a truthful partial view. */
+  incomplete: boolean;
+  limit: number;
+  shallow: boolean;
 }
 
 export type ChangedFileStatus =
@@ -209,8 +267,8 @@ export interface TimelineFilters {
    * the page sequence. null = no pin. */
   viewGeneration?: number | null;
   /** Free-text commit search. Whitespace-separated terms AND together;
-   * each matches summary, message, author or repo name (substring), or a
-   * 4+ char hex term prefixes the hash. null/empty = no restriction. */
+   * each prefixes a Unicode word in commit text/identity/repo name; a 4+
+   * char hex term also prefixes the hash. null/empty = no restriction. */
   query?: string | null;
 }
 
@@ -248,4 +306,23 @@ export interface TimelineInvalidated {
   /** Ghost commits reconciled away (history was rewritten under us). */
   deleted: number;
   repoPath: string;
+}
+
+/** Demand-driven complete-history coverage for the current repository scope. */
+export interface HistoryIndexStatus {
+  totalRepos: number;
+  completeRepos: number;
+  /** Repos that already have an atomically-published full snapshot. */
+  publishedRepos: number;
+  indexingRepos: number;
+  failedRepos: number;
+  unavailableRepos: number;
+  /** Queued or actively walking repositories. */
+  queuedRepos: number;
+  commitsScanned: number;
+  generation: number;
+  /** No queued/active work remains, including terminal partial outcomes. */
+  settled: boolean;
+  allComplete: boolean;
+  lastError: string | null;
 }

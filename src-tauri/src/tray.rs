@@ -67,8 +67,7 @@ fn build_menu(app: &AppHandle, update_version: Option<&str>) -> tauri::Result<Me
         true,
         None::<&str>,
     )?;
-    let settings_item =
-        MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
+    let settings_item = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit gitwink", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
 
@@ -77,14 +76,19 @@ fn build_menu(app: &AppHandle, update_version: Option<&str>) -> tauri::Result<Me
     // user picked in Settings ("no tray affordances" per UpdateCheckMode
     // doc). Scoop installs keep the item since manual_check still
     // surfaces the modal with the `scoop update` hint.
-    let hide_updater =
-        update::installed_via_msix() || settings::load(app).update_check == UpdateCheckMode::Disabled;
+    let hide_updater = update::installed_via_msix()
+        || settings::load(app).update_check == UpdateCheckMode::Disabled;
     if hide_updater {
         return Menu::with_items(app, &[&settings_item, &reset, &sep, &quit]);
     }
 
-    let check =
-        MenuItem::with_id(app, "check_updates", "Check for updates", true, None::<&str>)?;
+    let check = MenuItem::with_id(
+        app,
+        "check_updates",
+        "Check for updates",
+        true,
+        None::<&str>,
+    )?;
     match update_version {
         Some(v) => {
             let update_item = MenuItem::with_id(
@@ -198,4 +202,3 @@ fn with_dot(base: &Image<'_>) -> Image<'static> {
     }
     Image::new_owned(rgba, w, h)
 }
-

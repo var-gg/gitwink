@@ -106,20 +106,17 @@ pub fn open_settings(app: &AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    let built = WebviewWindowBuilder::new(
-        app,
-        SETTINGS_LABEL,
-        WebviewUrl::App("index.html".into()),
-    )
-    .title("gitwink settings")
-    .inner_size(440.0, 560.0)
-    .min_inner_size(360.0, 420.0)
-    .resizable(true)
-    .decorations(true)
-    .skip_taskbar(false)
-    .always_on_top(false)
-    .visible(true)
-    .build();
+    let built =
+        WebviewWindowBuilder::new(app, SETTINGS_LABEL, WebviewUrl::App("index.html".into()))
+            .title("gitwink settings")
+            .inner_size(440.0, 560.0)
+            .min_inner_size(360.0, 420.0)
+            .resizable(true)
+            .decorations(true)
+            .skip_taskbar(false)
+            .always_on_top(false)
+            .visible(true)
+            .build();
     let win = built.map_err(|e| {
         eprintln!("gitwink: failed to build settings window: {e:#}");
         e.to_string()
@@ -202,18 +199,14 @@ pub fn open_or_focus_diff(
     // Position + maximized state are still restored below.
     let (init_w, init_h) = default_diff_size(app);
 
-    let builder = WebviewWindowBuilder::new(
-        app,
-        DIFF_LABEL,
-        WebviewUrl::App("index.html".into()),
-    )
-    .title("gitwink diff")
-    .inner_size(init_w, init_h)
-    .resizable(true)
-    .decorations(true)
-    .skip_taskbar(false)
-    .always_on_top(false)
-    .visible(true);
+    let builder = WebviewWindowBuilder::new(app, DIFF_LABEL, WebviewUrl::App("index.html".into()))
+        .title("gitwink diff")
+        .inner_size(init_w, init_h)
+        .resizable(true)
+        .decorations(true)
+        .skip_taskbar(false)
+        .always_on_top(false)
+        .visible(true);
 
     let window = builder.build().map_err(|e| {
         eprintln!("gitwink: failed to build diff window: {e:#}");

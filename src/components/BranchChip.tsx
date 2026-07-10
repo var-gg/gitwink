@@ -1,6 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { countBranchCommits } from "../lib/ipc";
+import {
+  removeUnavailableFacetValue,
+  toggleFacetValue,
+  unavailableFacetValues,
+} from "../lib/facetSelection";
 import { chipRowH, useUiScale } from "../lib/settings";
 import { compactAge, fullDateTime } from "../lib/time";
 import type { BranchInfo } from "../types";
@@ -18,13 +30,37 @@ const EMPTY_H_BASE = 34; // .chip-empty — "No branches match."
 const LOCAL_COUNT_CAP = 5_000;
 const REMOTE_COUNT_CAP = 500;
 
+/** A failed visible-row count is retried a few times because ref walks can
+ * briefly race a fetch. The bound is per ref/tip while this dropdown is open:
+ * a permanently unreadable ref must never create an IPC retry loop. */
+export const BRANCH_COUNT_MAX_RETRIES = 3;
+const BRANCH_COUNT_RETRY_BASE_MS = 300;
+
+export function branchCountRetryDelay(retryAttempt: number): number {
+  const boundedAttempt = Math.max(
+    1,
+    Math.min(BRANCH_COUNT_MAX_RETRIES, Math.floor(retryAttempt)),
+  );
+  return BRANCH_COUNT_RETRY_BASE_MS * 2 ** (boundedAttempt - 1);
+}
+
 /** Lazy commit-count label for a branch row: "…" until its count loads,
  * then the number (or "<cap>+" when the walk hit the cap). */
-function countLabel(b: BranchInfo, counts: Map<string, number>): string {
+function countLabel(
+  b: BranchInfo,
+  counts: Map<string, number>,
+  failed: Set<string>,
+): string {
   const c = counts.get(b.refName);
-  if (c == null) return "…";
+  if (c == null) return failed.has(b.refName) ? "—" : "…";
   const cap = b.kind === "remote" ? REMOTE_COUNT_CAP : LOCAL_COUNT_CAP;
   return c > cap ? `${cap.toLocaleString()}+` : c.toLocaleString();
+}
+
+function displayRefName(refName: string): string {
+  return refName
+    .replace(/^refs\/heads\//, "")
+    .replace(/^refs\/remotes\//, "");
 }
 
 interface Props {
@@ -34,6 +70,9 @@ interface Props {
   /** Repo the branches belong to — needed to lazily count commits per ref. */
   repoPath: string;
   branches: BranchInfo[];
+  /** True while the current repo's ref list is loading. Prevents a saved
+   * selection from being mislabeled unavailable during the async handoff. */
+  loading: boolean;
   /** Array of refNames (e.g. "refs/heads/main", "refs/remotes/origin/main")
    * or the "all" sentinel. We key by refName so a local "main" and a
    * remote "origin/main" never collide. */
@@ -47,6 +86,7 @@ export function BranchChip({
   onClose,
   repoPath,
   branches,
+  loading,
   selected,
   onChange,
 }: Props) {
@@ -62,42 +102,173 @@ export function BranchChip({
   // history walk). We fetch counts only for the rows VirtualChipList reports
   // as on-screen, deduped + debounced into one IPC call per batch.
   const [counts, setCounts] = useState<Map<string, number>>(new Map());
+  const [failedCounts, setFailedCounts] = useState<Set<string>>(new Set());
   const requestedRef = useRef<Set<string>>(new Set());
   const pendingRef = useRef<Set<string>>(new Set());
   const flushTimerRef = useRef<number | null>(null);
+  const retryTimerRef = useRef<number | null>(null);
+  const retryQueueRef = useRef<Set<string>>(new Set());
+  const retryAttemptsRef = useRef<Map<string, number>>(new Map());
+  const visibleRefsRef = useRef<Set<string>>(new Set());
+  const requestEpochRef = useRef(0);
+  const flushRef = useRef<() => void>(() => {});
+  const branchTipsKey = useMemo(
+    () =>
+      branches
+        .map((branch) => `${branch.refName}\u0000${branch.tipHash}`)
+        .join("\u0001"),
+    [branches],
+  );
 
-  // A different repo's refs/counts no longer apply — start clean.
-  useEffect(() => {
+  // A different repo OR a moved ref makes the old counts invalid. A layout
+  // effect advances the epoch in the same commit that exposes the new tips,
+  // before a stale promise microtask can publish repo A's identically-named
+  // ref into repo B (or an old count into a newly-fetched branch tip).
+  useLayoutEffect(() => {
+    requestEpochRef.current += 1;
+    if (flushTimerRef.current != null) {
+      window.clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+    if (retryTimerRef.current != null) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
     setCounts(new Map());
+    setFailedCounts(new Set());
     requestedRef.current = new Set();
     pendingRef.current = new Set();
-  }, [repoPath]);
+    retryQueueRef.current = new Set();
+    retryAttemptsRef.current = new Map();
+    visibleRefsRef.current = new Set();
+    return () => {
+      // Always invalidate in-flight promises on dependency change/unmount.
+      // The close-session path may already have advanced this epoch.
+      requestEpochRef.current += 1;
+      if (flushTimerRef.current != null) {
+        window.clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = null;
+      }
+      if (retryTimerRef.current != null) {
+        window.clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+  }, [repoPath, branchTipsKey]);
+
+  const scheduleRetry = useCallback((refs: string[], requestEpoch: number) => {
+    if (requestEpochRef.current !== requestEpoch) return;
+
+    let earliestAttempt = Number.POSITIVE_INFINITY;
+    for (const refName of refs) {
+      if (!visibleRefsRef.current.has(refName)) {
+        // The row left the measured virtual viewport. Release the request key
+        // so a later scroll-back can retry it, but keep its attempt budget for
+        // this open session.
+        requestedRef.current.delete(refName);
+        continue;
+      }
+      const nextAttempt = (retryAttemptsRef.current.get(refName) ?? 0) + 1;
+      if (nextAttempt > BRANCH_COUNT_MAX_RETRIES) {
+        // Keep it requested after exhaustion: repeated ResizeObserver /
+        // virtual-list notifications cannot restart an infinite loop. Closing
+        // and reopening the dropdown explicitly grants a fresh bounded budget.
+        setFailedCounts((previous) => {
+          if (previous.has(refName)) return previous;
+          const next = new Set(previous);
+          next.add(refName);
+          return next;
+        });
+        continue;
+      }
+      retryAttemptsRef.current.set(refName, nextAttempt);
+      retryQueueRef.current.add(refName);
+      // Keep the ref marked requested while it waits. VirtualChipList can
+      // legitimately re-report the same mounted keys after any row update;
+      // releasing this bit would bypass the backoff with a duplicate 80 ms
+      // request (and could overlap the scheduled retry).
+      earliestAttempt = Math.min(earliestAttempt, nextAttempt);
+    }
+
+    if (retryQueueRef.current.size === 0 || retryTimerRef.current != null) {
+      return;
+    }
+    const delay = branchCountRetryDelay(earliestAttempt);
+    retryTimerRef.current = window.setTimeout(() => {
+      retryTimerRef.current = null;
+      if (requestEpochRef.current !== requestEpoch) return;
+
+      const queued = Array.from(retryQueueRef.current);
+      retryQueueRef.current.clear();
+      for (const refName of queued) {
+        if (!visibleRefsRef.current.has(refName)) {
+          requestedRef.current.delete(refName);
+          const attempt = retryAttemptsRef.current.get(refName) ?? 0;
+          if (attempt <= 1) retryAttemptsRef.current.delete(refName);
+          else retryAttemptsRef.current.set(refName, attempt - 1);
+          continue;
+        }
+        requestedRef.current.add(refName);
+        pendingRef.current.add(refName);
+      }
+      if (pendingRef.current.size > 0) flushRef.current();
+    }, delay);
+  }, []);
 
   const flush = useCallback(() => {
     flushTimerRef.current = null;
     const refs = Array.from(pendingRef.current);
     pendingRef.current = new Set();
     if (refs.length === 0) return;
+    const requestEpoch = requestEpochRef.current;
     void countBranchCommits(repoPath, refs)
       .then((res) => {
-        if (res.length === 0) return;
-        setCounts((prev) => {
-          const next = new Map(prev);
-          for (const { refName, count } of res) next.set(refName, count);
-          return next;
-        });
+        if (requestEpochRef.current !== requestEpoch) return;
+        const returned = new Set(res.map(({ refName }) => refName));
+        if (res.length > 0) {
+          setFailedCounts((previous) => {
+            let changed = false;
+            const next = new Set(previous);
+            for (const { refName } of res) changed = next.delete(refName) || changed;
+            return changed ? next : previous;
+          });
+          setCounts((prev) => {
+            const next = new Map(prev);
+            for (const { refName, count } of res) {
+              retryAttemptsRef.current.delete(refName);
+              retryQueueRef.current.delete(refName);
+              next.set(refName, count);
+            }
+            return next;
+          });
+        }
+        // A partial backend response is a failure for the omitted refs. Do
+        // not strand those rows at an eternal ellipsis merely because the
+        // promise itself resolved.
+        const omitted = refs.filter((refName) => !returned.has(refName));
+        if (omitted.length > 0) scheduleRetry(omitted, requestEpoch);
       })
       .catch(() => {
-        // Let a later visibility pass retry these refs.
-        for (const r of refs) requestedRef.current.delete(r);
+        if (requestEpochRef.current !== requestEpoch) return;
+        scheduleRetry(refs, requestEpoch);
       });
-  }, [repoPath]);
+  }, [repoPath, scheduleRetry]);
+  flushRef.current = flush;
 
   const requestCounts = useCallback(
     (refNames: string[]) => {
       let added = false;
       for (const refName of refNames) {
         if (requestedRef.current.has(refName)) continue;
+        if (
+          (retryAttemptsRef.current.get(refName) ?? 0) >=
+          BRANCH_COUNT_MAX_RETRIES
+        ) {
+          // The automatic budget is exhausted until the user closes/reopens
+          // the dropdown (or the repo/ref tip changes and advances epoch).
+          requestedRef.current.add(refName);
+          continue;
+        }
         requestedRef.current.add(refName);
         pendingRef.current.add(refName);
         added = true;
@@ -112,9 +283,36 @@ export function BranchChip({
   useEffect(
     () => () => {
       if (flushTimerRef.current != null) window.clearTimeout(flushTimerRef.current);
+      if (retryTimerRef.current != null) window.clearTimeout(retryTimerRef.current);
     },
     [],
   );
+
+  useEffect(() => {
+    if (open) return;
+    // Closing is cancellation, not merely hiding: a slow count from the old
+    // session must not publish into a later reopen of the same repo/ref tip.
+    requestEpochRef.current += 1;
+    visibleRefsRef.current.clear();
+    retryQueueRef.current.clear();
+    retryAttemptsRef.current.clear();
+    setFailedCounts(new Set());
+    for (const refName of pendingRef.current) requestedRef.current.delete(refName);
+    pendingRef.current.clear();
+    if (flushTimerRef.current != null) {
+      window.clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+    if (retryTimerRef.current != null) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    // Loaded counts stay warm. Only unresolved refs are released so reopening
+    // is an explicit, user-bounded retry instead of a permanent dead end.
+    for (const refName of requestedRef.current) {
+      if (!counts.has(refName)) requestedRef.current.delete(refName);
+    }
+  }, [open, counts]);
 
   // VirtualChipList reports the keys it has mounted; pull branch refs out and
   // queue their counts. Header/"all" rows are ignored.
@@ -123,6 +321,16 @@ export function BranchChip({
       const refs: string[] = [];
       for (const k of keys) {
         if (k.startsWith("branch:")) refs.push(k.slice("branch:".length));
+      }
+      const nextVisible = new Set(refs);
+      visibleRefsRef.current = nextVisible;
+      for (const refName of retryQueueRef.current) {
+        if (nextVisible.has(refName)) continue;
+        retryQueueRef.current.delete(refName);
+        requestedRef.current.delete(refName);
+        const attempt = retryAttemptsRef.current.get(refName) ?? 0;
+        if (attempt <= 1) retryAttemptsRef.current.delete(refName);
+        else retryAttemptsRef.current.set(refName, attempt - 1);
       }
       if (refs.length > 0) requestCounts(refs);
     },
@@ -159,36 +367,44 @@ export function BranchChip({
     };
   }, [branches, query, snapshot]);
 
+  const branchRefNames = useMemo(
+    () => branches.map((branch) => branch.refName),
+    [branches],
+  );
+  const unavailableSelected = useMemo(
+    () => (loading ? [] : unavailableFacetValues(branchRefNames, selected)),
+    [branchRefNames, selected, loading],
+  );
+  const visibleUnavailable = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q
+      ? unavailableSelected.filter((refName) =>
+          displayRefName(refName).toLowerCase().includes(q),
+        )
+      : unavailableSelected;
+  }, [query, unavailableSelected]);
+
   // Label adapts to the count. For a single selection we show the branch
   // name itself — minimum cognitive load — and fall back to a count when
   // multiple are picked.
   const label = useMemo(() => {
+    if (loading && branches.length === 0) return "Loading branches…";
     if (selected === "all") return `All branches (${branches.length})`;
     if (selected.length === 0) return "No branches";
     if (selected.length === 1) {
       const only = branches.find((b) => b.refName === selected[0]);
-      return only?.name ?? "1 branch";
+      return only?.name ?? `${displayRefName(selected[0])} · unavailable`;
     }
-    return `${selected.length} branches`;
-  }, [selected, branches]);
+    return unavailableSelected.length > 0
+      ? `${selected.length} branches · ${unavailableSelected.length} unavailable`
+      : `${selected.length} branches`;
+  }, [selected, branches, unavailableSelected, loading]);
 
   const toggle = useCallback(
     (refName: string) => {
-      if (selected === "all") {
-        // GitLens / IDE sidebar pattern: clicking a branch from the "all"
-        // state means "focus on THIS one". The previous "everything except
-        // this one" behaviour was a multi-select-with-checkboxes mental
-        // model that doesn't match what users expect from a branch filter.
-        onChange([refName]);
-        return;
-      }
-      const set = new Set(selected);
-      if (set.has(refName)) set.delete(refName);
-      else set.add(refName);
-      const next = Array.from(set);
-      onChange(next.length === branches.length ? "all" : next);
+      onChange(toggleFacetValue(selected, refName, branchRefNames));
     },
-    [selected, branches, onChange],
+    [selected, branchRefNames, onChange],
   );
 
   // Flatten the two sections into one virtual-row list. The Local / Remote
@@ -214,10 +430,15 @@ export function BranchChip({
           <button
             type="button"
             className={"chip-item" + (isSelected ? " checked" : "")}
+            role="checkbox"
+            aria-checked={isSelected}
+            title={b.refName}
             onClick={() => toggle(b.refName)}
           >
-            <span className="chip-check">{isSelected ? "✓" : ""}</span>
-            <span className="chip-item-name">
+            <span className="chip-check" aria-hidden="true">
+              {isSelected ? "✓" : ""}
+            </span>
+            <span className="chip-item-name" title={b.name}>
               {b.name}
               {b.isHead && <span className="chip-item-head"> · HEAD</span>}
             </span>
@@ -228,8 +449,15 @@ export function BranchChip({
               >
                 {compactAge(b.lastActivity)}
               </span>
-              <span className="chip-branch-count" title="Reachable commits">
-                {countLabel(b, counts)}
+              <span
+                className="chip-branch-count"
+                title={
+                  failedCounts.has(b.refName)
+                    ? `Count unavailable after ${BRANCH_COUNT_MAX_RETRIES} retries. Close and reopen this list to retry.`
+                    : "Reachable commits across all time (independent of the time filter)"
+                }
+              >
+                {countLabel(b, counts, failedCounts)}
               </span>
             </span>
           </button>
@@ -245,6 +473,8 @@ export function BranchChip({
         <button
           type="button"
           className={"chip-item" + (selected === "all" ? " active" : "")}
+          role="checkbox"
+          aria-checked={selected === "all"}
           onClick={() => {
             onChange("all");
             onClose();
@@ -254,6 +484,49 @@ export function BranchChip({
         </button>
       ),
     });
+    if (visibleUnavailable.length > 0) {
+      out.push({
+        key: "__unavailable",
+        height: HEADER_H,
+        render: () => (
+          <div
+            className="chip-section-header chip-section-warning"
+            title="Selected refs that no longer exist in this repository"
+          >
+            Selected · unavailable refs
+          </div>
+        ),
+      });
+      for (const refName of visibleUnavailable) {
+        out.push({
+          key: "unavailable-branch:" + refName,
+          height: ITEM_H,
+          render: () => (
+            <button
+              type="button"
+              className="chip-item checked chip-item-unavailable"
+              role="checkbox"
+              aria-checked={true}
+              title={`${refName} no longer exists. Click to remove this filter.`}
+              onClick={() => {
+                onChange(removeUnavailableFacetValue(selected, refName));
+              }}
+            >
+              <span className="chip-check" aria-hidden="true">
+                ✓
+              </span>
+              <span
+                className="chip-item-name"
+                title={displayRefName(refName)}
+              >
+                {displayRefName(refName)}
+              </span>
+              <span className="chip-item-count">missing</span>
+            </button>
+          ),
+        });
+      }
+    }
     if (localBranches.length > 0) {
       out.push({
         key: "__local",
@@ -277,7 +550,17 @@ export function BranchChip({
       });
       for (const b of remoteBranches) out.push(branchRow(b));
     }
-    if (localBranches.length === 0 && remoteBranches.length === 0) {
+    if (loading && localBranches.length === 0 && remoteBranches.length === 0) {
+      out.push({
+        key: "__loading",
+        height: EMPTY_H,
+        render: () => <div className="chip-empty">Loading branches…</div>,
+      });
+    } else if (
+      localBranches.length === 0 &&
+      remoteBranches.length === 0 &&
+      visibleUnavailable.length === 0
+    ) {
       out.push({
         key: "__empty",
         height: EMPTY_H,
@@ -288,12 +571,15 @@ export function BranchChip({
   }, [
     localBranches,
     remoteBranches,
+    visibleUnavailable,
+    loading,
     selected,
     onChange,
     onClose,
     toggle,
     scale,
     counts,
+    failedCounts,
   ]);
 
   return (
@@ -311,6 +597,7 @@ export function BranchChip({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search branches…"
+          aria-label="Search branches"
         />
       </div>
       <VirtualChipList

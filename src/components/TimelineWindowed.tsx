@@ -38,6 +38,7 @@ import { timelineRowH, useUiScale } from "../lib/settings";
 import { ChangedFiles } from "./ChangedFiles";
 import { CommitDetail } from "./CommitDetail";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { searchResultOptionId } from "./searchAccessibility";
 
 /** Extra rows rendered above/below the viewport for scroll smoothness. */
 const OVERSCAN = 8;
@@ -57,6 +58,29 @@ export interface SearchControl {
  * layer order deterministic — bubble-listener registration order is not. */
 export interface ExpansionControl {
   collapse: () => boolean;
+}
+
+/** Pointer affordance inside a search option. The combobox's Enter bridge is
+ * the keyboard action, so this glyph is intentionally presentational rather
+ * than a nested button (interactive descendants invalidate listbox options). */
+export function SearchResultJumpAffordance({
+  onActivate,
+}: {
+  onActivate: () => void;
+}) {
+  return (
+    <span
+      className="row-jump"
+      title="Jump to this commit in its repo's history (Enter)"
+      aria-hidden="true"
+      onClick={(event) => {
+        event.stopPropagation();
+        onActivate();
+      }}
+    >
+      ↗
+    </span>
+  );
 }
 
 interface Props {
@@ -92,6 +116,30 @@ interface Props {
   searchControlRef?: React.MutableRefObject<SearchControl | null>;
   /** reports the filtered count (null while loading) — the bar's label */
   onResultCount?: (n: number | null) => void;
+  /** Stable DOM id shared with the search combobox's aria-controls. */
+  resultsListId?: string;
+  /** Reports the selected option only while its DOM row is actually mounted. */
+  onActiveDescendant?: (id: string | null) => void;
+  /** Reports the exact MVCC snapshot adopted by this timeline. Contextual
+   * facets use it so chip counts and visible rows can never describe
+   * different generations. */
+  onSnapshotGeneration?: (
+    generation: number,
+    since: number | null,
+    filterKey: string,
+  ) => void;
+  /** Reports the query whose rows have actually reached ready state. This is
+   * distinct from the rendered prop during debounce/IPC so Enter can never
+   * activate a row from the previous query. */
+  onResolvedQuery?: (
+    query: string | null,
+    filterKey: string,
+    resolutionEpoch: number,
+  ) => void;
+  /** Invalidates the prior resolved search snapshot as soon as this timeline
+   * begins any same-query reload. Old rows then remain inert under the
+   * resolving cover until the replacement MVCC snapshot is ready. */
+  onResolutionPending?: () => void;
   /** Search-miss scope: a label for the narrowed repo scope (a repo name or
    *  "N repos"), or null when the search already spans all repos. When set, a
    *  zero-result search names the scope and offers a one-click widen — so a
@@ -105,6 +153,10 @@ interface Props {
    *  suspend keyboard handling and the Esc-rung registration so the visible
    *  view owns them — state (scroll/selection/expansion) is preserved. */
   inactive?: boolean;
+  /** Stop cache/Git work while an off-screen instance is only being retained
+   *  to preserve its viewport. Deliberately separate from `inactive`: search
+   *  results are interaction-inactive while resolving but must keep loading. */
+  suspended?: boolean;
 }
 
 function formatFullTime(unixSeconds: number): string {
@@ -147,16 +199,26 @@ export function TimelineWindowed({
   onWarp,
   searchControlRef,
   onResultCount,
+  resultsListId,
+  onActiveDescendant,
+  onSnapshotGeneration,
+  onResolvedQuery,
+  onResolutionPending,
   searchScopeLabel,
   onWidenSearch,
   expansionControlRef,
   inactive,
+  suspended,
 }: Props) {
   const {
     rows,
     baseIndex,
     count,
     status,
+    generation,
+    snapshotSince,
+    snapshotFilterKey,
+    snapshotQuery,
     freshHashes,
     recovery,
     requestRange,
@@ -170,7 +232,39 @@ export function TimelineWindowed({
     refreshNonce,
     query,
     skipRefill,
+    suspended,
   });
+
+  useEffect(() => {
+    if (status === "ready" && generation != null && snapshotFilterKey != null) {
+      onSnapshotGeneration?.(generation, snapshotSince, snapshotFilterKey);
+    }
+  }, [
+    generation,
+    snapshotSince,
+    snapshotFilterKey,
+    status,
+    onSnapshotGeneration,
+  ]);
+
+  useEffect(() => {
+    if (
+      status === "ready" &&
+      snapshotQuery !== undefined &&
+      snapshotFilterKey != null
+    ) {
+      onResolvedQuery?.(snapshotQuery, snapshotFilterKey, refreshNonce);
+    } else {
+      onResolutionPending?.();
+    }
+  }, [
+    status,
+    snapshotQuery,
+    snapshotFilterKey,
+    refreshNonce,
+    onResolvedQuery,
+    onResolutionPending,
+  ]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -185,6 +279,8 @@ export function TimelineWindowed({
   // Live mirror of `inactive` for the once-mounted invalidation listener.
   const inactiveRef = useRef(false);
   inactiveRef.current = !!inactive;
+  const suspendedRef = useRef(false);
+  suspendedRef.current = !!suspended;
   // Ref mirror of `status` for the same listener — a delete-burst reload
   // must yield to an in-flight reload instead of cancelling it.
   const statusRef = useRef(status);
@@ -254,6 +350,24 @@ export function TimelineWindowed({
   );
   const padTop = offsetOfRow(first);
   const padBottom = Math.max(0, totalHeight - offsetOfRow(last));
+
+  // A virtual list must not expose aria-activedescendant until the selected
+  // option exists in the DOM. During a query handoff `status` leaves ready and
+  // `inactive` is set, clearing the id before stale rows can be announced or
+  // activated by assistive technology.
+  const activeDescendant =
+    searchMode &&
+    !inactive &&
+    status === "ready" &&
+    selected >= first &&
+    selected < last &&
+    commitAt(selected) != null
+      ? searchResultOptionId(selected)
+      : null;
+  useEffect(() => {
+    onActiveDescendant?.(activeDescendant);
+    return () => onActiveDescendant?.(null);
+  }, [activeDescendant, onActiveDescendant]);
   // Ref mirror so the selection-scroll / recovery effects read the live
   // geometry without depending on (and re-firing for) every resize.
   const offsetOfRowRef = useRef(offsetOfRow);
@@ -425,6 +539,7 @@ export function TimelineWindowed({
   // Phase 6: prefetch the changed-file lists for the loaded rows in view so
   // expanding one is instant. Debounced; the backend skips cached commits.
   useEffect(() => {
+    if (suspended) return;
     const batch: { repoPath: string; hash: string }[] = [];
     for (let gi = first; gi < last; gi++) {
       const c = commitAt(gi);
@@ -435,7 +550,7 @@ export function TimelineWindowed({
       void changedFilesBatch(batch);
     }, 200);
     return () => window.clearTimeout(timer);
-  }, [first, last, commitAt]);
+  }, [first, last, commitAt, suspended]);
 
   // ----- scanner invalidation: debounced -----
   // At the top, auto-advance to the latest. Scrolled away, surface a
@@ -451,6 +566,10 @@ export function TimelineWindowed({
     // are a lie.
     let sawDeletes = false;
     void onTimelineInvalidated((p) => {
+      // The retained browse instance catches up once `suspended` flips false;
+      // doing COUNT/diff-prefetch work while display:none defeats the entire
+      // viewport-preservation optimization.
+      if (suspendedRef.current) return;
       if (p.deleted > 0) sawDeletes = true;
       if (timer) window.clearTimeout(timer);
       const fire = () => {
@@ -480,12 +599,14 @@ export function TimelineWindowed({
             el.scrollTop < ROW_H * 2 &&
             expandedKeyRef.current == null
           ) {
+            if (searchMode) onResolutionPending?.();
             reloadLatest();
           } else if (burstHadDeletes) {
             // The re-pull re-pins generation + count, so any pending "N
             // new" pill is satisfied by the same pass — clear it rather
             // than leave a stale number floating.
             setNewCount(0);
+            if (searchMode) onResolutionPending?.();
             reloadInPlace();
           } else {
             const n = await countNew();
@@ -503,7 +624,7 @@ export function TimelineWindowed({
       unlisten?.();
       if (timer) window.clearTimeout(timer);
     };
-  }, [reloadLatest, reloadInPlace, countNew]);
+  }, [reloadLatest, reloadInPlace, countNew, searchMode, onResolutionPending]);
 
   // ----- keyboard nav (j / k / Enter / c) -----
   useEffect(() => {
@@ -535,7 +656,7 @@ export function TimelineWindowed({
         const c = commitAt(selected);
         // Search results: Enter is the warp ("take me to its history"),
         // matching the search bar's Enter. Click still previews inline.
-        if (c) {
+        if (c && statusRef.current === "ready") {
           if (searchMode && onWarp) onWarp(c);
           else toggleExpand(rowKey(c));
         }
@@ -583,7 +704,9 @@ export function TimelineWindowed({
         ),
       activateSelected: () => {
         const c = commitAt(selected);
-        if (c && onWarp) onWarp(c);
+        if (!inactiveRef.current && statusRef.current === "ready" && c && onWarp) {
+          onWarp(c);
+        }
       },
     };
     return () => {
@@ -639,6 +762,7 @@ export function TimelineWindowed({
   }
 
   function onTimelineContextMenu(e: React.MouseEvent) {
+    if (inactiveRef.current || statusRef.current !== "ready") return;
     const target = e.target as HTMLElement;
     if (target.closest('input, textarea, [contenteditable="true"]')) return;
     e.preventDefault();
@@ -676,6 +800,7 @@ export function TimelineWindowed({
           key={`blank-${gi}`}
           className="timeline-row timeline-row-blank"
           aria-hidden="true"
+          role={searchMode ? "presentation" : undefined}
         >
           <span className="timeline-skeleton" />
         </li>,
@@ -687,13 +812,17 @@ export function TimelineWindowed({
     items.push(
       <Fragment key={key}>
         <li
+          id={searchMode ? searchResultOptionId(gi) : undefined}
           data-row={gi}
+          role={searchMode ? "option" : undefined}
+          aria-selected={searchMode ? gi === selected : undefined}
           className={
             "timeline-row" +
             (gi === selected ? " selected" : "") +
             (expandedKey === key ? " expanded" : "")
           }
           onClick={() => {
+            if (inactiveRef.current || statusRef.current !== "ready") return;
             setSelected(gi);
             toggleExpand(key);
           }}
@@ -718,6 +847,7 @@ export function TimelineWindowed({
             title={`${c.repoPath} (click to filter)`}
             onClick={(e) => {
               e.stopPropagation();
+              if (inactiveRef.current || statusRef.current !== "ready") return;
               onSelectRepo(c.repoPath);
             }}
           >
@@ -751,22 +881,13 @@ export function TimelineWindowed({
             {c.author}
           </span>
           {searchMode && (
-            <button
-              type="button"
-              className="row-jump"
-              title="Jump to this commit in its repo's history (Enter)"
-              onClick={(e) => {
-                e.stopPropagation();
-                onWarp?.(c);
-              }}
-            >
-              ↗
-            </button>
+            <SearchResultJumpAffordance onActivate={() => onWarp?.(c)} />
           )}
         </li>
         {expandedKey === key && (
           <li
             className="timeline-expansion"
+            role={searchMode ? "presentation" : undefined}
             ref={measureExpansion}
             onClick={(e) => e.stopPropagation()}
           >
@@ -923,6 +1044,9 @@ export function TimelineWindowed({
         </div>
       ) : (
         <ul
+          id={searchMode ? resultsListId : undefined}
+          role={searchMode ? "listbox" : undefined}
+          aria-label={searchMode ? "Commit search results" : undefined}
           className={
             "timeline-windowed-list timeline-all" +
             (searchMode ? " timeline-search-list" : "")

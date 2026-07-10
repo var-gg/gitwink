@@ -2,13 +2,11 @@
 #
 # Kept separate from release.yml on purpose: that workflow ships the
 # (SignPath/Authenticode-signed) MSI + NSIS installers to GitHub Releases;
-# this one produces the .msixbundle for manual upload to Partner Center,
-# which the Store re-signs. Different toolchain, different output dir
-# (src-tauri/target/msix/ vs src-tauri/target/release/bundle/) — no collision.
-#
-# Manual trigger only: a Store-submittable package needs the real Partner
-# Center identity filled into src-tauri/gen/windows/bundle.config.json and
-# AppxManifest.xml.template. Run this when a Store submission is due.
+# this one produces the .msixbundle and, when repository credentials are
+# configured, submits it to Partner Center for Store re-signing. Different
+# toolchain, different output dir (src-tauri/target/msix/ vs
+# src-tauri/target/release/bundle/) — no collision. The uploaded Actions
+# artifact remains the exact manual fallback package if Store submission fails.
 name: MSIX (Microsoft Store)
 
 on:
@@ -79,19 +77,12 @@ jobs:
 
       # Auto-submit to the Microsoft Store via the Dev Store CLI (msstore).
       #
-      # DISABLED by default: gated on the `STORE_AUTOPUBLISH` repo *variable*
-      # being "true", which it is NOT today. Reason: the Entra app that msstore
-      # authenticates with is not yet associated to the Partner Center account
-      # (Azure app registration != Partner Center "Microsoft Entra applications"
-      # association), so `msstore reconfigure` fails and turns every run red —
-      # even though the MSIX build + artifact upload above succeed. Until that's
-      # set up, Store submission is done via tools/deploy-store.ps1 (it grabs the
-      # exact artifact built above for a manual Partner Center upload). To
-      # re-enable once the Entra app is connected with a Manager role:
-      #   gh variable set STORE_AUTOPUBLISH --repo var-gg/gitwink --body true
-      # The env.AZURE_AD_TENANT_ID guard also stays so forks without the secrets
-      # never run it. Store-update via GitHub Actions is free-product-only —
-      # gitwink is free. Product id 9P0S21GJD53F.
+      # Gated on the `STORE_AUTOPUBLISH` repository variable and Entra secrets:
+      # forks and credential-free runs still build/upload the MSIX artifact but
+      # safely skip publication. `tools/deploy-store.ps1` downloads that exact
+      # artifact for a manual Partner Center fallback when an automated publish
+      # fails. Store-update via GitHub Actions is free-product-only — gitwink is
+      # free. Product id 9P0S21GJD53F.
       - name: Configure Microsoft Store CLI
         if: ${{ vars.STORE_AUTOPUBLISH == 'true' && env.AZURE_AD_TENANT_ID != '' }}
         uses: microsoft/microsoft-store-apppublisher@v1.1

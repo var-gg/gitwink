@@ -8,12 +8,19 @@ import type {
   CommitAround,
   CommitFileBlobs,
   CommitSummary,
+  RepoCommitsResult,
   CommitWindow,
   Cursor,
   DiscoveredRepo,
+  ExcludedRepo,
+  FileHistoryResult,
   FilterFacets,
+  HistoryIndexStatus,
   OrchestratorScanProgress,
+  ReplacementConfirmation,
   Repo,
+  RepoCatalogChangedPayload,
+  RepoStatusPayload,
   ScanComplete,
   ScanProgress,
   TimelineFilters,
@@ -103,19 +110,39 @@ export async function explicitAddRepo(path: string): Promise<DiscoveredRepo> {
   return invoke<DiscoveredRepo>("explicit_add_repo", { path });
 }
 
-/** Hide a repo from the panel and prevent auto-rediscovery. Used by
- * the "hide" affordance on missing rows in the RepoChip. The user can
- * always bring it back by dropping/pasting the path again. */
-export async function hideRepo(canonicalPath: string): Promise<void> {
-  await invoke("hide_repo", { canonicalPath });
+/** Reversibly exclude a repo from discovery, watching and the panel. */
+export async function excludeRepo(canonicalPath: string): Promise<void> {
+  await invoke("exclude_repo", { canonicalPath });
+}
+
+export async function listExcludedRepos(): Promise<ExcludedRepo[]> {
+  return invoke<ExcludedRepo[]>("list_excluded_repos");
+}
+
+export async function restoreRepo(canonicalPath: string): Promise<void> {
+  await invoke("restore_repo", { canonicalPath });
+}
+
+export async function inspectReplacementRepo(
+  canonicalPath: string,
+): Promise<ReplacementConfirmation> {
+  return invoke<ReplacementConfirmation>("inspect_replacement_repo", {
+    canonicalPath,
+  });
+}
+
+export async function replaceExcludedRepo(
+  confirmation: ReplacementConfirmation,
+): Promise<void> {
+  await invoke("replace_excluded_repo", { confirmation });
 }
 
 export async function repoCommits(
   repoPath: string,
   branches: string[] | null,
   windowDays: number | null,
-): Promise<CommitSummary[]> {
-  return invoke<CommitSummary[]>("repo_commits", {
+): Promise<RepoCommitsResult> {
+  return invoke<RepoCommitsResult>("repo_commits", {
     repoPath,
     branches,
     windowDays,
@@ -152,8 +179,24 @@ export async function changedFiles(
 export async function fileHistory(
   repoPath: string,
   filePath: string,
-): Promise<CommitSummary[]> {
-  return invoke<CommitSummary[]>("file_history", { repoPath, filePath });
+  operationId: string,
+  flowId: string,
+): Promise<FileHistoryResult | null> {
+  return invoke<FileHistoryResult | null>("file_history", {
+    repoPath,
+    filePath,
+    operationId,
+    flowId,
+  });
+}
+
+/** Supersede one in-flight file-history request. Operation identity makes a
+ * late React cleanup harmless to the replacement request in the same flow. */
+export async function cancelFileHistory(
+  operationId: string,
+  flowId: string,
+): Promise<void> {
+  await invoke("cancel_file_history", { operationId, flowId });
 }
 
 /** Fire-and-forget prefetch on hover. Errors are swallowed silently. */
@@ -339,6 +382,20 @@ export async function onRepoDiscovered(
   return listen<DiscoveredRepo>("timeline://repo-discovered", (e) => cb(e.payload));
 }
 
+export async function onRepoStatus(
+  cb: (payload: RepoStatusPayload) => void,
+): Promise<UnlistenFn> {
+  return listen<RepoStatusPayload>("timeline://repo-status", (e) => cb(e.payload));
+}
+
+export async function onRepoCatalogChanged(
+  cb: (payload: RepoCatalogChangedPayload) => void,
+): Promise<UnlistenFn> {
+  return listen<RepoCatalogChangedPayload>("timeline://repo-catalog-changed", (e) =>
+    cb(e.payload),
+  );
+}
+
 // ----- windowed-pull timeline (Phase 1-3) -----
 
 /** One keyset-paginated page of the all-repos timeline. `cursor` null reads
@@ -403,13 +460,41 @@ export async function getTimelineGeneration(): Promise<number> {
   return invoke<number>("get_timeline_generation");
 }
 
-/** The timeline's filter facets (author tallies + per-repo commit counts)
- * under `filters` — the AuthorsChip + RepoChip count sources. The windowed
- * timeline holds no full client-side commit array to tally itself. */
+/** Queue complete-history expansion for exactly this repository scope. */
+export async function requestHistoryIndex(
+  repoIds: number[] | null,
+  demandId: number,
+): Promise<HistoryIndexStatus> {
+  return invoke<HistoryIndexStatus>("request_history_index", {
+    repoIds,
+    demandId,
+  });
+}
+
+/** Release an exact complete-history UI lease. Late cleanups are ABA-safe. */
+export async function releaseHistoryIndex(demandId: number): Promise<boolean> {
+  return invoke<boolean>("release_history_index", { demandId });
+}
+
+/** Read progress without scheduling additional Git walks. */
+export async function getHistoryIndexStatus(
+  repoIds: number[] | null,
+): Promise<HistoryIndexStatus> {
+  return invoke<HistoryIndexStatus>("get_history_index_status", { repoIds });
+}
+
+/** Contextual filter facets. Each result applies the other active dimensions
+ * but excludes its own, so users can widen Repo/Author selections. */
 export async function listFilterFacets(
   filters: TimelineFilters,
+  includeAuthors = true,
+  includeRepos = true,
 ): Promise<FilterFacets> {
-  return invoke<FilterFacets>("list_filter_facets", { filters });
+  return invoke<FilterFacets>("list_filter_facets", {
+    filters,
+    includeAuthors,
+    includeRepos,
+  });
 }
 
 /** Lightweight scanner→UI signal: a new generation landed (a `git commit`

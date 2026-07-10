@@ -5,6 +5,73 @@ All notable changes to gitwink will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] — 2026-07-11
+
+A repository-lifecycle and history release. Repositories can now leave and
+return without losing user intent, filters describe the scope they actually
+query, and complete-history work stays truthful and responsive even when refs,
+drives, or views change underneath it.
+
+### Added
+
+- **Recoverable repository removal.** Right-click any repository and choose
+  "Remove from list" without touching its folder on disk. The exclusion is
+  durable, detaches watchers and cached history safely, and can be restored from
+  Settings. If a different repository later occupies the same path, gitwink
+  asks before replacing the saved identity instead of silently inheriting its
+  preferences. Contributed by @jhkhub (#3, #4). The shipping implementation was
+  comprehensively redesigned around a recoverable exclusion lifecycle.
+- **Context-aware Repo and Author filters.** Author choices now reflect the
+  selected repositories and time range; repository counts reflect the selected
+  authors and time range. A selected value that becomes unavailable remains
+  visible as an explicit zero-result filter instead of silently widening the
+  query.
+- **Complete history on demand.** All-time browsing and commit search can build
+  a persistent local history index for only the repositories the current view
+  needs. Published snapshots remain usable while a refresh runs, progress and
+  partial coverage are visible, and cancelled or changing scans never publish a
+  mixed result.
+
+### Changed
+
+- **The panel header now has two stable rows.** Window chrome, navigation,
+  search, pin and close controls stay separate from the contextual Repo, Branch,
+  Time and Author filters. Long names, narrow panels, high UI scale and transient
+  status badges no longer make unrelated controls jump or collide.
+- **Expensive history work is cancellable and coalesced.** Repeated requests for
+  the same file share one worker, replacement requests cancel stale work, and
+  complete-history indexing prioritizes the visible demand while keeping
+  previously published results readable.
+- **Repository state changes are transactional.** Discovery, exclusion,
+  restoration, watcher attachment, cache publication and missing-drive recovery
+  now share lifecycle fences. Windows path aliases, UNC spellings, linked
+  worktrees and rapid remove/restore cycles cannot resurrect stale rows or apply
+  preferences to the wrong physical repository.
+
+### Fixed
+
+- **Repository totals stay authoritative.** Re-adding an existing repository no
+  longer increments the count, and removing one no longer decrements it twice.
+  The catalog itself is now the source of truth rather than event-by-event count
+  arithmetic. Fixes #2.
+- **Rolling time windows are honest.** Reaching the normal 1/3/7/30-day boundary
+  no longer raises a false "Git objects couldn't be read" warning. Rows and
+  author counts expire at the exact boundary even while the panel stays open,
+  and incomplete or shallow snapshots are retried after the repository recovers.
+- **One bad ref no longer hides healthy history.** Readable commits remain
+  visible with an explicit partial-coverage warning, destructive cache cleanup
+  stays disabled, valid tags that point to non-commit objects are not called
+  corruption, and an unrelated bad tag does not contaminate an explicitly
+  selected branch.
+- **Filter and search scope stays exact.** Opening Authors after narrowing Repos
+  no longer shows authors from every repository; facet responses are tied to the
+  same immutable cache generation as the visible timeline; and stale async
+  searches, branch lists or counts cannot overwrite a newer view.
+- **Overlay and keyboard interactions are deterministic.** Dropdowns and context
+  menus remain inside the usable panel area, only the topmost layer consumes
+  Esc, IME composition cannot trigger underlying shortcuts, and virtualized chip
+  lists keep focus and accessible state aligned with what is visible.
+
 ## [0.10.1] — 2026-07-04
 
 A hardening release. A full multi-agent QA sweep of v0.10.0 surfaced 29 verified

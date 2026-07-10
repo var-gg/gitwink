@@ -121,9 +121,7 @@ where
         .max_depth(Some(MAX_DEPTH))
         .standard_filters(false)
         .hidden(false)
-        .filter_entry(|entry| {
-            !is_hard_excluded(&entry.file_name().to_string_lossy())
-        })
+        .filter_entry(|entry| !is_hard_excluded(&entry.file_name().to_string_lossy()))
         .build_parallel()
         .run(|| {
             Box::new(|result| {
@@ -131,10 +129,7 @@ where
                     Ok(e) => e,
                     Err(_) => return WalkState::Continue,
                 };
-                let is_dir = entry
-                    .file_type()
-                    .map(|t| t.is_dir())
-                    .unwrap_or(false);
+                let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
                 if !is_dir {
                     return WalkState::Continue;
                 }

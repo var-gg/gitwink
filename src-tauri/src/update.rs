@@ -184,8 +184,7 @@ pub fn refresh_indicator(app: &AppHandle) {
         let state = app.state::<UpdateState>();
         let slot = state.available.lock().unwrap();
         slot.as_ref().and_then(|u| {
-            let skipped =
-                s.update_skipped_version.as_deref() == Some(u.version.as_str());
+            let skipped = s.update_skipped_version.as_deref() == Some(u.version.as_str());
             let snoozed = s.update_snooze_until.is_some_and(|t| now() < t);
             (!skipped && !snoozed).then(|| u.version.clone())
         })

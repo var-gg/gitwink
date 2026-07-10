@@ -10,6 +10,28 @@ use std::time::UNIX_EPOCH;
 use anyhow::{Context, Result};
 use git2::{BranchType, Oid, Repository, Sort};
 use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
+
+// Timeline rows cross the Rust -> JSON -> JS boundary in batches. Commit
+// messages are normally tiny, but hostile/imported repositories can contain
+// megabyte-scale payloads; cap each row so a 1,000-row file-history response
+// cannot balloon into tens or hundreds of MiB.
+const MAX_DIRECT_MESSAGE_BYTES: usize = 8 * 1024;
+const MAX_DIRECT_SUMMARY_BYTES: usize = 1024;
+
+fn bounded_text(value: &str, max_bytes: usize, marker: &str) -> String {
+    if value.len() <= max_bytes {
+        return value.to_string();
+    }
+    let budget = max_bytes.saturating_sub(marker.len());
+    let mut end = budget.min(value.len());
+    while end > 0 && !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    let mut out = value[..end].to_string();
+    out.push_str(marker);
+    out
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -827,12 +849,6 @@ pub fn current_upstream_status(
 /// fine — the timeline is for recent work, and label is a hint, not truth.
 const BRANCH_LABEL_SCAN_CAP: usize = 5_000;
 
-/// Max number of `refs/remotes/origin/*` tips we'll push into the timeline
-/// revwalk per repo. Tips beyond this (sorted by tip-commit recency) are
-/// dropped, which avoids unbounded revwalk roots on repos with hundreds of
-/// stale remote branches. 64 covers every active project we've seen.
-const REMOTE_TIP_ROOT_CAP: usize = 64;
-
 /// How many consecutive sub-cutoff commits a TIME-sorted walk tolerates
 /// before it stops. Committer dates are NOT monotone along ancestry
 /// (`rebase --committer-date-is-author-date`, `git am` imports, skewed CI
@@ -845,7 +861,7 @@ const REMOTE_TIP_ROOT_CAP: usize = 64;
 /// handling keeps walking with a slop for exactly this reason.
 const CUTOFF_SLOP: usize = 32;
 
-/// A `refs/remotes/origin/<short>` ref pinned to a single commit. We don't
+/// A `refs/remotes/<remote>/<short>` ref pinned to a single commit. We don't
 /// walk this — it's just a tip OID we may use as a revwalk root and as a
 /// per-commit badge.
 #[derive(Clone)]
@@ -865,37 +881,35 @@ struct RemoteBadge {
     extra_count: usize,
 }
 
-/// Read `refs/remotes/origin/*` from disk (NO network — these refs are
-/// whatever the user/IDE/CI last wrote during `git fetch`). Excludes the
-/// symbolic `origin/HEAD`. Filters by `since_unix_seconds` so abandoned
-/// remote branches don't drag the timeline back. Returns at most `cap`
-/// tips, sorted by tip-commit recency.
-fn collect_origin_remote_tips(
-    repo: &Repository,
-    since_unix_seconds: i64,
-    cap: usize,
-) -> Vec<RemoteTip> {
+/// Read every remote-tracking ref from disk (NO network). The BranchChip calls
+/// this scope “All branches”, so dropping non-origin remotes, old tips or a
+/// 65th ref is a contract violation; the row cap bounds output, while revwalk
+/// root insertion itself is cheap and deduplicated by libgit2.
+fn collect_remote_tips_with_status(repo: &Repository) -> (Vec<RemoteTip>, bool) {
     let mut out: Vec<RemoteTip> = Vec::new();
-    let Ok(iter) = repo.references_glob("refs/remotes/origin/*") else {
-        return out;
+    let mut had_errors = false;
+    let Ok(iter) = repo.references_glob("refs/remotes/*") else {
+        return (out, true);
     };
-    for r in iter.flatten() {
+    for item in iter {
+        let Ok(r) = item else {
+            had_errors = true;
+            continue;
+        };
         let Some(label) = r.shorthand().map(str::to_string) else {
             continue;
         };
-        // Symbolic ref like `origin/HEAD` resolves to another origin/<name>
+        // Symbolic ref like `origin/HEAD` resolves to another remote ref
         // — keep the named target only, drop the symbolic alias.
-        if label == "origin/HEAD" || label.ends_with("/HEAD") {
+        if label.ends_with("/HEAD") {
             continue;
         }
         let Some(oid) = r.target() else { continue };
         let Ok(commit) = repo.find_commit(oid) else {
+            had_errors = true;
             continue;
         };
         let ts = commit.time().seconds();
-        if since_unix_seconds > 0 && ts < since_unix_seconds {
-            continue;
-        }
         out.push(RemoteTip {
             label,
             oid,
@@ -907,8 +921,7 @@ fn collect_origin_remote_tips(
             .cmp(&a.last_activity)
             .then_with(|| a.label.cmp(&b.label))
     });
-    out.truncate(cap);
-    out
+    (out, had_errors)
 }
 
 /// Group remote tips by the commit OID they point at, so each commit gets
@@ -944,31 +957,35 @@ fn build_remote_badge_map(tips: &[RemoteTip]) -> HashMap<Oid, RemoteBadge> {
 /// bound, ONE unreachable target (the normal state right after an auto-fetch
 /// puts remote-only commits in the list) degenerated every branch's walk to
 /// the full 5,000-pop cap on every panel summon. 0 disables the floor.
-fn limited_reachable_membership(
+fn limited_reachable_membership_impl(
     repo: &Repository,
     tip: Oid,
     targets: &HashSet<Oid>,
     scan_cap: usize,
     floor_ts: i64,
-) -> HashSet<Oid> {
+    cancellation: Option<&CancellationToken>,
+) -> Option<HashSet<Oid>> {
     let mut found: HashSet<Oid> = HashSet::new();
     if targets.is_empty() {
-        return found;
+        return Some(found);
     }
     let Ok(mut rw) = repo.revwalk() else {
-        return found;
+        return Some(found);
     };
     // libgit2: set_sorting resets the walker, so it MUST run before push.
     // Doing it after push silently empties the walker.
     if rw.set_sorting(Sort::TIME).is_err() {
-        return found;
+        return Some(found);
     }
     if rw.push(tip).is_err() {
-        return found;
+        return Some(found);
     }
 
     let mut slop = 0usize;
     for (i, oid_res) in rw.enumerate() {
+        if cancellation.is_some_and(CancellationToken::is_cancelled) {
+            return None;
+        }
         if i >= scan_cap || found.len() == targets.len() {
             break;
         }
@@ -993,7 +1010,7 @@ fn limited_reachable_membership(
             }
         }
     }
-    found
+    Some(found)
 }
 
 /// Compute branch labels for a small set of target commits.
@@ -1016,17 +1033,46 @@ fn compute_branch_labels(
     // limited_reachable_membership).
     floor_ts: i64,
 ) -> HashMap<Oid, Option<String>> {
+    compute_branch_labels_impl(repo, head_branch_name, targets, floor_ts, None).unwrap_or_default()
+}
+
+fn compute_branch_labels_cancellable(
+    repo: &Repository,
+    head_branch_name: Option<&str>,
+    targets: &HashSet<Oid>,
+    floor_ts: i64,
+    cancellation: &CancellationToken,
+) -> Option<HashMap<Oid, Option<String>>> {
+    compute_branch_labels_impl(
+        repo,
+        head_branch_name,
+        targets,
+        floor_ts,
+        Some(cancellation),
+    )
+}
+
+fn compute_branch_labels_impl(
+    repo: &Repository,
+    head_branch_name: Option<&str>,
+    targets: &HashSet<Oid>,
+    floor_ts: i64,
+    cancellation: Option<&CancellationToken>,
+) -> Option<HashMap<Oid, Option<String>>> {
     let mut labels: HashMap<Oid, Option<String>> = HashMap::new();
     if targets.is_empty() {
-        return labels;
+        return Some(labels);
     }
 
     // Detached HEAD or no HEAD → suppress all labels (existing behaviour).
     let Some(head_name) = head_branch_name else {
         for &oid in targets {
+            if cancellation.is_some_and(CancellationToken::is_cancelled) {
+                return None;
+            }
             labels.insert(oid, None);
         }
-        return labels;
+        return Some(labels);
     };
 
     if let Some(tip) = repo
@@ -1035,8 +1081,14 @@ fn compute_branch_labels(
         .and_then(|h| h.peel_to_commit().ok())
         .map(|c| c.id())
     {
-        let hits =
-            limited_reachable_membership(repo, tip, targets, BRANCH_LABEL_SCAN_CAP, floor_ts);
+        let hits = limited_reachable_membership_impl(
+            repo,
+            tip,
+            targets,
+            BRANCH_LABEL_SCAN_CAP,
+            floor_ts,
+            cancellation,
+        )?;
         for oid in hits {
             labels.insert(oid, None);
         }
@@ -1049,11 +1101,14 @@ fn compute_branch_labels(
         .collect();
 
     if remaining.is_empty() {
-        return labels;
+        return Some(labels);
     }
 
     if let Ok(refs) = repo.references_glob("refs/heads/*") {
         for r in refs.flatten() {
+            if cancellation.is_some_and(CancellationToken::is_cancelled) {
+                return None;
+            }
             if remaining.is_empty() {
                 break;
             }
@@ -1066,13 +1121,14 @@ fn compute_branch_labels(
             let Some(tip) = r.target() else {
                 continue;
             };
-            let hits = limited_reachable_membership(
+            let hits = limited_reachable_membership_impl(
                 repo,
                 tip,
                 &remaining,
                 BRANCH_LABEL_SCAN_CAP,
                 floor_ts,
-            );
+                cancellation,
+            )?;
             for oid in hits {
                 labels.insert(oid, Some(name.clone()));
                 remaining.remove(&oid);
@@ -1080,19 +1136,35 @@ fn compute_branch_labels(
         }
     }
 
-    labels
+    Some(labels)
 }
 
-fn collect_tagged_oids(repo: &Repository) -> HashSet<Oid> {
+fn collect_tagged_oids_with_status(repo: &Repository) -> (HashSet<Oid>, bool) {
     let mut set = HashSet::new();
-    if let Ok(refs) = repo.references_glob("refs/tags/*") {
-        for r in refs.flatten() {
-            if let Ok(obj) = r.peel(git2::ObjectType::Commit) {
-                set.insert(obj.id());
+    let mut had_errors = false;
+    match repo.references_glob("refs/tags/*") {
+        Ok(refs) => {
+            for item in refs {
+                match item {
+                    Ok(reference) => match reference.peel(git2::ObjectType::Commit) {
+                        Ok(object) => {
+                            set.insert(object.id());
+                        }
+                        // Tags may validly point at blobs or trees. That is
+                        // not a damaged history; only an unreadable target is
+                        // an error. `Any` proves the non-commit object exists.
+                        Err(_) if reference.peel(git2::ObjectType::Any).is_err() => {
+                            had_errors = true
+                        }
+                        Err(_) => {}
+                    },
+                    Err(_) => had_errors = true,
+                }
             }
         }
+        Err(_) => had_errors = true,
     }
-    set
+    (set, had_errors)
 }
 
 /// Cheap change probe for the single-repo view: the (ref, tip) pairs the
@@ -1100,12 +1172,9 @@ fn collect_tagged_oids(repo: &Repository) -> HashSet<Oid> {
 /// If this string didn't move since the last pull, the walk would return
 /// the same rows — the frontend uses it to skip re-shipping up to 2,000
 /// full CommitSummary structs on a plain panel re-summon. Errs on the side
-/// of extra fetches (it includes ALL origin tips, not just in-window ones),
+/// of extra fetches (it includes every remote-tracking tip),
 /// never on staleness.
-pub fn repo_refs_fingerprint(
-    repo_path: &Path,
-    branches: Option<&[String]>,
-) -> Result<String> {
+pub fn repo_refs_fingerprint(repo_path: &Path, branches: Option<&[String]>) -> Result<String> {
     let repo = Repository::open(repo_path)
         .with_context(|| format!("open repo {}", repo_path.display()))?;
     let mut parts: Vec<String> = Vec::new();
@@ -1148,7 +1217,7 @@ pub fn repo_refs_fingerprint(
             }
         }
         None => {
-            for glob in ["refs/heads/*", "refs/remotes/origin/*"] {
+            for glob in ["refs/heads/*", "refs/remotes/*"] {
                 if let Ok(refs) = repo.references_glob(glob) {
                     for r in refs.flatten() {
                         if let (Some(n), Some(oid)) = (r.name(), r.target()) {
@@ -1163,15 +1232,21 @@ pub fn repo_refs_fingerprint(
     Ok(parts.join("|"))
 }
 
-/// Walk the given branches (None = all local heads, like recent_commits) in
-/// a single repository, deduping by SHA, returning newest-first commits with
-/// parent SHAs populated.
+#[derive(Debug)]
+pub struct RepoCommitsScan {
+    pub rows: Vec<CommitSummary>,
+    pub incomplete: bool,
+}
+
+/// Walk the given branches (None = all repository refs) in a single
+/// repository, deduping by SHA and reporting actual read uncertainty. Reaching
+/// the caller's requested time boundary is normal coverage, not incompleteness.
 pub fn repo_commits(
     repo_path: &Path,
     branches: Option<&[String]>,
     max_count: usize,
     since_unix_seconds: i64,
-) -> Result<Vec<CommitSummary>> {
+) -> Result<RepoCommitsScan> {
     let repo = Repository::open(repo_path)
         .with_context(|| format!("open repo {}", repo_path.display()))?;
 
@@ -1180,6 +1255,17 @@ pub fn repo_commits(
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
+
+    // Some([]) is an explicit "no branches" selection. Return before tag,
+    // HEAD or revwalk work; an empty filter must be both exact and free.
+    let explicit_mode = branches.is_some();
+    let explicit_names: &[String] = branches.unwrap_or(&[]);
+    if explicit_mode && explicit_names.is_empty() {
+        return Ok(RepoCommitsScan {
+            rows: Vec::new(),
+            incomplete: false,
+        });
+    }
 
     let detached = repo.head_detached().unwrap_or(true);
     let head_branch_name: Option<String> = if detached {
@@ -1190,7 +1276,7 @@ pub fn repo_commits(
             .and_then(|h| h.shorthand().map(|s| s.to_string()))
     };
 
-    let tagged_oids = collect_tagged_oids(&repo);
+    let (tagged_oids, tag_errors) = collect_tagged_oids_with_status(&repo);
 
     let mut revwalk = repo.revwalk().context("init revwalk")?;
     // libgit2 contract: set_sorting resets the walker, so it MUST run before
@@ -1202,21 +1288,16 @@ pub fn repo_commits(
     let mut pushed = 0usize;
 
     // Remote tips contribute both as revwalk roots (so remote-only commits
-    // appear) AND as the source of per-row "origin/X" badges. In explicit
+    // appear) AND as the source of per-row "remote/X" badges. In explicit
     // mode (user picked specific refs), only the remote refs they picked
-    // count. In all-branches mode, auto-discover the recent origin/* tips
-    // with the same window filter — this is the GitLens-killer feature.
+    // count. In all-branches mode, auto-discover every remote-tracking tip.
     let mut remote_tips: Vec<RemoteTip> = Vec::new();
 
-    // explicit_mode = the caller passed a list at all (Some, including the
-    // empty slice). An empty explicit list is "the user deselected every
-    // branch" and must yield zero rows, NOT fall back to all-mode.
-    let explicit_mode = branches.is_some();
-    let explicit_names: &[String] = branches.unwrap_or(&[]);
-
-    if explicit_mode && explicit_names.is_empty() {
-        return Ok(Vec::new());
-    }
+    // In explicit mode tags only decorate returned commits. An unrelated bad
+    // tag cannot make the selected branch's commit history incomplete. In
+    // all-ref mode tags are roots, so an unreadable tag may hide tag-only
+    // commits and must be reported.
+    let mut had_errors = !explicit_mode && tag_errors;
 
     if explicit_mode {
         // BranchChip selection — names may be either full ref paths
@@ -1246,29 +1327,52 @@ pub fn repo_commits(
                                 oid,
                                 last_activity: commit.time().seconds(),
                             });
+                        } else {
+                            had_errors = true;
                         }
                     }
                 }
+            } else {
+                had_errors = true;
             }
         }
     } else {
-        // All-branches mode: every local head + recent origin/* tips.
-        if let Ok(refs) = repo.references_glob("refs/heads/*") {
-            for r in refs.flatten() {
-                if let Some(oid) = r.target() {
-                    if revwalk.push(oid).is_ok() {
-                        pushed += 1;
+        // All-branches mode: every local head + every remote-tracking tip.
+        match repo.references_glob("refs/heads/*") {
+            Ok(refs) => {
+                for item in refs {
+                    match item {
+                        Ok(reference) => {
+                            if let Some(oid) = reference.target() {
+                                if revwalk.push(oid).is_ok() {
+                                    pushed += 1;
+                                } else {
+                                    had_errors = true;
+                                }
+                            }
+                        }
+                        Err(_) => had_errors = true,
                     }
                 }
             }
+            Err(_) => had_errors = true,
         }
-        remote_tips = collect_origin_remote_tips(
-            &repo,
-            since_unix_seconds,
-            REMOTE_TIP_ROOT_CAP,
-        );
+        let (tips, remote_errors) = collect_remote_tips_with_status(&repo);
+        remote_tips = tips;
+        had_errors |= remote_errors;
         for tip in &remote_tips {
-            let _ = revwalk.push(tip.oid);
+            if revwalk.push(tip.oid).is_ok() {
+                pushed += 1;
+            } else {
+                had_errors = true;
+            }
+        }
+        for oid in &tagged_oids {
+            if revwalk.push(*oid).is_ok() {
+                pushed += 1;
+            } else {
+                had_errors = true;
+            }
         }
         // Always include HEAD in all-branches mode — detached-HEAD commits
         // are reachable from no local head and no remote tip (see the same
@@ -1278,6 +1382,8 @@ pub fn repo_commits(
             if let Ok(head_commit) = head.peel_to_commit() {
                 if revwalk.push(head_commit.id()).is_ok() {
                     pushed += 1;
+                } else {
+                    had_errors = true;
                 }
             }
         }
@@ -1285,11 +1391,14 @@ pub fn repo_commits(
 
     let remote_badges = build_remote_badge_map(&remote_tips);
 
-    if pushed == 0 && remote_tips.is_empty() {
+    if pushed == 0 {
         // Explicit mode with all refs stale/invalid — and the all-branches
         // case where nothing at all was walkable (unborn HEAD, no refs):
         // "nothing matches" is the honest answer.
-        return Ok(Vec::new());
+        return Ok(RepoCommitsScan {
+            rows: Vec::new(),
+            incomplete: had_errors,
+        });
     }
 
     // Pass 1: collect just the rows we'll return. Cheap — bounded by
@@ -1304,11 +1413,17 @@ pub fn repo_commits(
         }
         let oid = match oid {
             Ok(o) => o,
-            Err(_) => continue,
+            Err(_) => {
+                had_errors = true;
+                continue;
+            }
         };
         let commit = match repo.find_commit(oid) {
             Ok(c) => c,
-            Err(_) => continue,
+            Err(_) => {
+                had_errors = true;
+                continue;
+            }
         };
         if commit.time().seconds() < since_unix_seconds {
             slop += 1;
@@ -1325,18 +1440,29 @@ pub fn repo_commits(
     // return — bounded per-branch, short-circuits when all targets resolve,
     // and floored at the oldest returned commit's time.
     let targets: HashSet<Oid> = raw.iter().map(|(oid, _)| *oid).collect();
-    let label_floor = raw.iter().map(|(_, c)| c.time().seconds()).min().unwrap_or(0);
-    let labels =
-        compute_branch_labels(&repo, head_branch_name.as_deref(), &targets, label_floor);
+    let label_floor = raw
+        .iter()
+        .map(|(_, c)| c.time().seconds())
+        .min()
+        .unwrap_or(0);
+    let labels = compute_branch_labels(&repo, head_branch_name.as_deref(), &targets, label_floor);
 
     let mut out: Vec<CommitSummary> = Vec::with_capacity(raw.len());
     for (oid, commit) in raw {
         let hash = oid.to_string();
         let short_hash: String = hash.chars().take(7).collect();
-        let summary = commit.summary().unwrap_or("").to_string();
+        let summary = bounded_text(
+            commit.summary().unwrap_or(""),
+            MAX_DIRECT_SUMMARY_BYTES,
+            "…",
+        );
         let author = commit.author();
         let parents: Vec<String> = commit.parent_ids().map(|p| p.to_string()).collect();
-        let message = commit.message().unwrap_or("").to_string();
+        let message = bounded_text(
+            commit.message().unwrap_or(""),
+            MAX_DIRECT_MESSAGE_BYTES,
+            "\n… [message truncated]",
+        );
         let ts = commit.time().seconds();
         let branch_label = labels.get(&oid).cloned().flatten();
         let (remote_tip_label, remote_tip_extra_count) = match remote_badges.get(&oid) {
@@ -1363,7 +1489,10 @@ pub fn repo_commits(
         });
     }
 
-    Ok(out)
+    Ok(RepoCommitsScan {
+        rows: out,
+        incomplete: had_errors,
+    })
 }
 
 /// Caps for `file_history`: stop at this many MATCHES (a file rarely changes
@@ -1373,18 +1502,126 @@ pub fn repo_commits(
 const FILE_HISTORY_MAX_MATCHES: usize = 1000;
 const FILE_HISTORY_SCAN_CAP: usize = 50_000;
 
+/// Why a file-history walk stopped before exhausting every reachable commit.
+/// The UI must never turn a bounded result into the false claim that no older
+/// history exists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileHistoryTruncation {
+    MatchLimit,
+    ScanLimit,
+    Incomplete,
+    ShallowBoundary,
+}
+
+/// File-history rows plus the coverage metadata needed to describe them
+/// honestly. `truncated == None` is the only state that means the walk
+/// exhausted all local heads, remote-tracking refs, tags and HEAD.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileHistoryResult {
+    pub rows: Vec<CommitSummary>,
+    pub commits_scanned: usize,
+    pub truncated: Option<FileHistoryTruncation>,
+    pub remote_refs_included: usize,
+    pub follows_renames: bool,
+    /// Backend-only retry signal. A root change is not merely generic
+    /// incompleteness: the command layer can immediately retry once and avoid
+    /// shipping a mixed snapshot.
+    #[serde(skip)]
+    pub snapshot_changed: bool,
+}
+
 /// Commits that changed `file_path` (repo-relative, '/'-separated), newest
-/// first. A live, capped revwalk over all local heads + HEAD: for each commit
+/// first. A live, capped revwalk over local heads, remote-tracking refs, tags
+/// and HEAD: for each commit
 /// we compare the blob id at that path against the FIRST parent's — added,
 /// modified, and deleted all count; the root commit counts if the file is
 /// present. Bounds BOTH the matches returned and the commits examined, so a
 /// rarely-touched file in a huge history still returns quickly. No rename
 /// following yet — a path renamed in the past shows only its history under the
-/// name asked for (v1). `whole_history` flags whether the scan cap was hit
-/// (the caller can tell the user "scanned the most recent N commits").
-pub fn file_history(repo_path: &Path, file_path: &str) -> Result<Vec<CommitSummary>> {
+/// name asked for (v1). Coverage metadata makes both caps explicit.
+#[cfg(test)]
+pub fn file_history(repo_path: &Path, file_path: &str) -> Result<FileHistoryResult> {
+    file_history_cancellable(repo_path, file_path, &CancellationToken::new())?
+        .context("file history unexpectedly cancelled")
+}
+
+fn file_history_refs_fingerprint_in(repo: &Repository) -> Result<String> {
+    let mut parts = Vec::new();
+    for glob in ["refs/heads/*", "refs/remotes/*"] {
+        let Ok(refs) = repo.references_glob(glob) else {
+            parts.push(format!("{glob}:<unavailable>"));
+            continue;
+        };
+        for item in refs {
+            let Ok(reference) = item else {
+                // The history walk itself skips unreadable individual refs.
+                // Mirror that behavior instead of turning a coalescing hint
+                // into a new user-visible failure mode.
+                parts.push(format!("{glob}:<unreadable>"));
+                continue;
+            };
+            if let (Some(name), Some(oid)) = (reference.name(), reference.target()) {
+                parts.push(format!("{name}:{oid}"));
+            }
+        }
+    }
+    if let Ok(tags) = repo.references_glob("refs/tags/*") {
+        for item in tags {
+            let Ok(reference) = item else {
+                parts.push("refs/tags/*:<unreadable>".to_string());
+                continue;
+            };
+            let Some(name) = reference.name() else {
+                continue;
+            };
+            // Include both the tag object and peeled commit. Moving or replacing
+            // an annotated tag must invalidate even when one side happens to stay.
+            let direct = reference
+                .target()
+                .map(|oid| oid.to_string())
+                .unwrap_or_default();
+            let peeled = reference
+                .peel(git2::ObjectType::Commit)
+                .ok()
+                .map(|object| object.id().to_string())
+                .unwrap_or_default();
+            parts.push(format!("{name}:{direct}:{peeled}"));
+        }
+    } else {
+        parts.push("refs/tags/*:<unavailable>".to_string());
+    }
+    if let Ok(head) = repo.head() {
+        let name = head.name().unwrap_or("HEAD");
+        if let Ok(commit) = head.peel_to_commit() {
+            parts.push(format!("HEAD@{name}:{}", commit.id()));
+        }
+    }
+    parts.sort_unstable();
+    parts.dedup();
+    Ok(parts.join("|"))
+}
+
+/// Cancellation-aware implementation used by the coalescing command layer.
+/// The token is checked at every revwalk and branch-label iteration, so a
+/// superseded 50k-commit request does not burn through the remainder of its
+/// scan. `Ok(None)` is a normal cancellation outcome.
+pub fn file_history_cancellable(
+    repo_path: &Path,
+    file_path: &str,
+    cancellation: &CancellationToken,
+) -> Result<Option<FileHistoryResult>> {
+    if cancellation.is_cancelled() {
+        return Ok(None);
+    }
     let repo = Repository::open(repo_path)
         .with_context(|| format!("open repo {}", repo_path.display()))?;
+    let roots_before = file_history_refs_fingerprint_in(&repo).ok();
+
+    if cancellation.is_cancelled() {
+        return Ok(None);
+    }
 
     let repo_path_str = repo_path.to_string_lossy().into_owned();
     let repo_name = repo_path
@@ -1400,83 +1637,232 @@ pub fn file_history(repo_path: &Path, file_path: &str) -> Result<Vec<CommitSumma
             .ok()
             .and_then(|h| h.shorthand().map(|s| s.to_string()))
     };
-    let tagged_oids = collect_tagged_oids(&repo);
+    let (tagged_oids, mut root_errors) = collect_tagged_oids_with_status(&repo);
 
     let mut revwalk = repo.revwalk().context("init revwalk")?;
     revwalk
         .set_sorting(Sort::TIME)
         .context("set revwalk sort")?;
     let mut pushed = 0usize;
-    if let Ok(refs) = repo.references_glob("refs/heads/*") {
-        for r in refs.flatten() {
-            if let Some(oid) = r.target() {
-                if revwalk.push(oid).is_ok() {
-                    pushed += 1;
+    let mut remote_refs_included = 0usize;
+    match repo.references_glob("refs/heads/*") {
+        Ok(refs) => {
+            for item in refs {
+                if cancellation.is_cancelled() {
+                    return Ok(None);
+                }
+                match item {
+                    Ok(reference) => {
+                        if let Some(oid) = reference.target() {
+                            if revwalk.push(oid).is_ok() {
+                                pushed += 1;
+                            } else {
+                                root_errors = true;
+                            }
+                        }
+                    }
+                    Err(_) => root_errors = true,
                 }
             }
+        }
+        Err(_) => root_errors = true,
+    }
+    // A remote-only branch is still part of the repository history the user
+    // can see in gitwink. These are local ref reads — no network access.
+    match repo.references_glob("refs/remotes/*") {
+        Ok(refs) => {
+            for item in refs {
+                if cancellation.is_cancelled() {
+                    return Ok(None);
+                }
+                match item {
+                    Ok(reference) => {
+                        // Symbolic remote/HEAD-style refs have no direct target.
+                        if let Some(oid) = reference.target() {
+                            if revwalk.push(oid).is_ok() {
+                                pushed += 1;
+                                remote_refs_included += 1;
+                            } else {
+                                root_errors = true;
+                            }
+                        }
+                    }
+                    Err(_) => root_errors = true,
+                }
+            }
+        }
+        Err(_) => root_errors = true,
+    }
+    // Tag-only history must not disappear merely because its branch was
+    // deleted. `tagged_oids` was already collected for row decoration.
+    for oid in &tagged_oids {
+        if cancellation.is_cancelled() {
+            return Ok(None);
+        }
+        if revwalk.push(*oid).is_ok() {
+            pushed += 1;
+        } else {
+            root_errors = true;
         }
     }
     if let Ok(head) = repo.head() {
         if let Ok(c) = head.peel_to_commit() {
             if revwalk.push(c.id()).is_ok() {
                 pushed += 1;
+            } else {
+                root_errors = true;
             }
         }
     }
     if pushed == 0 {
-        return Ok(Vec::new());
+        let snapshot_changed = roots_before.is_none()
+            || file_history_refs_fingerprint_in(&repo).ok().as_ref() != roots_before.as_ref();
+        return Ok(Some(FileHistoryResult {
+            rows: Vec::new(),
+            commits_scanned: 0,
+            truncated: (root_errors || snapshot_changed)
+                .then_some(FileHistoryTruncation::Incomplete),
+            remote_refs_included,
+            follows_renames: false,
+            snapshot_changed,
+        }));
     }
 
     let path = Path::new(file_path);
-    // Blob id at `path` in a commit's tree, or None when the path is absent.
-    let entry_oid = |commit: &git2::Commit<'_>| -> Option<Oid> {
-        commit
-            .tree()
-            .ok()
-            .and_then(|t| t.get_path(path).ok().map(|e| e.id()))
+    // Blob id + mode at `path`, or None when absent. Mode is part of file
+    // history: chmod/type-only commits retain the same OID but are real changes.
+    let entry_identity = |commit: &git2::Commit<'_>,
+                          cache: &mut HashMap<Oid, Option<(Oid, i32)>>|
+     -> Result<Option<(Oid, i32)>> {
+        if let Some(cached) = cache.get(&commit.id()).copied() {
+            return Ok(cached);
+        }
+        let tree = commit.tree().context("read commit tree")?;
+        let value = match tree.get_path(path) {
+            Ok(entry) => Ok(Some((entry.id(), entry.filemode()))),
+            Err(error) if error.code() == git2::ErrorCode::NotFound => Ok(None),
+            Err(error) => Err(anyhow::Error::from(error)),
+        }?;
+        cache.insert(commit.id(), value);
+        Ok(value)
     };
 
     let mut raw: Vec<(Oid, git2::Commit<'_>)> = Vec::new();
     let mut examined = 0usize;
+    let mut truncated = None;
+    let mut had_errors = root_errors;
+    let mut entry_cache: HashMap<Oid, Option<(Oid, i32)>> = HashMap::new();
     for oid in revwalk {
-        if raw.len() >= FILE_HISTORY_MAX_MATCHES || examined >= FILE_HISTORY_SCAN_CAP {
+        if cancellation.is_cancelled() {
+            return Ok(None);
+        }
+        if examined >= FILE_HISTORY_SCAN_CAP {
+            truncated = Some(FileHistoryTruncation::ScanLimit);
             break;
         }
+        examined += 1;
         let oid = match oid {
             Ok(o) => o,
-            Err(_) => continue,
+            Err(_) => {
+                had_errors = true;
+                continue;
+            }
         };
         let commit = match repo.find_commit(oid) {
             Ok(c) => c,
-            Err(_) => continue,
+            Err(_) => {
+                had_errors = true;
+                continue;
+            }
         };
-        examined += 1;
-        let cur = entry_oid(&commit);
+        if cancellation.is_cancelled() {
+            return Ok(None);
+        }
+        let cur = match entry_identity(&commit, &mut entry_cache) {
+            Ok(value) => value,
+            Err(_) => {
+                had_errors = true;
+                continue;
+            }
+        };
         // Compare to the FIRST parent only (linear-history / --first-parent
         // semantics): a merge shows up iff it changed the path vs its first
         // parent. A root commit (no parent) counts iff the file exists in it.
-        let parent_entry = match commit.parent(0) {
-            Ok(p) => entry_oid(&p),
-            Err(_) => None,
+        let parent_entry = if commit.parent_count() == 0 {
+            None
+        } else {
+            let parent = match commit.parent(0) {
+                Ok(parent) => parent,
+                Err(_) => {
+                    had_errors = true;
+                    continue;
+                }
+            };
+            match entry_identity(&parent, &mut entry_cache) {
+                Ok(value) => value,
+                Err(_) => {
+                    had_errors = true;
+                    continue;
+                }
+            }
         };
         if cur != parent_entry {
+            // Prove an extra FILE match, rather than marking MatchLimit merely
+            // because some unrelated older commit exists.
+            if raw.len() >= FILE_HISTORY_MAX_MATCHES {
+                truncated = Some(FileHistoryTruncation::MatchLimit);
+                break;
+            }
             raw.push((oid, commit));
         }
     }
-
+    if cancellation.is_cancelled() {
+        return Ok(None);
+    }
+    if truncated.is_none() {
+        truncated = if had_errors {
+            Some(FileHistoryTruncation::Incomplete)
+        } else if repo.is_shallow() {
+            Some(FileHistoryTruncation::ShallowBoundary)
+        } else {
+            None
+        };
+    }
     let targets: HashSet<Oid> = raw.iter().map(|(oid, _)| *oid).collect();
-    let label_floor = raw.iter().map(|(_, c)| c.time().seconds()).min().unwrap_or(0);
-    let labels =
-        compute_branch_labels(&repo, head_branch_name.as_deref(), &targets, label_floor);
+    let label_floor = raw
+        .iter()
+        .map(|(_, c)| c.time().seconds())
+        .min()
+        .unwrap_or(0);
+    let Some(labels) = compute_branch_labels_cancellable(
+        &repo,
+        head_branch_name.as_deref(),
+        &targets,
+        label_floor,
+        cancellation,
+    ) else {
+        return Ok(None);
+    };
 
     let mut out: Vec<CommitSummary> = Vec::with_capacity(raw.len());
     for (oid, commit) in raw {
+        if cancellation.is_cancelled() {
+            return Ok(None);
+        }
         let hash = oid.to_string();
         let short_hash: String = hash.chars().take(7).collect();
-        let summary = commit.summary().unwrap_or("").to_string();
+        let summary = bounded_text(
+            commit.summary().unwrap_or(""),
+            MAX_DIRECT_SUMMARY_BYTES,
+            "…",
+        );
         let author = commit.author();
         let parents: Vec<String> = commit.parent_ids().map(|p| p.to_string()).collect();
-        let message = commit.message().unwrap_or("").to_string();
+        let message = bounded_text(
+            commit.message().unwrap_or(""),
+            MAX_DIRECT_MESSAGE_BYTES,
+            "\n… [message truncated]",
+        );
         let ts = commit.time().seconds();
         let branch_label = labels.get(&oid).cloned().flatten();
         out.push(CommitSummary {
@@ -1499,17 +1885,54 @@ pub fn file_history(repo_path: &Path, file_path: &str) -> Result<Vec<CommitSumma
             remote_tip_extra_count: 0,
         });
     }
-    Ok(out)
+    // The final root proof comes after branch labels and row materialization,
+    // not merely after revwalk EOF. This closes the window where refs moved
+    // during the expensive decoration phase.
+    let snapshot_changed = roots_before.is_none()
+        || file_history_refs_fingerprint_in(&repo).ok().as_ref() != roots_before.as_ref();
+    if snapshot_changed {
+        truncated = Some(FileHistoryTruncation::Incomplete);
+    }
+    Ok(Some(FileHistoryResult {
+        rows: out,
+        commits_scanned: examined,
+        truncated,
+        remote_refs_included,
+        follows_renames: false,
+        snapshot_changed,
+    }))
 }
 
-/// Walk every local head and return up to `max_count` recent commits whose
-/// author time is at or after `since_unix_seconds`. Empty / detached repos
-/// return an empty vector rather than erroring.
-pub fn recent_commits(
+#[derive(Debug)]
+pub struct RecentCommitsScan {
+    pub rows: Vec<CommitSummary>,
+    /// True only when revwalk naturally exhausted without any skipped object
+    /// or heuristic cutoff. Destructive cache reconcile is forbidden unless
+    /// this is true and the caller also proves roots stayed stable.
+    pub exhaustive: bool,
+    pub hit_row_cap: bool,
+    pub hit_cutoff_heuristic: bool,
+    pub had_errors: bool,
+    pub shallow: bool,
+}
+
+impl RecentCommitsScan {
+    pub fn can_reconcile(&self) -> bool {
+        self.exhaustive
+            && !self.hit_row_cap
+            && !self.hit_cutoff_heuristic
+            && !self.had_errors
+            && !self.shallow
+    }
+}
+
+/// Bounded recent walk with an explicit completeness contract. Timestamp
+/// cutoff and row caps are presentation budgets, never deletion proof.
+pub fn recent_commits_scan(
     repo_path: &Path,
     max_count: usize,
     since_unix_seconds: i64,
-) -> Result<Vec<CommitSummary>> {
+) -> Result<RecentCommitsScan> {
     let repo = Repository::open(repo_path)
         .with_context(|| format!("open repo {}", repo_path.display()))?;
 
@@ -1530,14 +1953,14 @@ pub fn recent_commits(
             .and_then(|h| h.shorthand().map(|s| s.to_string()))
     };
 
-    let tagged_oids = collect_tagged_oids(&repo);
+    let (tagged_oids, tag_errors) = collect_tagged_oids_with_status(&repo);
 
-    // Remote tracking refs (origin/*) are local-file reads — see comment in
+    // Remote-tracking refs are local-file reads — see comment in
     // `repo_commits` for the rationale. We always include them here because
     // `recent_commits` is the all-branches view by definition.
-    let remote_tips =
-        collect_origin_remote_tips(&repo, since_unix_seconds, REMOTE_TIP_ROOT_CAP);
+    let (remote_tips, remote_errors) = collect_remote_tips_with_status(&repo);
     let remote_badges = build_remote_badge_map(&remote_tips);
+    let mut had_errors = tag_errors || remote_errors;
 
     let mut revwalk = repo.revwalk().context("init revwalk")?;
     // libgit2 contract: set_sorting resets the walker, so it MUST run before
@@ -1552,19 +1975,32 @@ pub fn recent_commits(
     // feature branch (or to a branch the user isn't currently on) still
     // shows up in the timeline.
     let mut pushed = 0usize;
-    if let Ok(refs) = repo.references_glob("refs/heads/*") {
-        for r in refs.flatten() {
-            if let Some(oid) = r.target() {
-                if revwalk.push(oid).is_ok() {
-                    pushed += 1;
+    match repo.references_glob("refs/heads/*") {
+        Ok(refs) => {
+            for item in refs {
+                let Ok(r) = item else {
+                    had_errors = true;
+                    continue;
+                };
+                if let Some(oid) = r.target() {
+                    if revwalk.push(oid).is_ok() {
+                        pushed += 1;
+                    } else {
+                        had_errors = true;
+                    }
                 }
             }
         }
+        Err(_) => had_errors = true,
     }
     // Add remote tip OIDs as extra roots — surfaces commits pushed to
-    // origin/<branch> that have no local head.
+    // a remote-tracking branch that have no local head.
     for tip in &remote_tips {
-        let _ = revwalk.push(tip.oid);
+        if revwalk.push(tip.oid).is_ok() {
+            pushed += 1;
+        } else {
+            had_errors = true;
+        }
     }
     // Always include HEAD itself: commits made on a detached HEAD (agents
     // checking out a SHA / tag, bisect-style loops) are reachable from no
@@ -1589,10 +2025,19 @@ pub fn recent_commits(
     for oid in &tagged_oids {
         if revwalk.push(*oid).is_ok() {
             pushed += 1;
+        } else {
+            had_errors = true;
         }
     }
-    if pushed == 0 && remote_tips.is_empty() {
-        return Ok(Vec::new());
+    if pushed == 0 {
+        return Ok(RecentCommitsScan {
+            rows: Vec::new(),
+            exhaustive: !had_errors,
+            hit_row_cap: false,
+            hit_cutoff_heuristic: false,
+            had_errors,
+            shallow: repo.is_shallow(),
+        });
     }
 
     // Pass 1: collect the output rows first. Bounded by max_count and the
@@ -1602,21 +2047,34 @@ pub fn recent_commits(
     // behind a skew-dated child (see CUTOFF_SLOP).
     let mut raw: Vec<(Oid, git2::Commit<'_>)> = Vec::with_capacity(max_count);
     let mut slop = 0usize;
+    let mut hit_row_cap = false;
+    let mut hit_cutoff_heuristic = false;
+    let mut exhaustive = true;
     for oid in revwalk {
         if raw.len() >= max_count {
+            hit_row_cap = true;
+            exhaustive = false;
             break;
         }
         let oid = match oid {
             Ok(o) => o,
-            Err(_) => continue,
+            Err(_) => {
+                had_errors = true;
+                continue;
+            }
         };
         let commit = match repo.find_commit(oid) {
             Ok(c) => c,
-            Err(_) => continue,
+            Err(_) => {
+                had_errors = true;
+                continue;
+            }
         };
         if commit.time().seconds() < since_unix_seconds {
             slop += 1;
             if slop >= CUTOFF_SLOP {
+                hit_cutoff_heuristic = true;
+                exhaustive = false;
                 break;
             }
             continue;
@@ -1629,18 +2087,29 @@ pub fn recent_commits(
     // O(branches × history) prefetch — now bounded per-branch and exits
     // early once every target is resolved.
     let targets: HashSet<Oid> = raw.iter().map(|(oid, _)| *oid).collect();
-    let label_floor = raw.iter().map(|(_, c)| c.time().seconds()).min().unwrap_or(0);
-    let labels =
-        compute_branch_labels(&repo, head_branch_name.as_deref(), &targets, label_floor);
+    let label_floor = raw
+        .iter()
+        .map(|(_, c)| c.time().seconds())
+        .min()
+        .unwrap_or(0);
+    let labels = compute_branch_labels(&repo, head_branch_name.as_deref(), &targets, label_floor);
 
     let mut out: Vec<CommitSummary> = Vec::with_capacity(raw.len());
     for (oid, commit) in raw {
         let hash = oid.to_string();
         let short_hash: String = hash.chars().take(7).collect();
-        let summary = commit.summary().unwrap_or("").to_string();
+        let summary = bounded_text(
+            commit.summary().unwrap_or(""),
+            MAX_DIRECT_SUMMARY_BYTES,
+            "…",
+        );
         let author = commit.author();
         let parents: Vec<String> = commit.parent_ids().map(|p| p.to_string()).collect();
-        let message = commit.message().unwrap_or("").to_string();
+        let message = bounded_text(
+            commit.message().unwrap_or(""),
+            MAX_DIRECT_MESSAGE_BYTES,
+            "\n… [message truncated]",
+        );
         let ts = commit.time().seconds();
         let branch_label = labels.get(&oid).cloned().flatten();
         let (remote_tip_label, remote_tip_extra_count) = match remote_badges.get(&oid) {
@@ -1667,7 +2136,24 @@ pub fn recent_commits(
         });
     }
 
-    Ok(out)
+    Ok(RecentCommitsScan {
+        rows: out,
+        exhaustive: exhaustive && !had_errors,
+        hit_row_cap,
+        hit_cutoff_heuristic,
+        had_errors,
+        shallow: repo.is_shallow(),
+    })
+}
+
+/// Compatibility wrapper for non-destructive callers. Mutation paths use
+/// `recent_commits_scan` and inspect its completeness before reconciling.
+pub fn recent_commits(
+    repo_path: &Path,
+    max_count: usize,
+    since_unix_seconds: i64,
+) -> Result<Vec<CommitSummary>> {
+    Ok(recent_commits_scan(repo_path, max_count, since_unix_seconds)?.rows)
 }
 
 #[cfg(test)]
@@ -1692,6 +2178,12 @@ mod tests {
         let tree = empty_tree(repo);
         repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, parents)
             .unwrap()
+    }
+
+    fn write_loose_ref(repo: &Repository, ref_name: &str, oid: &str) {
+        let path = repo.path().join(ref_name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, format!("{oid}\n")).unwrap();
     }
 
     // A tree builder seeded from the first parent's tree (so unrelated files
@@ -1738,6 +2230,24 @@ mod tests {
             .unwrap()
     }
 
+    fn commit_file_mode(
+        repo: &Repository,
+        file: &str,
+        mode: i32,
+        msg: &str,
+        ts: i64,
+        parent: &git2::Commit<'_>,
+    ) -> git2::Oid {
+        let sig = Signature::new("t", "t@e", &Time::new(ts, 0)).unwrap();
+        let parent_tree = parent.tree().unwrap();
+        let blob = parent_tree.get_path(Path::new(file)).unwrap().id();
+        let mut builder = repo.treebuilder(Some(&parent_tree)).unwrap();
+        builder.insert(file, blob, mode).unwrap();
+        let tree = repo.find_tree(builder.write().unwrap()).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &[parent])
+            .unwrap()
+    }
+
     #[test]
     fn file_history_tracks_add_modify_delete_only() {
         let dir = TempDir::new().unwrap();
@@ -1752,14 +2262,22 @@ mod tests {
         let _c4 = commit_remove(&repo, "a.txt", "rm a", 4_000, &[&c3c]);
 
         let hist = file_history(dir.path(), "a.txt").unwrap();
+        assert_eq!(hist.truncated, None);
         assert_eq!(
-            hist.iter().map(|c| c.summary.as_str()).collect::<Vec<_>>(),
+            hist.rows
+                .iter()
+                .map(|c| c.summary.as_str())
+                .collect::<Vec<_>>(),
             vec!["rm a", "edit a", "add a"],
         );
         // b.txt's history is just its own add.
         let bhist = file_history(dir.path(), "b.txt").unwrap();
         assert_eq!(
-            bhist.iter().map(|c| c.summary.as_str()).collect::<Vec<_>>(),
+            bhist
+                .rows
+                .iter()
+                .map(|c| c.summary.as_str())
+                .collect::<Vec<_>>(),
             vec!["add b"],
         );
     }
@@ -1769,7 +2287,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let repo = Repository::init(dir.path()).unwrap();
         let _ = commit_file(&repo, "a.txt", "v1", "add a", 1_000, &[]);
-        assert!(file_history(dir.path(), "nope.txt").unwrap().is_empty());
+        assert!(file_history(dir.path(), "nope.txt")
+            .unwrap()
+            .rows
+            .is_empty());
     }
 
     #[test]
@@ -1784,9 +2305,201 @@ mod tests {
             .unwrap();
         // Walk covers all local heads, so the side edit is included.
         let hist = file_history(dir.path(), "a.txt").unwrap();
-        let msgs: Vec<&str> = hist.iter().map(|c| c.summary.as_str()).collect();
+        let msgs: Vec<&str> = hist.rows.iter().map(|c| c.summary.as_str()).collect();
         assert!(msgs.contains(&"side edit"), "got {msgs:?}");
         assert!(msgs.contains(&"base"), "got {msgs:?}");
+    }
+
+    #[test]
+    fn all_branches_and_fingerprint_include_non_origin_remote_tip() {
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let c1 = commit_file(&repo, "a.txt", "v1", "local", 1_000, &[]);
+        let c1c = repo.find_commit(c1).unwrap();
+        let sig = Signature::new("t", "t@e", &Time::new(2_000, 0)).unwrap();
+        let blob = repo.blob(b"remote").unwrap();
+        let mut builder = repo.treebuilder(Some(&c1c.tree().unwrap())).unwrap();
+        builder.insert("a.txt", blob, 0o100644).unwrap();
+        let tree = repo.find_tree(builder.write().unwrap()).unwrap();
+        let remote_only = repo
+            .commit(None, &sig, &sig, "upstream only", &tree, &[&c1c])
+            .unwrap();
+        repo.reference(
+            "refs/remotes/upstream/main",
+            remote_only,
+            true,
+            "test upstream",
+        )
+        .unwrap();
+
+        let rows = repo_commits(dir.path(), None, 20, 0).unwrap().rows;
+        assert_eq!(
+            rows.first().map(|row| row.hash.clone()),
+            Some(remote_only.to_string())
+        );
+        assert_eq!(
+            rows.first().and_then(|row| row.remote_tip_label.as_deref()),
+            Some("upstream/main")
+        );
+
+        let before = repo_refs_fingerprint(dir.path(), None).unwrap();
+        repo.find_reference("refs/remotes/upstream/main")
+            .unwrap()
+            .set_target(c1, "rewind upstream")
+            .unwrap();
+        let after = repo_refs_fingerprint(dir.path(), None).unwrap();
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn repo_commits_time_boundary_is_normal_complete_window_coverage() {
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let mut parent = None;
+        for index in 0..(CUTOFF_SLOP + 2) {
+            let parents = parent
+                .as_ref()
+                .map(|commit| vec![commit])
+                .unwrap_or_default();
+            let oid =
+                commit_with_time(&repo, &format!("old-{index}"), 100 + index as i64, &parents);
+            parent = Some(repo.find_commit(oid).unwrap());
+        }
+        let recent = commit_with_time(&repo, "inside window", 20_000, &[parent.as_ref().unwrap()]);
+
+        let scan = repo_commits(dir.path(), None, 20, 10_000).unwrap();
+        assert_eq!(scan.rows.len(), 1);
+        assert_eq!(scan.rows[0].hash, recent.to_string());
+        assert!(
+            !scan.incomplete,
+            "reaching the requested time boundary is not a Git read failure"
+        );
+    }
+
+    #[test]
+    fn valid_non_commit_tag_does_not_claim_history_is_damaged() {
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let commit = commit_with_time(&repo, "commit", 1_000, &[]);
+        let blob = repo.blob(b"release artifact").unwrap();
+        repo.reference("refs/tags/artifact", blob, true, "tag blob")
+            .unwrap();
+
+        let direct = repo_commits(dir.path(), None, 20, 0).unwrap();
+        assert_eq!(direct.rows[0].hash, commit.to_string());
+        assert!(!direct.incomplete);
+        let recent = recent_commits_scan(dir.path(), 20, 0).unwrap();
+        assert!(!recent.had_errors);
+    }
+
+    #[test]
+    fn explicit_branch_ignores_unrelated_broken_tag_but_all_refs_reports_it() {
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let commit = commit_with_time(&repo, "commit", 1_000, &[]);
+        let selected = vec![repo.head().unwrap().name().unwrap().to_string()];
+        write_loose_ref(
+            &repo,
+            "refs/tags/broken",
+            "1111111111111111111111111111111111111111",
+        );
+
+        let explicit = repo_commits(dir.path(), Some(&selected), 20, 0).unwrap();
+        assert_eq!(explicit.rows[0].hash, commit.to_string());
+        assert!(
+            !explicit.incomplete,
+            "an unrelated tag is decoration outside the selected branch scope"
+        );
+        assert!(repo_commits(dir.path(), None, 20, 0).unwrap().incomplete);
+    }
+
+    #[test]
+    fn broken_remote_ref_returns_partial_rows_and_blocks_reconcile() {
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let commit = commit_with_time(&repo, "commit", 1_000, &[]);
+        write_loose_ref(
+            &repo,
+            "refs/remotes/origin/broken",
+            "2222222222222222222222222222222222222222",
+        );
+
+        let direct = repo_commits(dir.path(), None, 20, 0).unwrap();
+        assert!(direct.rows.iter().any(|row| row.hash == commit.to_string()));
+        assert!(direct.incomplete);
+
+        let recent = recent_commits_scan(dir.path(), 20, 0).unwrap();
+        assert!(recent.rows.iter().any(|row| row.hash == commit.to_string()));
+        assert!(recent.had_errors);
+        assert!(!recent.can_reconcile());
+    }
+
+    #[test]
+    fn file_history_includes_mode_only_changes() {
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let add = commit_file(&repo, "script.sh", "echo ok", "add", 1_000, &[]);
+        let add_commit = repo.find_commit(add).unwrap();
+        commit_file_mode(
+            &repo,
+            "script.sh",
+            0o100755,
+            "make executable",
+            2_000,
+            &add_commit,
+        );
+
+        let history = file_history(dir.path(), "script.sh").unwrap();
+        assert_eq!(
+            history
+                .rows
+                .iter()
+                .map(|commit| commit.summary.as_str())
+                .collect::<Vec<_>>(),
+            vec!["make executable", "add"]
+        );
+    }
+
+    #[test]
+    fn file_history_precancel_is_a_normal_empty_outcome() {
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+        let missing = Path::new("definitely-does-not-exist");
+        assert!(file_history_cancellable(missing, "a.txt", &cancellation)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn file_history_includes_remote_only_refs() {
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let base = commit_file(&repo, "a.txt", "v1", "base", 1_000, &[]);
+        let basec = repo.find_commit(base).unwrap();
+
+        // Create a commit object without moving HEAD, then expose it only via
+        // a remote-tracking ref. No local branch reaches this change.
+        let sig = Signature::new("t", "t@e", &Time::new(2_000, 0)).unwrap();
+        let blob = repo.blob(b"v2").unwrap();
+        let mut builder = builder_from_parent(&repo, &[&basec]);
+        builder.insert("a.txt", blob, 0o100644).unwrap();
+        let tree = repo.find_tree(builder.write().unwrap()).unwrap();
+        let remote_only = repo
+            .commit(None, &sig, &sig, "remote only edit", &tree, &[&basec])
+            .unwrap();
+        repo.reference(
+            "refs/remotes/upstream/feature",
+            remote_only,
+            true,
+            "test remote-only history",
+        )
+        .unwrap();
+
+        let hist = file_history(dir.path(), "a.txt").unwrap();
+        let msgs: Vec<&str> = hist.rows.iter().map(|c| c.summary.as_str()).collect();
+        assert!(msgs.contains(&"remote only edit"), "got {msgs:?}");
+        assert!(hist.remote_refs_included >= 1);
+        assert_eq!(hist.truncated, None);
     }
 
     #[test]
@@ -1809,7 +2522,10 @@ mod tests {
 
         let commits = recent_commits(dir.path(), 10, 0).unwrap();
         assert_eq!(
-            commits.iter().map(|c| c.summary.as_str()).collect::<Vec<_>>(),
+            commits
+                .iter()
+                .map(|c| c.summary.as_str())
+                .collect::<Vec<_>>(),
             vec!["third", "second", "first"]
         );
         assert_eq!(commits[0].timestamp, 3_000);
@@ -2009,4 +2725,56 @@ mod tests {
             "sibling file's hunks leaked into the diff:\n{patch}"
         );
     }
+}
+/// Stable-enough local storage identity for the repository's common Git dir.
+/// It is used only to reject automatic restore of a different repository that
+/// was initialized later at the same worktree path; it never writes the repo.
+pub fn repo_storage_identity(repo_path: &Path) -> Result<String> {
+    let repo = Repository::open(repo_path)
+        .with_context(|| format!("open repo {}", repo_path.display()))?;
+    let gitdir = repo.path();
+    let common = std::fs::read_to_string(gitdir.join("commondir"))
+        .ok()
+        .map(|text| {
+            let raw = text.trim_end_matches(['\n', '\r']);
+            let path = Path::new(raw);
+            if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                gitdir.join(path)
+            }
+        })
+        .unwrap_or_else(|| gitdir.to_path_buf());
+    let canonical = std::fs::canonicalize(&common).unwrap_or(common);
+    let metadata = std::fs::metadata(&canonical)
+        .with_context(|| format!("stat common git dir {}", canonical.display()))?;
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        return Ok(format!(
+            "windows:{}:{}:{}",
+            canonical.to_string_lossy().to_lowercase(),
+            metadata.creation_time(),
+            metadata.file_attributes()
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        return Ok(format!(
+            "unix:{}:{}:{}",
+            canonical.display(),
+            metadata.dev(),
+            metadata.ino()
+        ));
+    }
+    #[allow(unreachable_code)]
+    Ok(format!("path:{}", canonical.display()))
+}
+
+pub fn repo_is_shallow(repo_path: &Path) -> Result<bool> {
+    Ok(Repository::open(repo_path)
+        .with_context(|| format!("open repo {}", repo_path.display()))?
+        .is_shallow())
 }
