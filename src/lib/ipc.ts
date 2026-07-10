@@ -8,12 +8,16 @@ import type {
   CommitAround,
   CommitFileBlobs,
   CommitSummary,
+  RepoCommitsResult,
   CommitWindow,
   Cursor,
   DiscoveredRepo,
   ExcludedRepo,
+  FileHistoryResult,
   FilterFacets,
+  HistoryIndexStatus,
   OrchestratorScanProgress,
+  ReplacementConfirmation,
   Repo,
   RepoCatalogChangedPayload,
   RepoStatusPayload,
@@ -119,12 +123,26 @@ export async function restoreRepo(canonicalPath: string): Promise<void> {
   await invoke("restore_repo", { canonicalPath });
 }
 
+export async function inspectReplacementRepo(
+  canonicalPath: string,
+): Promise<ReplacementConfirmation> {
+  return invoke<ReplacementConfirmation>("inspect_replacement_repo", {
+    canonicalPath,
+  });
+}
+
+export async function replaceExcludedRepo(
+  confirmation: ReplacementConfirmation,
+): Promise<void> {
+  await invoke("replace_excluded_repo", { confirmation });
+}
+
 export async function repoCommits(
   repoPath: string,
   branches: string[] | null,
   windowDays: number | null,
-): Promise<CommitSummary[]> {
-  return invoke<CommitSummary[]>("repo_commits", {
+): Promise<RepoCommitsResult> {
+  return invoke<RepoCommitsResult>("repo_commits", {
     repoPath,
     branches,
     windowDays,
@@ -161,8 +179,24 @@ export async function changedFiles(
 export async function fileHistory(
   repoPath: string,
   filePath: string,
-): Promise<CommitSummary[]> {
-  return invoke<CommitSummary[]>("file_history", { repoPath, filePath });
+  operationId: string,
+  flowId: string,
+): Promise<FileHistoryResult | null> {
+  return invoke<FileHistoryResult | null>("file_history", {
+    repoPath,
+    filePath,
+    operationId,
+    flowId,
+  });
+}
+
+/** Supersede one in-flight file-history request. Operation identity makes a
+ * late React cleanup harmless to the replacement request in the same flow. */
+export async function cancelFileHistory(
+  operationId: string,
+  flowId: string,
+): Promise<void> {
+  await invoke("cancel_file_history", { operationId, flowId });
 }
 
 /** Fire-and-forget prefetch on hover. Errors are swallowed silently. */
@@ -426,12 +460,41 @@ export async function getTimelineGeneration(): Promise<number> {
   return invoke<number>("get_timeline_generation");
 }
 
+/** Queue complete-history expansion for exactly this repository scope. */
+export async function requestHistoryIndex(
+  repoIds: number[] | null,
+  demandId: number,
+): Promise<HistoryIndexStatus> {
+  return invoke<HistoryIndexStatus>("request_history_index", {
+    repoIds,
+    demandId,
+  });
+}
+
+/** Release an exact complete-history UI lease. Late cleanups are ABA-safe. */
+export async function releaseHistoryIndex(demandId: number): Promise<boolean> {
+  return invoke<boolean>("release_history_index", { demandId });
+}
+
+/** Read progress without scheduling additional Git walks. */
+export async function getHistoryIndexStatus(
+  repoIds: number[] | null,
+): Promise<HistoryIndexStatus> {
+  return invoke<HistoryIndexStatus>("get_history_index_status", { repoIds });
+}
+
 /** Contextual filter facets. Each result applies the other active dimensions
  * but excludes its own, so users can widen Repo/Author selections. */
 export async function listFilterFacets(
   filters: TimelineFilters,
+  includeAuthors = true,
+  includeRepos = true,
 ): Promise<FilterFacets> {
-  return invoke<FilterFacets>("list_filter_facets", { filters });
+  return invoke<FilterFacets>("list_filter_facets", {
+    filters,
+    includeAuthors,
+    includeRepos,
+  });
 }
 
 /** Lightweight scanner→UI signal: a new generation landed (a `git commit`

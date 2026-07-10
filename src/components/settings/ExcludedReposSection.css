@@ -65,6 +65,70 @@
   cursor: pointer;
 }
 
+.settings-exclusion-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.settings-exclusion-replace {
+  padding: 3px 7px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  opacity: 0.62;
+}
+
+.settings-exclusion-cancel {
+  padding: 3px 7px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  opacity: 0.58;
+}
+
+.settings-exclusion-cancel:hover:not(:disabled) {
+  text-decoration: underline;
+  opacity: 0.9;
+}
+
+.settings-exclusion-cancel:disabled {
+  cursor: wait;
+  opacity: 0.35;
+}
+
+.settings-exclusion-replace:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.055);
+  opacity: 0.9;
+}
+
+.settings-exclusion-replace.confirm {
+  border-color: rgba(190, 105, 35, 0.55);
+  background: rgba(190, 105, 35, 0.1);
+  opacity: 1;
+}
+
+.settings-exclusion-replace:disabled {
+  cursor: wait;
+  opacity: 0.45;
+}
+
+.settings-exclusion-replace-warning {
+  max-width: 520px;
+  color: rgb(145, 75, 20);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 .settings-exclusion-restore:hover:not(:disabled) {
   background: rgba(80, 130, 240, 0.16);
 }
@@ -72,6 +136,18 @@
 .settings-exclusion-restore:disabled {
   cursor: wait;
   opacity: 0.55;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -91,5 +167,13 @@
 
   .settings-exclusion-restore:hover:not(:disabled) {
     background: rgba(140, 180, 255, 0.18);
+  }
+
+  .settings-exclusion-replace:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.07);
+  }
+
+  .settings-exclusion-replace-warning {
+    color: rgb(235, 165, 100);
   }
 }

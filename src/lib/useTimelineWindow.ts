@@ -55,6 +55,17 @@ function nowSec(): number {
   return Math.floor(Date.now() / 1000);
 }
 
+/** Stable encoding for the filter dimensions a timeline snapshot owns.
+ * Both the hook and contextual-facet coordinator use this function so an
+ * old applied generation can never be relabelled as a newly-rendered scope. */
+export function timelineSnapshotFilterKey(
+  repoIds: number[] | null,
+  authors: string[] | null,
+  windowDays: number | null,
+): string {
+  return JSON.stringify([repoIds, authors, windowDays]);
+}
+
 /** A commit's keyset cursor, reconstructed from the row itself — the cursor
  *  is (sort_ts, repo_path, hash) with sort_ts = -timestamp, all carried by
  *  the CommitSummary. Used to recompute an edge cursor after a window trim. */
@@ -86,6 +97,9 @@ export interface TimelineWindowParams {
    *  re-query of already-cached commits, and its windowDays=null bypass
    *  must not trigger a full no-window scan of every repo. */
   skipRefill?: boolean;
+  /** Preserve the loaded window but perform no cache/Git work while another
+   * view owns the body. Reactivation performs one catch-up reload. */
+  suspended?: boolean;
 }
 
 export interface TimelineWindowState {
@@ -96,6 +110,18 @@ export interface TimelineWindowState {
   /** total filtered commits (pinned snapshot) — the scroll track size */
   count: number;
   status: "loading" | "ready" | "error";
+  /** MVCC generation backing `rows`, `count`, and every page cursor. Facets
+   * must use this exact value to describe the same snapshot. */
+  generation: number | null;
+  /** Exact unix cutoff used with `generation`; null means all time. */
+  snapshotSince: number | null;
+  /** Normalized repo/author/window key that produced this snapshot. This is
+   * stored at apply time so a parent render cannot relabel an old generation
+   * with newly-arrived filter props before the reload effect runs. */
+  snapshotFilterKey: string | null;
+  /** Query text that actually produced the applied rows. `undefined` means
+   * no snapshot has applied yet; null is a ready non-search snapshot. */
+  snapshotQuery: string | null | undefined;
   /** `repoPath:hash` keys of commits that arrived during a live reload —
    *  rendered with the "new" marker. */
   freshHashes: Set<string>;
@@ -130,7 +156,8 @@ interface WindowRef {
 export function useTimelineWindow(
   params: TimelineWindowParams,
 ): TimelineWindowState {
-  const { repoIds, authors, windowDays, refreshNonce, skipRefill } = params;
+  const { repoIds, authors, windowDays, refreshNonce, skipRefill, suspended } =
+    params;
   const query = params.query ?? null;
 
   const [rows, setRows] = useState<CommitSummary[]>([]);
@@ -139,6 +166,10 @@ export function useTimelineWindow(
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
     "loading",
   );
+  const [generation, setGeneration] = useState<number | null>(null);
+  const [snapshotSince, setSnapshotSince] = useState<number | null>(null);
+  const [snapshotFilterKey, setSnapshotFilterKey] = useState<string | null>(null);
+  const [snapshotQuery, setSnapshotQuery] = useState<string | null>();
   const [freshHashes, setFreshHashes] = useState<Set<string>>(() => new Set());
   const [recovery, setRecovery] = useState({ index: 0, nonce: 0 });
 
@@ -413,42 +444,54 @@ export function useTimelineWindow(
           viewGeneration: generation,
           query: p.query ?? null,
         };
-        const cnt = await countCommits(filter);
-        if (qid !== queryRef.current) return { applied: false, qid };
-
-        let resRows: CommitSummary[];
-        let resBase: number;
-        let resStart: Cursor | null;
-        let resEnd: Cursor | null;
-        if (anchorMode === "recover" && anchorCursor) {
-          const a = await listCommitsAroundAnchor(
-            filter,
-            anchorCursor,
-            ANCHOR_BEFORE,
-            ANCHOR_AFTER,
-          );
-          resRows = a.rows;
-          resBase = a.baseIndex;
-          resStart = a.startCursor;
-          resEnd = a.endCursor;
-        } else if (anchorMode === "current") {
-          const a = await listCommitsAtRank(
-            filter,
-            currentRank,
-            ANCHOR_BEFORE,
-            ANCHOR_AFTER,
-          );
-          resRows = a.rows;
-          resBase = a.baseIndex;
-          resStart = a.startCursor;
-          resEnd = a.endCursor;
-        } else {
+        const loadRows = async () => {
+          if (anchorMode === "recover" && anchorCursor) {
+            const around = await listCommitsAroundAnchor(
+              filter,
+              anchorCursor,
+              ANCHOR_BEFORE,
+              ANCHOR_AFTER,
+            );
+            return {
+              rows: around.rows,
+              base: around.baseIndex,
+              start: around.startCursor,
+              end: around.endCursor,
+            };
+          }
+          if (anchorMode === "current") {
+            const around = await listCommitsAtRank(
+              filter,
+              currentRank,
+              ANCHOR_BEFORE,
+              ANCHOR_AFTER,
+            );
+            return {
+              rows: around.rows,
+              base: around.baseIndex,
+              start: around.startCursor,
+              end: around.endCursor,
+            };
+          }
           const win = await listCommitsWindow(filter, null, "older", PAGE_SIZE);
-          resRows = win.rows;
-          resBase = 0;
-          resStart = win.startCursor;
-          resEnd = win.endCursor;
-        }
+          return {
+            rows: win.rows,
+            base: 0,
+            start: win.startCursor,
+            end: win.endCursor,
+          };
+        };
+        // Count and first window are independent reads of the same pinned
+        // generation. Running them together removes a full backend round trip
+        // from search/all-time first paint.
+        const [cnt, loaded] = await Promise.all([
+          countCommits(filter),
+          loadRows(),
+        ]);
+        const resRows: CommitSummary[] = loaded.rows;
+        const resBase = loaded.base;
+        const resStart = loaded.start;
+        const resEnd = loaded.end;
         if (qid !== queryRef.current) return { applied: false, qid };
 
         windowRef.current = {
@@ -462,6 +505,12 @@ export function useTimelineWindow(
         setRows(resRows);
         setBaseIndex(resBase);
         setCount(cnt);
+        setGeneration(generation);
+        setSnapshotSince(since);
+        setSnapshotFilterKey(
+          timelineSnapshotFilterKey(p.repoIds, p.authors, p.windowDays),
+        );
+        setSnapshotQuery(p.query ?? null);
         setStatus("ready");
 
         if (emitRecovery) {
@@ -571,6 +620,7 @@ export function useTimelineWindow(
     refreshNonce,
     query,
     skipRefill ?? false,
+    suspended ?? false,
   ]);
   const filtersKey = JSON.stringify([repoIds, authors, windowDays, query]);
   const reloadKeyRef = useRef<{
@@ -580,6 +630,7 @@ export function useTimelineWindow(
   }>({ filtersKey, windowDays, refreshNonce });
   useEffect(() => {
     const seq = ++effectSeqRef.current;
+    if (suspended) return;
     const isInitial = windowRef.current.filter == null;
     const prev = reloadKeyRef.current;
     const filtersChanged = !isInitial && filtersKey !== prev.filtersKey;
@@ -652,6 +703,10 @@ export function useTimelineWindow(
     baseIndex,
     count,
     status,
+    generation,
+    snapshotSince,
+    snapshotFilterKey,
+    snapshotQuery,
     freshHashes,
     recovery,
     requestRange,

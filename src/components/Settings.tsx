@@ -86,6 +86,8 @@ export function Settings() {
 
   const [recording, setRecording] = useState(false);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
+  const [bindingHotkey, setBindingHotkey] = useState(false);
+  const hotkeyBinding = useRef(false);
   // Mirror settings into a ref so the recording effect doesn't have to
   // re-subscribe to keydown whenever an unrelated setting changes.
   const settingsRef = useRef(settings);
@@ -158,7 +160,11 @@ export function Settings() {
       }
     }
     function onVisibilityChange() {
-      if (document.visibilityState === "hidden") flushPending();
+      if (document.visibilityState === "hidden") {
+        flushPending();
+        setRecording(false);
+        setHotkeyError(null);
+      }
     }
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("beforeunload", flushPending);
@@ -198,6 +204,9 @@ export function Settings() {
         );
         return;
       }
+      if (hotkeyBinding.current) return;
+      hotkeyBinding.current = true;
+      setBindingHotkey(true);
       void (async () => {
         try {
           await invoke("set_panel_hotkey", { spec: accel });
@@ -209,6 +218,9 @@ export function Settings() {
           // Most common case: the combo is already held by another app
           // (Windows registers globally, first-bind wins). Surface inline.
           setHotkeyError(String(err));
+        } finally {
+          hotkeyBinding.current = false;
+          setBindingHotkey(false);
         }
       })();
     }
@@ -280,6 +292,9 @@ export function Settings() {
           <button
             type="button"
             className={"settings-hotkey" + (recording ? " recording" : "")}
+            aria-pressed={recording}
+            aria-busy={bindingHotkey}
+            aria-describedby={hotkeyError ? "hotkey-error" : "hotkey-help"}
             onClick={() => {
               if (!recording) {
                 setRecording(true);
@@ -292,8 +307,12 @@ export function Settings() {
               : settings.panelHotkey}
           </button>
         </div>
-        {hotkeyError && <p className="settings-error">{hotkeyError}</p>}
-        <p className="settings-hint">
+        {hotkeyError && (
+          <p id="hotkey-error" className="settings-error" role="alert">
+            {hotkeyError}
+          </p>
+        )}
+        <p id="hotkey-help" className="settings-hint">
           Required: at least one modifier (Ctrl / Alt / Shift) + a key.
           OS-reserved combos (Alt+Tab, Win+L, etc.) cannot be captured
           and won't react.

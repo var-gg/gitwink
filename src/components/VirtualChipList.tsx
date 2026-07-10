@@ -50,6 +50,7 @@ export function VirtualChipList({
 }: Props) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
+  const [measuredViewportH, setMeasuredViewportH] = useState<number | null>(null);
 
   // Prefix sum of row heights: offsets[i] is the pixel top of row i and
   // offsets[rows.length] the total content height. Plain numbers, no DOM,
@@ -64,7 +65,22 @@ export function VirtualChipList({
   // Scale the maxHeight cap so a bigger UI gets a proportionally bigger
   // dropdown viewport, matching the scaled row heights.
   const effectiveMaxHeight = chipRowH(useUiScale(), maxHeight);
-  const viewportH = Math.min(total, effectiveMaxHeight);
+  const preferredViewportH = Math.min(total, effectiveMaxHeight);
+  const viewportH = Math.min(
+    preferredViewportH,
+    measuredViewportH ?? preferredViewportH,
+  );
+
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const update = () => setMeasuredViewportH(element.clientHeight);
+    update();
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    observer?.observe(element);
+    return () => observer?.disconnect();
+  }, [preferredViewportH]);
 
   // Snap back to the top whenever the filter query changes. useLayoutEffect
   // so the reset lands before paint — no flash of the old scroll position.
@@ -127,7 +143,7 @@ export function VirtualChipList({
     <div
       ref={scrollRef}
       className="chip-list chip-vlist"
-      style={{ height: viewportH }}
+      style={{ height: preferredViewportH }}
       onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
     >
       <div className="chip-vtrack" style={{ height: total }}>

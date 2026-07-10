@@ -46,31 +46,35 @@ export function PanelChromeRow({
 }: Props) {
   return (
     <div className="panel-chrome-row">
-      <div
-        className={
-          "panel-header-iconwrap" + (updateVersion ? " has-update" : "")
-        }
-        title={
-          updateVersion
-            ? `Update available — v${updateVersion} · click to update`
-            : "gitwink"
-        }
-        role={updateVersion ? "button" : undefined}
-        onClick={updateVersion ? onOpenUpdate : undefined}
-        {...(updateVersion ? { "data-no-drag": true } : {})}
-      >
-        <img
-          src="/icon.png"
-          alt="gitwink"
-          className="panel-header-icon"
-          draggable={false}
-        />
-        {updateVersion && (
+      {updateVersion ? (
+        <button
+          type="button"
+          className="panel-header-iconwrap panel-header-update-button has-update"
+          title={`Update available — v${updateVersion} · click to update`}
+          aria-label={`Update gitwink to version ${updateVersion}`}
+          onClick={onOpenUpdate}
+          data-no-drag
+        >
+          <img
+            src="/icon.png"
+            alt=""
+            className="panel-header-icon"
+            draggable={false}
+          />
           <span className="panel-header-update-badge" aria-hidden="true">
             !
           </span>
-        )}
-      </div>
+        </button>
+      ) : (
+        <span className="panel-header-iconwrap" title="gitwink">
+          <img
+            src="/icon.png"
+            alt="gitwink"
+            className="panel-header-icon"
+            draggable={false}
+          />
+        </span>
+      )}
 
       {(canGoBack || canGoForward) && (
         <span className="view-nav" role="group" aria-label="View history">
@@ -99,7 +103,12 @@ export function PanelChromeRow({
 
       <div className="panel-drag-handle" />
 
-      <div className="panel-chrome-status" aria-live="polite">
+      <div
+        className={
+          "panel-chrome-status" + (showRepoSync ? " has-repo-sync" : "")
+        }
+        aria-live="polite"
+      >
         {scanning ? (
           <span className="panel-status">Scanning…</span>
         ) : upToDate ? (
@@ -117,6 +126,7 @@ export function PanelChromeRow({
         onClick={onToggleSearch}
         title="Search commits — message, author, SHA (/)"
         aria-label={searchOpen ? "Close commit search" : "Search commits"}
+        aria-pressed={searchOpen}
       >
         ⌕
       </button>
@@ -130,6 +140,7 @@ export function PanelChromeRow({
             : "Pin — keep open while clicking elsewhere; not always-on-top. Summon via tray / hotkey."
         }
         aria-label={pinned ? "Unpin panel" : "Pin panel"}
+        aria-pressed={pinned}
       >
         📌
       </button>

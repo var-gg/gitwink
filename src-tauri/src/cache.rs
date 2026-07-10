@@ -4,10 +4,12 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
+#[cfg(test)]
+use crate::discovery_orchestrator;
 use crate::git::CommitSummary;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,8 +107,7 @@ fn migrated_paths() -> &'static Mutex<HashSet<PathBuf>> {
 
 pub fn open(app: &AppHandle) -> Result<Connection> {
     let path = db_path(app)?;
-    let mut conn =
-        Connection::open(&path).with_context(|| format!("open {}", path.display()))?;
+    let mut conn = Connection::open(&path).with_context(|| format!("open {}", path.display()))?;
     // The cache is opened on separate connections from several threads — the
     // file watcher, command spawn_blocking tasks, the discovery orchestrator.
     // Without a busy timeout a concurrent writer fails immediately with
@@ -222,7 +223,6 @@ fn migrate(conn: &mut Connection) -> Result<()> {
         "ALTER TABLE repos ADD COLUMN repo_kind TEXT NOT NULL DEFAULT 'workdir'",
         [],
     );
-
     // Backfill canonical_path for rows from older versions so the
     // unique index has something to grab onto.
     let _ = conn.execute(
@@ -338,16 +338,24 @@ fn migrate(conn: &mut Connection) -> Result<()> {
     // skip. Without it two opens could both see `user_version < 5` and
     // race the DROP / CREATE.
     {
-        let tx = conn
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let schema_ver: i64 = tx
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let mut schema_ver: i64 = tx
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap_or(0);
         if schema_ver < 5 {
             tx.execute_batch("DROP TABLE IF EXISTS commits;")?;
             tx.execute_batch(COMMITS_SCHEMA_V5)?;
-            tx.pragma_update(None, "user_version", 5_i64)?;
+            schema_ver = 5;
         }
+        // The history schema preserves v5 commit rows/rowids, then adds progressive
+        // coverage, published reachability membership and an initially-empty
+        // external-content FTS index. Legacy FTS seeding is lazy + batched;
+        // migrate/open never performs an O(history) rebuild.
+        if schema_ver < crate::history_schema::HISTORY_SCHEMA_VERSION {
+            crate::history_schema::migrate(&tx)?;
+            schema_ver = crate::history_schema::HISTORY_SCHEMA_VERSION;
+        }
+        tx.pragma_update(None, "user_version", schema_ver)?;
         tx.commit()?;
     }
 
@@ -391,21 +399,23 @@ fn migrate(conn: &mut Connection) -> Result<()> {
     // the prefix here once — idempotent on warm DBs that have no
     // prefixed rows.
     #[cfg(target_os = "windows")]
-    dedupe_unc_canonical_paths(conn);
+    dedupe_unc_canonical_paths(conn)?;
 
     Ok(())
 }
 
 /// Walk every repos row whose canonical_path starts with `\\?\`. If a
 /// non-prefixed twin already exists, drop the prefixed row (the twin is
-/// the keeper). Otherwise rename in place. Same treatment for
-/// repo_sources + path_aliases foreign references. True extended-UNC
-/// paths (`\\?\UNC\…`) are skipped — stripping their prefix would
-/// merge `\\?\UNC\server\share\foo` into `UNC\server\share\foo`, which
-/// is a different path.
+/// the keeper). Otherwise rename in place. Disposable cache/history rows
+/// under the obsolete spelling are purged before its catalog owner changes,
+/// preventing dangling nonzero repo_id rows from bypassing exclusion gates.
+/// Same treatment for provenance references. Extended UNC paths are folded
+/// with the required leading `\\` (`\\?\UNC\server\share` →
+/// `\\server\share`) rather than naively stripping into `UNC\server`.
 #[cfg(target_os = "windows")]
-fn dedupe_unc_canonical_paths(conn: &Connection) {
-    let prefixed: Vec<String> = match conn.prepare(
+fn dedupe_unc_canonical_paths(conn: &mut Connection) -> Result<()> {
+    let tx = conn.transaction()?;
+    let prefixed: Vec<String> = match tx.prepare(
         // LIKE pattern `\\?\%` with ESCAPE not needed — `?` isn't a
         // SQL wildcard, `_` is.
         "SELECT canonical_path FROM repos WHERE canonical_path LIKE '\\\\?\\%'",
@@ -414,21 +424,20 @@ fn dedupe_unc_canonical_paths(conn: &Connection) {
             .query_map([], |r| r.get::<_, String>(0))
             .map(|rows| rows.flatten().collect())
             .unwrap_or_default(),
-        Err(_) => return,
+        Err(error) => return Err(error.into()),
     };
 
     for prefixed_path in prefixed {
         let Some(rest) = prefixed_path.strip_prefix(r"\\?\") else {
             continue;
         };
-        // Skip true extended-UNC; stripping would lose the UNC marker.
-        if rest.starts_with("UNC\\") {
-            continue;
-        }
-        let unprefixed = rest.to_string();
+        let unprefixed = rest
+            .strip_prefix("UNC\\")
+            .map(|share| format!(r"\\{share}"))
+            .unwrap_or_else(|| rest.to_string());
 
         // Twin exists → drop the prefixed row + its dangling source/alias rows.
-        let twin: bool = conn
+        let twin: bool = tx
             .query_row(
                 "SELECT 1 FROM repos WHERE canonical_path = ?1",
                 params![&unprefixed],
@@ -437,35 +446,110 @@ fn dedupe_unc_canonical_paths(conn: &Connection) {
             .unwrap_or(false);
 
         if twin {
-            let _ = conn.execute(
+            // Preserve the strictest durable preference and any known storage
+            // identity before retiring the duplicate catalog owner.
+            tx.execute(
+                "UPDATE repos SET \
+                   user_state = CASE \
+                     WHEN (SELECT user_state FROM repos WHERE canonical_path = ?2) = 'removed' \
+                       THEN 'removed' \
+                     WHEN user_state != 'removed' \
+                      AND (SELECT user_state FROM repos WHERE canonical_path = ?2) = 'pinned' \
+                       THEN 'pinned' ELSE user_state END, \
+                   removed_at = COALESCE(removed_at, \
+                     (SELECT removed_at FROM repos WHERE canonical_path = ?2)), \
+                   repo_storage_identity = COALESCE(repo_storage_identity, \
+                     (SELECT repo_storage_identity FROM repos WHERE canonical_path = ?2)), \
+                   lifecycle_epoch = MAX(lifecycle_epoch, COALESCE( \
+                     (SELECT lifecycle_epoch FROM repos WHERE canonical_path = ?2), 0)) \
+                 WHERE canonical_path = ?1",
+                params![&unprefixed, &prefixed_path],
+            )?;
+            tx.execute(
+                "INSERT OR IGNORE INTO discovery_tombstones( \
+                    canonical_path, removed_at, reason, last_known_name, last_known_source) \
+                 SELECT ?1, removed_at, reason, last_known_name, last_known_source \
+                 FROM discovery_tombstones WHERE canonical_path = ?2",
+                params![&unprefixed, &prefixed_path],
+            )?;
+            purge_obsolete_repo_cache(&tx, &prefixed_path)?;
+            tx.execute(
                 "DELETE FROM repos WHERE canonical_path = ?1",
                 params![&prefixed_path],
-            );
-            let _ = conn.execute(
+            )?;
+            tx.execute(
+                "UPDATE OR IGNORE repo_sources SET repo_canonical_path = ?1 \
+                 WHERE repo_canonical_path = ?2",
+                params![&unprefixed, &prefixed_path],
+            )?;
+            tx.execute(
                 "DELETE FROM repo_sources WHERE repo_canonical_path = ?1",
                 params![&prefixed_path],
-            );
-            let _ = conn.execute(
-                "DELETE FROM path_aliases WHERE canonical_path = ?1",
+            )?;
+            tx.execute(
+                "UPDATE path_aliases SET canonical_path = ?1 WHERE canonical_path = ?2",
+                params![&unprefixed, &prefixed_path],
+            )?;
+            tx.execute(
+                "UPDATE discovery_roots SET created_from_repo = ?1 WHERE created_from_repo = ?2",
+                params![&unprefixed, &prefixed_path],
+            )?;
+            tx.execute(
+                "DELETE FROM discovery_tombstones WHERE canonical_path = ?1",
                 params![&prefixed_path],
-            );
+            )?;
             continue;
         }
 
-        // No twin → rename in place across the three tables.
-        let _ = conn.execute(
+        // No twin → discard path-keyed cache truth, then rename the durable
+        // owner and its provenance. A normal refill reconstructs recent rows.
+        purge_obsolete_repo_cache(&tx, &prefixed_path)?;
+        tx.execute(
             "UPDATE repos SET canonical_path = ?1, path = ?1 WHERE canonical_path = ?2",
             params![&unprefixed, &prefixed_path],
-        );
-        let _ = conn.execute(
+        )?;
+        tx.execute(
             "UPDATE repo_sources SET repo_canonical_path = ?1 WHERE repo_canonical_path = ?2",
             params![&unprefixed, &prefixed_path],
-        );
-        let _ = conn.execute(
+        )?;
+        tx.execute(
             "UPDATE path_aliases SET canonical_path = ?1 WHERE canonical_path = ?2",
             params![&unprefixed, &prefixed_path],
-        );
+        )?;
+        tx.execute(
+            "UPDATE discovery_roots SET created_from_repo = ?1 WHERE created_from_repo = ?2",
+            params![&unprefixed, &prefixed_path],
+        )?;
+        tx.execute(
+            "UPDATE discovery_tombstones SET canonical_path = ?1 WHERE canonical_path = ?2",
+            params![&unprefixed, &prefixed_path],
+        )?;
     }
+    tx.commit()?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn purge_obsolete_repo_cache(conn: &Connection, repo_path: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM commits WHERE repo_path = ?1 OR repo_id IN ( \
+             SELECT rowid FROM repos WHERE canonical_path = ?1)",
+        params![repo_path],
+    )?;
+    conn.execute("DELETE FROM diffs WHERE repo_path = ?1", params![repo_path])?;
+    conn.execute(
+        "DELETE FROM history_membership WHERE repo_path = ?1",
+        params![repo_path],
+    )?;
+    conn.execute(
+        "DELETE FROM history_roots WHERE repo_path = ?1",
+        params![repo_path],
+    )?;
+    conn.execute(
+        "DELETE FROM history_coverage WHERE repo_path = ?1",
+        params![repo_path],
+    )?;
+    Ok(())
 }
 
 // ----- repos -----
@@ -518,6 +602,10 @@ pub fn upsert_repos(conn: &mut Connection, repos: &[Repo]) -> Result<()> {
                 missing_since = CASE
                     WHEN repos.status = 'missing' THEN NULL
                     ELSE repos.missing_since
+                END,
+                lifecycle_epoch = CASE
+                    WHEN repos.status = 'missing' THEN repos.lifecycle_epoch + 1
+                    ELSE repos.lifecycle_epoch
                 END
             "#,
         )?;
@@ -534,11 +622,9 @@ pub fn upsert_repos(conn: &mut Connection, repos: &[Repo]) -> Result<()> {
 /// Read a value from the meta table. None if the key has never been set.
 #[allow(dead_code)] // wired up by orchestrator
 pub fn meta_get(conn: &Connection, key: &str) -> Result<Option<String>> {
-    let res = conn.query_row(
-        "SELECT value FROM meta WHERE key = ?1",
-        params![key],
-        |r| r.get::<_, String>(0),
-    );
+    let res = conn.query_row("SELECT value FROM meta WHERE key = ?1", params![key], |r| {
+        r.get::<_, String>(0)
+    });
     match res {
         Ok(v) => Ok(Some(v)),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
@@ -578,7 +664,7 @@ const GENERATION_KEY: &str = "commit_generation";
 /// writes the batch's commits, so the bump and the rows it stamps commit
 /// together: a reader can never observe a half-applied batch, and two
 /// concurrent batches can never share a generation.
-fn next_generation(conn: &Connection) -> Result<i64> {
+pub(crate) fn next_generation(conn: &Connection) -> Result<i64> {
     conn.execute(
         r#"
         INSERT INTO meta (key, value, updated_at) VALUES (?1, '1', ?2)
@@ -601,6 +687,56 @@ fn next_generation(conn: &Connection) -> Result<i64> {
 pub fn current_generation(conn: &Connection) -> Result<i64> {
     let raw = meta_get(conn, GENERATION_KEY)?;
     Ok(raw.and_then(|s| s.parse().ok()).unwrap_or(0))
+}
+
+const LAST_DESTRUCTIVE_GENERATION_KEY: &str = "timeline_last_destructive_generation";
+
+/// Record the generation at which rows were removed. Insert-only generations
+/// are naturally handled by `first_seen_generation`; deletions need this
+/// second fence because an old pinned reader cannot otherwise distinguish
+/// "row did not exist yet" from "row existed and was just removed".
+pub(crate) fn record_destructive_generation(conn: &Connection, generation: i64) -> Result<()> {
+    conn.execute(
+        r#"
+        INSERT INTO meta(key, value, updated_at)
+        VALUES (?1, ?2, strftime('%s','now'))
+        ON CONFLICT(key) DO UPDATE SET
+            value = excluded.value,
+            updated_at = excluded.updated_at
+        "#,
+        params![LAST_DESTRUCTIVE_GENERATION_KEY, generation.to_string()],
+    )?;
+    Ok(())
+}
+
+/// Reject a pinned read after any destructive publication newer than its
+/// generation. Callers check both before and after their query; the normal
+/// invalidation event then re-pins and retries the whole coherent snapshot.
+pub fn ensure_timeline_snapshot_valid(conn: &Connection, filters: &TimelineFilters) -> Result<()> {
+    if let Some(query) = filters.query.as_deref() {
+        let scalar_count = query.chars().take(513).count();
+        if scalar_count > 512 || query.len() > 2_048 {
+            anyhow::bail!("search query exceeds the 512-character limit");
+        }
+    }
+    let Some(view_generation) = filters.view_generation else {
+        return Ok(());
+    };
+    let destructive: Option<String> = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = ?1",
+            params![LAST_DESTRUCTIVE_GENERATION_KEY],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let destructive = destructive
+        .as_deref()
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(0);
+    if destructive > view_generation {
+        anyhow::bail!("timeline snapshot invalidated by destructive generation {destructive}");
+    }
+    Ok(())
 }
 
 // ----- commits -----
@@ -712,6 +848,31 @@ pub fn upsert_commits(conn: &mut Connection, commits: &[CommitSummary]) -> Resul
             if row_generation == generation {
                 inserted += 1;
             }
+            // Epoch 0 is the pre-complete rolling cache. Once a complete
+            // history epoch has been published (or while one is actively
+            // building), ordinary recent-cache writes must not contaminate
+            // that published reachability snapshot. The history writer adds
+            // its own staging membership explicitly.
+            tx.execute(
+                r#"
+                INSERT OR IGNORE INTO history_membership(repo_path, scan_epoch, hash)
+                SELECT ?1,
+                       COALESCE((SELECT published_epoch FROM history_coverage
+                                 WHERE repo_path = ?1), 0),
+                       ?2
+                WHERE NOT EXISTS (
+                          SELECT 1 FROM history_coverage WHERE repo_path = ?1
+                      )
+                   OR EXISTS (
+                          SELECT 1 FROM history_coverage
+                          WHERE repo_path = ?1
+                            AND scan_epoch = 0
+                            AND published_epoch = 0
+                            AND state != 'indexing'
+                      )
+                "#,
+                params![c.repo_path, c.hash],
+            )?;
         }
     }
     tx.commit()?;
@@ -754,7 +915,11 @@ pub fn reconcile_repo_commits(
     // ambiguous signal is the wrong trade for a read-only glance tool —
     // skip, and let truly-dead rows age out of the time window instead.
     if live.is_empty() {
-        return Ok(UpsertOutcome { generation: 0, inserted: 0, deleted: 0 });
+        return Ok(UpsertOutcome {
+            generation: 0,
+            inserted: 0,
+            deleted: 0,
+        });
     }
     let floor = if walk_capped {
         match live.iter().map(|c| c.timestamp).min() {
@@ -779,9 +944,8 @@ pub fn reconcile_repo_commits(
     // Taking the write lock up front keeps the 5s queueing behaviour.
     let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let cached: Vec<String> = {
-        let mut stmt = tx.prepare(
-            "SELECT hash FROM commits WHERE repo_path = ?1 AND timestamp >= ?2",
-        )?;
+        let mut stmt =
+            tx.prepare("SELECT hash FROM commits WHERE repo_path = ?1 AND timestamp >= ?2")?;
         let rows = stmt
             .query_map(params![repo_path, floor], |r| r.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
@@ -794,7 +958,11 @@ pub fn reconcile_repo_commits(
         .collect();
     if ghosts.is_empty() {
         // Nothing to do — don't commit a write or burn a generation.
-        return Ok(UpsertOutcome { generation: 0, inserted: 0, deleted: 0 });
+        return Ok(UpsertOutcome {
+            generation: 0,
+            inserted: 0,
+            deleted: 0,
+        });
     }
     let generation = next_generation(&tx)?;
     let mut deleted = 0usize;
@@ -804,6 +972,7 @@ pub fn reconcile_repo_commits(
             deleted += del.execute(params![repo_path, h])?;
         }
     }
+    record_destructive_generation(&tx, generation)?;
     tx.commit()?;
     Ok(UpsertOutcome {
         generation,
@@ -817,17 +986,46 @@ pub fn reconcile_repo_commits(
 /// timeline forever (nothing else ever deletes from `commits`). Bumps the
 /// generation when rows were actually removed so windowed readers re-pull
 /// a consistent view.
+#[cfg(test)]
 pub fn delete_repo_commits(conn: &mut Connection, repo_path: &str) -> Result<UpsertOutcome> {
     let tx = conn.transaction()?;
-    let deleted = tx.execute(
+    let mut deleted = tx.execute(
         "DELETE FROM commits WHERE repo_path = ?1 \
          OR repo_id IN (SELECT rowid FROM repos WHERE canonical_path = ?1)",
         params![repo_path],
     )?;
+    // Legacy rows inserted before the catalog resolved carry repo_id=0. A
+    // Windows repository may also have been cached under the ordinary UNC
+    // spelling while its durable row used the extended spelling (or vice
+    // versa). Purge every equivalent identity so exclusion cannot leak those
+    // orphan rows through the repo_id defense gate.
+    let target_key = discovery_orchestrator::repo_identity_match_key(repo_path);
+    let unresolved_paths: Vec<String> = {
+        let mut statement = tx.prepare(
+            "SELECT DISTINCT repo_path FROM commits WHERE repo_id = 0 AND repo_path != ?1",
+        )?;
+        let rows = statement
+            .query_map(params![repo_path], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    };
+    for unresolved in unresolved_paths {
+        if discovery_orchestrator::repo_identity_match_key(&unresolved) == target_key {
+            deleted += tx.execute(
+                "DELETE FROM commits WHERE repo_id = 0 AND repo_path = ?1",
+                params![unresolved],
+            )?;
+        }
+    }
     if deleted == 0 {
-        return Ok(UpsertOutcome { generation: 0, inserted: 0, deleted: 0 });
+        return Ok(UpsertOutcome {
+            generation: 0,
+            inserted: 0,
+            deleted: 0,
+        });
     }
     let generation = next_generation(&tx)?;
+    record_destructive_generation(&tx, generation)?;
     tx.commit()?;
     Ok(UpsertOutcome {
         generation,
@@ -841,15 +1039,16 @@ pub fn list_recent_commits(
     since: i64,
     limit: usize,
 ) -> Result<Vec<CommitSummary>> {
-    let mut stmt = conn.prepare(
+    let sql = format!(
         r#"
         SELECT repo_path, repo_name, hash, short_hash, summary, author, email, timestamp, branch_label, is_merge, is_tagged, parents, message, remote_tip_label, remote_tip_extra_count
         FROM commits
-        WHERE timestamp >= ?1
+        WHERE timestamp >= ?1{PUBLISHED_HISTORY_VISIBILITY}{EXCLUDED_REPO_VISIBILITY}
         ORDER BY timestamp DESC
         LIMIT ?2
-        "#,
-    )?;
+        "#
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
         .query_map(params![since, limit as i64], |row| {
             let parents_json: String = row.get(11)?;
@@ -916,9 +1115,9 @@ pub struct TimelineFilters {
     /// pre-Phase-2 behaviour the legacy non-windowed paths still rely on).
     pub view_generation: Option<i64>,
     /// Free-text commit search. Whitespace-separated terms AND together;
-    /// each term must appear in the summary, full message, author or repo
-    /// name (substring), or — when it looks like a hex prefix of 4+ chars —
-    /// lead the commit hash. `None`/empty = no restriction.
+    /// each term is a literal Unicode substring of summary, message, author,
+    /// email or repo name, or — when it looks like a hex prefix of 4+ chars —
+    /// may lead the commit hash. `None`/empty = no restriction.
     pub query: Option<String>,
 }
 
@@ -939,6 +1138,72 @@ pub struct CommitWindow {
 const TIMELINE_COLS: &str = "repo_path, repo_name, hash, short_hash, summary, \
     author, email, timestamp, branch_label, is_merge, is_tagged, parents, \
     message, remote_tip_label, remote_tip_extra_count";
+
+/// A complete-history scan writes canonical commit metadata progressively but
+/// publishes reachability atomically. Every user-facing cache read applies
+/// this predicate so staging rows can never leak through the older timeline
+/// paths that query `commits` directly:
+///
+/// - no coverage row: legacy rolling cache, every row is visible;
+/// - first scan not yet published (`published_epoch = 0`): only baseline rows
+///   that predate the scan (`history_scan_epoch = 0`) are visible;
+/// - published history: exact membership in that published epoch is required.
+const PUBLISHED_HISTORY_VISIBILITY: &str = r#"
+ AND (
+      NOT EXISTS (
+          SELECT 1 FROM history_coverage coverage
+          WHERE coverage.repo_path = commits.repo_path
+      )
+      OR EXISTS (
+          SELECT 1 FROM history_coverage coverage
+          WHERE coverage.repo_path = commits.repo_path
+            AND (
+                (coverage.published_epoch = 0 AND commits.history_scan_epoch = 0)
+                OR EXISTS (
+                    SELECT 1 FROM history_membership membership
+                    WHERE membership.repo_path = commits.repo_path
+                      AND membership.hash = commits.hash
+                      AND membership.scan_epoch = coverage.published_epoch
+                      AND coverage.published_epoch > 0
+                )
+            )
+      )
+ )
+"#;
+
+/// Fail closed for excluded repositories even when disposable cache cleanup
+/// fails or a legacy commit has `repo_id = 0`. Exact catalog paths cover the
+/// normal case; observed aliases cover older path spellings. The tombstone
+/// checks keep the gate durable even if a malformed legacy catalog row was
+/// already retired.
+const EXCLUDED_REPO_VISIBILITY: &str = r#"
+ AND NOT EXISTS (
+      SELECT 1 FROM repos excluded
+      WHERE excluded.user_state = 'removed'
+        AND (excluded.rowid = commits.repo_id
+             OR excluded.path = commits.repo_path
+             OR excluded.canonical_path = commits.repo_path)
+ )
+ AND NOT EXISTS (
+      SELECT 1 FROM discovery_tombstones tombstone
+      WHERE tombstone.canonical_path = commits.repo_path
+ )
+ AND NOT EXISTS (
+      SELECT 1 FROM path_aliases alias
+      WHERE alias.observed_path = commits.repo_path
+        AND (
+            EXISTS (
+                SELECT 1 FROM repos excluded
+                WHERE excluded.canonical_path = alias.canonical_path
+                  AND excluded.user_state = 'removed'
+            )
+            OR EXISTS (
+                SELECT 1 FROM discovery_tombstones tombstone
+                WHERE tombstone.canonical_path = alias.canonical_path
+            )
+        )
+ )
+"#;
 
 /// Map a row selecting `TIMELINE_COLS` to a CommitSummary + its cursor.
 fn row_to_window_item(row: &rusqlite::Row) -> rusqlite::Result<(CommitSummary, Cursor)> {
@@ -996,7 +1261,10 @@ fn escape_like(term: &str) -> String {
 /// multi-repo selection would otherwise blow past SQLite's bound-variable
 /// limit. `authors` (bounded, small), `since`, `view_generation` and
 /// `query` terms use bound params.
-fn build_filter_sql(filters: &TimelineFilters) -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
+fn build_filter_sql(
+    conn: &Connection,
+    filters: &TimelineFilters,
+) -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
     let mut sql = String::new();
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
@@ -1005,9 +1273,8 @@ fn build_filter_sql(filters: &TimelineFilters) -> (String, Vec<Box<dyn rusqlite:
     // flight at exclude time can still upsert rows for it afterwards. Never
     // surface a commit whose repo row is user-removed. repo_id = 0 rows
     // (repo not yet registered at insert time) pass — they can't be excluded.
-    sql.push_str(
-        " AND repo_id NOT IN (SELECT rowid FROM repos WHERE user_state = 'removed')",
-    );
+    sql.push_str(EXCLUDED_REPO_VISIBILITY);
+    sql.push_str(PUBLISHED_HISTORY_VISIBILITY);
 
     if let Some(since) = filters.since {
         if since > 0 {
@@ -1043,21 +1310,32 @@ fn build_filter_sql(filters: &TimelineFilters) -> (String, Vec<Box<dyn rusqlite:
             }
         }
     }
-    // Free-text search. Each term is a residual LIKE predicate over the
-    // timeline index scan — at the cache's bounded size (thousands of
-    // rows) that needs no FTS. SQLite's LIKE is ASCII-case-insensitive;
-    // non-ASCII (한글 etc.) matches exact substrings, which is the
-    // expected behaviour for those scripts.
+    // Free-text search. Trigram FTS supplies instant, case-insensitive
+    // substring candidates for terms of three or more characters, but only
+    // after its explicit coverage ledger is complete. A cold first search
+    // deliberately falls back to the exact LIKE contract instead of waiting
+    // for legacy indexing; the command schedules that one-time maintenance
+    // after returning the result. New rows are covered by trigger, so the
+    // completed FTS then remains a safe hard gate.
     if let Some(query) = &filters.query {
+        if crate::history_fts::is_ready(conn) {
+            if let Some(expression) = crate::history_query::substring_expression(query) {
+                sql.push_str(
+                    " AND rowid IN (SELECT rowid FROM commits_fts WHERE commits_fts MATCH ?)",
+                );
+                params.push(Box::new(expression));
+            }
+        }
         for term in query.split_whitespace().take(QUERY_MAX_TERMS) {
             let pat = format!("%{}%", escape_like(term));
             sql.push_str(
                 " AND (summary LIKE ? ESCAPE '\\' \
                  OR message LIKE ? ESCAPE '\\' \
                  OR author LIKE ? ESCAPE '\\' \
+                 OR email LIKE ? ESCAPE '\\' \
                  OR repo_name LIKE ? ESCAPE '\\'",
             );
-            for _ in 0..4 {
+            for _ in 0..5 {
                 params.push(Box::new(pat.clone()));
             }
             // A hex-looking term of 4+ chars can also be a SHA prefix.
@@ -1090,7 +1368,7 @@ pub fn list_commits_window(
     direction: WindowDirection,
     limit: usize,
 ) -> Result<CommitWindow> {
-    let (filter_sql, mut bind) = build_filter_sql(filters);
+    let (filter_sql, mut bind) = build_filter_sql(conn, filters);
 
     // Overfetch one row to learn whether a further page exists in the
     // reading direction. Newer pages read DESC and get reversed so the
@@ -1160,7 +1438,7 @@ pub fn list_commits_window(
 
 /// Total commit count under `filters` — drives the virtual scrollbar size.
 pub fn count_commits(conn: &Connection, filters: &TimelineFilters) -> Result<i64> {
-    let (filter_sql, bind) = build_filter_sql(filters);
+    let (filter_sql, bind) = build_filter_sql(conn, filters);
     let sql = format!("SELECT COUNT(*) FROM commits WHERE 1=1{filter_sql}");
     let n: i64 = conn.query_row(&sql, rusqlite::params_from_iter(bind.iter()), |r| r.get(0))?;
     Ok(n)
@@ -1169,12 +1447,8 @@ pub fn count_commits(conn: &Connection, filters: &TimelineFilters) -> Result<i64
 /// Count of commits strictly newer than `cursor` under `filters` — i.e. the
 /// 0-based global rank `cursor`'s row holds (or would hold) in the filtered
 /// total order. O(rank); only on the discrete filter-change recovery path.
-fn count_newer_than(
-    conn: &Connection,
-    filters: &TimelineFilters,
-    cursor: &Cursor,
-) -> Result<i64> {
-    let (filter_sql, mut bind) = build_filter_sql(filters);
+fn count_newer_than(conn: &Connection, filters: &TimelineFilters, cursor: &Cursor) -> Result<i64> {
+    let (filter_sql, mut bind) = build_filter_sql(conn, filters);
     let sql = format!(
         "SELECT COUNT(*) FROM commits WHERE 1=1{filter_sql} \
          AND (sort_ts, repo_path, hash) < (?, ?, ?)"
@@ -1182,8 +1456,7 @@ fn count_newer_than(
     bind.push(Box::new(cursor.sort_ts));
     bind.push(Box::new(cursor.repo_path.clone()));
     bind.push(Box::new(cursor.hash.clone()));
-    let n: i64 =
-        conn.query_row(&sql, rusqlite::params_from_iter(bind.iter()), |r| r.get(0))?;
+    let n: i64 = conn.query_row(&sql, rusqlite::params_from_iter(bind.iter()), |r| r.get(0))?;
     Ok(n)
 }
 
@@ -1230,44 +1503,54 @@ pub struct FilterFacets {
 pub fn list_filter_facets(
     conn: &Connection,
     filters: &TimelineFilters,
+    include_authors: bool,
+    include_repos: bool,
 ) -> Result<FilterFacets> {
-    let mut author_filters = filters.clone();
-    author_filters.authors = None;
-    let (author_filter_sql, author_bind) = build_filter_sql(&author_filters);
+    let authors = if include_authors {
+        let mut author_filters = filters.clone();
+        author_filters.authors = None;
+        let (author_filter_sql, author_bind) = build_filter_sql(conn, &author_filters);
+        let sql = format!(
+            "SELECT author, COUNT(*) AS cnt, MAX(timestamp) AS last \
+             FROM commits WHERE 1=1{author_filter_sql} \
+             GROUP BY author ORDER BY last DESC"
+        );
+        let mut statement = conn.prepare(&sql)?;
+        let rows = statement
+            .query_map(rusqlite::params_from_iter(author_bind.iter()), |row| {
+                Ok(AuthorTally {
+                    name: row.get(0)?,
+                    count: row.get(1)?,
+                    last_activity: row.get(2)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    } else {
+        Vec::new()
+    };
 
-    let authors_sql = format!(
-        "SELECT author, COUNT(*) AS cnt, MAX(timestamp) AS last \
-         FROM commits WHERE 1=1{author_filter_sql} \
-         GROUP BY author ORDER BY last DESC"
-    );
-    let mut stmt = conn.prepare(&authors_sql)?;
-    let authors = stmt
-        .query_map(rusqlite::params_from_iter(author_bind.iter()), |r| {
-            Ok(AuthorTally {
-                name: r.get(0)?,
-                count: r.get(1)?,
-                last_activity: r.get(2)?,
-            })
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-    drop(stmt);
-
-    let mut repo_filters = filters.clone();
-    repo_filters.repo_ids = None;
-    let (repo_filter_sql, repo_bind) = build_filter_sql(&repo_filters);
-    let repos_sql = format!(
-        "SELECT repo_id, COUNT(*) AS cnt \
-         FROM commits WHERE 1=1{repo_filter_sql} GROUP BY repo_id"
-    );
-    let mut stmt = conn.prepare(&repos_sql)?;
-    let repos = stmt
-        .query_map(rusqlite::params_from_iter(repo_bind.iter()), |r| {
-            Ok(RepoCommitCount {
-                repo_id: r.get(0)?,
-                count: r.get(1)?,
-            })
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
+    let repos = if include_repos {
+        let mut repo_filters = filters.clone();
+        repo_filters.repo_ids = None;
+        let (repo_filter_sql, repo_bind) = build_filter_sql(conn, &repo_filters);
+        let sql = format!(
+            "SELECT repo_id, COUNT(*) AS cnt \
+             FROM commits WHERE 1=1{repo_filter_sql} GROUP BY repo_id"
+        );
+        let mut statement = conn.prepare(&sql)?;
+        let rows = statement
+            .query_map(rusqlite::params_from_iter(repo_bind.iter()), |row| {
+                Ok(RepoCommitCount {
+                    repo_id: row.get(0)?,
+                    count: row.get(1)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    } else {
+        Vec::new()
+    };
 
     Ok(FilterFacets { authors, repos })
 }
@@ -1306,7 +1589,7 @@ pub fn list_commits_around_anchor(
     // The window queries are strict (`<` / `>`), so the anchor row itself
     // lands in neither — fetch it directly to learn whether it survives the
     // filter and to place it between the two halves.
-    let (filter_sql, filter_bind) = build_filter_sql(filters);
+    let (filter_sql, filter_bind) = build_filter_sql(conn, filters);
     let anchor_sql = format!(
         "SELECT {TIMELINE_COLS} FROM commits \
          WHERE sort_ts = ? AND repo_path = ? AND hash = ?{filter_sql}"
@@ -1328,8 +1611,7 @@ pub fn list_commits_around_anchor(
     };
     let anchor_found = anchor_row.is_some();
 
-    let mut rows: Vec<CommitSummary> =
-        Vec::with_capacity(newer.rows.len() + older.rows.len() + 1);
+    let mut rows: Vec<CommitSummary> = Vec::with_capacity(newer.rows.len() + older.rows.len() + 1);
     rows.extend(newer.rows);
     if let Some((summary, _)) = anchor_row {
         rows.push(summary);
@@ -1338,11 +1620,19 @@ pub fn list_commits_around_anchor(
 
     let start_cursor = newer
         .start_cursor
-        .or(if anchor_found { Some(anchor.clone()) } else { None })
+        .or(if anchor_found {
+            Some(anchor.clone())
+        } else {
+            None
+        })
         .or(older.start_cursor);
     let end_cursor = older
         .end_cursor
-        .or(if anchor_found { Some(anchor.clone()) } else { None })
+        .or(if anchor_found {
+            Some(anchor.clone())
+        } else {
+            None
+        })
         .or(newer.end_cursor);
 
     // `rows[0]`'s global rank. When the caller resolved the anchor by rank
@@ -1377,7 +1667,7 @@ pub fn cursor_at_rank(
     filters: &TimelineFilters,
     rank: i64,
 ) -> Result<Option<Cursor>> {
-    let (filter_sql, mut bind) = build_filter_sql(filters);
+    let (filter_sql, mut bind) = build_filter_sql(conn, filters);
     let sql = format!(
         "SELECT sort_ts, repo_path, hash FROM commits WHERE 1=1{filter_sql} \
          ORDER BY sort_ts ASC, repo_path ASC, hash ASC LIMIT 1 OFFSET ?"
@@ -1479,8 +1769,9 @@ pub fn put_diff(
 /// the total size drops to ~half the cap. Returns how many rows were
 /// removed. Safe to call when the cache is small — it is a no-op then.
 pub fn gc_diffs(conn: &mut Connection, max_bytes: i64) -> Result<usize> {
-    let total: i64 =
-        conn.query_row("SELECT COALESCE(SUM(bytes), 0) FROM diffs", [], |r| r.get(0))?;
+    let total: i64 = conn.query_row("SELECT COALESCE(SUM(bytes), 0) FROM diffs", [], |r| {
+        r.get(0)
+    })?;
     if total <= max_bytes {
         return Ok(0);
     }
@@ -1531,31 +1822,56 @@ mod tests {
     /// minimal `repos` table the window queries' removed-repo guard joins
     /// against.
     fn test_db() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
+        let mut conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(COMMITS_SCHEMA_V5).unwrap();
         conn.execute_batch(
             "CREATE TABLE repos (path TEXT PRIMARY KEY, name TEXT NOT NULL, \
              canonical_path TEXT, \
-             user_state TEXT NOT NULL DEFAULT 'normal');",
+             user_state TEXT NOT NULL DEFAULT 'normal'); \
+             CREATE TABLE discovery_tombstones ( \
+               canonical_path TEXT PRIMARY KEY, removed_at INTEGER NOT NULL, \
+               reason TEXT NOT NULL, last_known_name TEXT, last_known_source TEXT); \
+             CREATE TABLE path_aliases ( \
+               observed_path TEXT NOT NULL, canonical_path TEXT NOT NULL, \
+               source TEXT NOT NULL, first_seen_at INTEGER NOT NULL, \
+               last_seen_at INTEGER NOT NULL, PRIMARY KEY(observed_path, source));",
         )
         .unwrap();
+        {
+            let tx = conn.transaction().unwrap();
+            crate::history_schema::migrate(&tx).unwrap();
+            tx.commit().unwrap();
+        }
         conn
     }
 
     /// A fresh in-memory DB with the v5 `commits` schema plus the minimal
     /// `repos` + `meta` tables `upsert_commits` touches — the `repos` rowid
-    /// lookup and the `meta` generation counter respectively.
+    /// lookup and the `meta` generation counter respectively — upgraded to
+    /// v6 so the ordinary writer's epoch-0 membership hook is exercised too.
     fn upsert_test_db() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
+        let mut conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(COMMITS_SCHEMA_V5).unwrap();
         conn.execute_batch(
             "CREATE TABLE repos (path TEXT PRIMARY KEY, name TEXT NOT NULL, \
              canonical_path TEXT, \
              user_state TEXT NOT NULL DEFAULT 'normal');\
+             CREATE TABLE discovery_tombstones ( \
+               canonical_path TEXT PRIMARY KEY, removed_at INTEGER NOT NULL, \
+               reason TEXT NOT NULL, last_known_name TEXT, last_known_source TEXT); \
+             CREATE TABLE path_aliases ( \
+               observed_path TEXT NOT NULL, canonical_path TEXT NOT NULL, \
+               source TEXT NOT NULL, first_seen_at INTEGER NOT NULL, \
+               last_seen_at INTEGER NOT NULL, PRIMARY KEY(observed_path, source));\
              CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL, \
              updated_at INTEGER NOT NULL);",
         )
         .unwrap();
+        {
+            let tx = conn.transaction().unwrap();
+            crate::history_schema::migrate(&tx).unwrap();
+            tx.commit().unwrap();
+        }
         conn
     }
 
@@ -1694,7 +2010,10 @@ mod tests {
         let walked = walk(&conn, &f, 4);
         assert_eq!(walked.len(), 30);
         assert_eq!(
-            walked.iter().collect::<std::collections::HashSet<_>>().len(),
+            walked
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
             30,
             "identical timestamps still paginate without gaps or dupes"
         );
@@ -1710,7 +2029,10 @@ mod tests {
         for i in 0..15 {
             insert(&conn, 2, &format!("b{i:02}"), 1_000 + i, "bob");
         }
-        assert_eq!(count_commits(&conn, &TimelineFilters::default()).unwrap(), 35);
+        assert_eq!(
+            count_commits(&conn, &TimelineFilters::default()).unwrap(),
+            35
+        );
 
         let repo2 = TimelineFilters {
             repo_ids: Some(vec![2]),
@@ -1735,7 +2057,7 @@ mod tests {
 
     #[test]
     fn query_matches_text_author_repo_and_hash_prefix() {
-        let conn = test_db();
+        let mut conn = test_db();
         insert_text(
             &conn,
             1,
@@ -1770,6 +2092,11 @@ mod tests {
         };
         // summary / message-body substring (ASCII case-insensitive).
         assert_eq!(count_commits(&conn, &q("LOGIN")).unwrap(), 1);
+        assert_eq!(
+            count_commits(&conn, &q("gin")).unwrap(),
+            1,
+            "indexed trigram search preserves mid-token substring semantics"
+        );
         assert_eq!(count_commits(&conn, &q("oauth")).unwrap(), 1);
         // multi-term = AND.
         assert_eq!(count_commits(&conn, &q("popup fullscreen")).unwrap(), 1);
@@ -1778,6 +2105,7 @@ mod tests {
         assert_eq!(count_commits(&conn, &q("carol")).unwrap(), 1);
         assert_eq!(count_commits(&conn, &q("repo2")).unwrap(), 1);
         assert_eq!(count_commits(&conn, &q("위치권한")).unwrap(), 1);
+        assert_eq!(count_commits(&conn, &q("치권한")).unwrap(), 1);
         // hash prefix needs 4+ hex chars; 3 fall back to text-only (no hit).
         assert_eq!(count_commits(&conn, &q("abc1")).unwrap(), 1);
         assert_eq!(count_commits(&conn, &q("ABC1")).unwrap(), 1);
@@ -1790,11 +2118,90 @@ mod tests {
         };
         assert_eq!(count_commits(&conn, &scoped).unwrap(), 1);
         assert_eq!(walk(&conn, &scoped, 3), vec!["fffe1111".to_string()]);
+
+        let differential_queries = [
+            "LOGIN",
+            "gin",
+            "popup fullscreen",
+            "alice oauth",
+            "치권한",
+            "abc1",
+            "repo2 location",
+        ];
+        let cold: Vec<(i64, Vec<String>)> = differential_queries
+            .iter()
+            .map(|query| {
+                let filters = q(query);
+                (
+                    count_commits(&conn, &filters).unwrap(),
+                    walk(&conn, &filters, 2),
+                )
+            })
+            .collect();
+        let promoted = crate::history_fts::backfill_batch(&mut conn, 1_024).unwrap();
+        assert!(!promoted.has_more);
+        assert!(crate::history_fts::is_ready(&conn));
+        let accelerated: Vec<(i64, Vec<String>)> = differential_queries
+            .iter()
+            .map(|query| {
+                let filters = q(query);
+                (
+                    count_commits(&conn, &filters).unwrap(),
+                    walk(&conn, &filters, 2),
+                )
+            })
+            .collect();
+        assert_eq!(
+            accelerated, cold,
+            "compressed trigram candidates preserve exact keys/count/order"
+        );
+    }
+
+    #[test]
+    fn cold_legacy_search_is_exact_before_and_after_fts_promotion() {
+        let mut conn = crate::history_schema::test_support::legacy_v5_connection();
+        crate::history_schema::test_support::insert_commit(
+            &conn,
+            "legacy123",
+            "legacy optimization",
+            "first-run body",
+        );
+        crate::history_schema::test_support::migrate_to_current(&mut conn);
+        let filters = TimelineFilters {
+            query: Some("tim".into()),
+            ..Default::default()
+        };
+
+        assert!(!crate::history_fts::is_ready(&conn));
+        assert_eq!(
+            count_commits(&conn, &filters).unwrap(),
+            1,
+            "the first cold query must not wait for or depend on FTS"
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM commits_fts WHERE commits_fts MATCH 'tim'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+
+        let outcome = crate::history_fts::backfill_batch(&mut conn, 100).unwrap();
+        assert_eq!(outcome.indexed, 1);
+        assert!(!outcome.has_more);
+        assert!(crate::history_fts::is_ready(&conn));
+        assert_eq!(
+            count_commits(&conn, &filters).unwrap(),
+            1,
+            "FTS acceleration must preserve the exact substring result set"
+        );
     }
 
     #[test]
     fn query_like_wildcards_match_literally() {
-        let conn = test_db();
+        let mut conn = test_db();
         insert_text(&conn, 1, "h1", 1_000, "alice", "100% coverage", "");
         insert_text(&conn, 1, "h2", 1_001, "alice", "100 coverage", "");
         insert_text(&conn, 1, "h3", 1_002, "alice", "a_b token", "");
@@ -1803,6 +2210,10 @@ mod tests {
             query: Some(s.into()),
             ..Default::default()
         };
+        assert_eq!(count_commits(&conn, &q("100%")).unwrap(), 1);
+        assert_eq!(count_commits(&conn, &q("a_b")).unwrap(), 1);
+        crate::history_fts::backfill_batch(&mut conn, 100).unwrap();
+        assert!(crate::history_fts::is_ready(&conn));
         assert_eq!(count_commits(&conn, &q("100%")).unwrap(), 1);
         assert_eq!(count_commits(&conn, &q("a_b")).unwrap(), 1);
     }
@@ -1819,7 +2230,8 @@ mod tests {
             hash: "c20".to_string(),
         };
         let around =
-            list_commits_around_anchor(&conn, &TimelineFilters::default(), &anchor, 5, 5, None).unwrap();
+            list_commits_around_anchor(&conn, &TimelineFilters::default(), &anchor, 5, 5, None)
+                .unwrap();
         assert!(around.anchor_found);
         assert_eq!(around.rows.len(), 11, "5 newer + anchor + 5 older");
         assert_eq!(around.rows[0].hash.as_str(), "c25");
@@ -1841,7 +2253,8 @@ mod tests {
             hash: "zzz".to_string(),
         };
         let around =
-            list_commits_around_anchor(&conn, &TimelineFilters::default(), &anchor, 3, 3, None).unwrap();
+            list_commits_around_anchor(&conn, &TimelineFilters::default(), &anchor, 3, 3, None)
+                .unwrap();
         assert!(!around.anchor_found);
         assert_eq!(around.rows.len(), 6, "3 newer + 3 older, no anchor row");
     }
@@ -1893,7 +2306,8 @@ mod tests {
             hash: "g20".to_string(),
         };
         let around =
-            list_commits_around_anchor(&conn, &TimelineFilters::default(), &anchor, 5, 5, None).unwrap();
+            list_commits_around_anchor(&conn, &TimelineFilters::default(), &anchor, 5, 5, None)
+                .unwrap();
         assert_eq!(around.base_index, 14);
         assert_eq!(around.rows[0].hash, "g25");
     }
@@ -1912,7 +2326,14 @@ mod tests {
 
         // An empty batch is a no-op: no bump, `generation: 0` sentinel.
         let o3 = upsert_commits(&mut conn, &[]).unwrap();
-        assert_eq!(o3, UpsertOutcome { generation: 0, inserted: 0, deleted: 0 });
+        assert_eq!(
+            o3,
+            UpsertOutcome {
+                generation: 0,
+                inserted: 0,
+                deleted: 0
+            }
+        );
         assert_eq!(
             current_generation(&conn).unwrap(),
             2,
@@ -2035,11 +2456,17 @@ mod tests {
         let mut cursor: Option<Cursor> = None;
         let mut intruder = 0;
         loop {
-            let w =
-                list_commits_window(&conn, &pinned, cursor.as_ref(), WindowDirection::Older, 6)
-                    .unwrap();
+            let w = list_commits_window(&conn, &pinned, cursor.as_ref(), WindowDirection::Older, 6)
+                .unwrap();
             out.extend(w.rows.iter().map(|c| c.hash.clone()));
-            insert_gen(&conn, 1, &format!("new{intruder:02}"), 5_000 + intruder, "bob", 2);
+            insert_gen(
+                &conn,
+                1,
+                &format!("new{intruder:02}"),
+                5_000 + intruder,
+                "bob",
+                2,
+            );
             intruder += 1;
             if !w.has_older {
                 break;
@@ -2066,7 +2493,7 @@ mod tests {
             insert(&conn, 2, &format!("c{i}"), 3_000 + i, "alice");
         }
 
-        let facets = list_filter_facets(&conn, &TimelineFilters::default()).unwrap();
+        let facets = list_filter_facets(&conn, &TimelineFilters::default(), true, true).unwrap();
 
         // Authors: alice 7 (3 + 4), bob 2.
         let alice = facets.authors.iter().find(|a| a.name == "alice").unwrap();
@@ -2102,6 +2529,8 @@ mod tests {
                 authors: Some(vec!["alice".to_string()]),
                 ..Default::default()
             },
+            true,
+            true,
         )
         .unwrap();
 
@@ -2269,7 +2698,42 @@ mod tests {
 
         let walked = walk(&conn, &TimelineFilters::default(), 10);
         assert_eq!(walked, vec!["visible".to_string()]);
-        assert_eq!(count_commits(&conn, &TimelineFilters::default()).unwrap(), 1);
+        assert_eq!(
+            count_commits(&conn, &TimelineFilters::default()).unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn excluded_path_and_alias_rows_fail_closed_without_cache_purge() {
+        let conn = test_db();
+        conn.execute_batch(
+            "INSERT INTO repos(path, name, canonical_path, user_state) \
+               VALUES ('/canonical', 'hidden', '/canonical', 'removed'); \
+             INSERT INTO path_aliases(observed_path, canonical_path, source, first_seen_at, last_seen_at) \
+               VALUES ('/legacy-alias', '/canonical', 'test', 1, 1); \
+             INSERT INTO discovery_tombstones(canonical_path, removed_at, reason) \
+               VALUES ('/retired-only', 1, 'user_exclude:normal');",
+        )
+        .unwrap();
+        for (path, hash) in [
+            ("/canonical", "exact-orphan"),
+            ("/legacy-alias", "alias-orphan"),
+            ("/retired-only", "tombstone-orphan"),
+        ] {
+            conn.execute(
+                "INSERT INTO commits(repo_path, hash, repo_id, repo_name, short_hash, \
+                   summary, author, email, timestamp, sort_ts) \
+                 VALUES (?1, ?2, 0, 'hidden', ?2, 'hidden', 'alice', 'a@b', 1, -1)",
+                params![path, hash],
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            count_commits(&conn, &TimelineFilters::default()).unwrap(),
+            0
+        );
+        assert!(walk(&conn, &TimelineFilters::default(), 10).is_empty());
     }
 
     #[test]
@@ -2287,5 +2751,134 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM commits", [], |r| r.get(0))
             .unwrap();
         assert_eq!(left, 1);
+    }
+
+    #[test]
+    fn delete_repo_commits_purges_unresolved_extended_unc_alias() {
+        let mut conn = upsert_test_db();
+        let batch = vec![
+            sample_commit(r"\\?\UNC\server\share\repo", "alias", 1_000),
+            sample_commit(r"\\server\share\other", "other", 1_000),
+        ];
+        upsert_commits(&mut conn, &batch).unwrap();
+
+        let outcome = delete_repo_commits(&mut conn, r"\\server\share\repo").unwrap();
+        assert_eq!(outcome.deleted, 1);
+        let hashes: Vec<String> = conn
+            .prepare("SELECT hash FROM commits ORDER BY hash")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(hashes, vec!["other"]);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn startup_unc_dedupe_purges_duplicate_owner_cache_before_row_delete() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE repos (
+                path TEXT PRIMARY KEY, canonical_path TEXT UNIQUE,
+                user_state TEXT NOT NULL, removed_at INTEGER,
+                repo_storage_identity TEXT, lifecycle_epoch INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE commits (repo_path TEXT, hash TEXT, repo_id INTEGER);
+            CREATE TABLE diffs (repo_path TEXT);
+            CREATE TABLE history_membership (repo_path TEXT);
+            CREATE TABLE history_roots (repo_path TEXT);
+            CREATE TABLE history_coverage (repo_path TEXT);
+            CREATE TABLE repo_sources (
+                repo_canonical_path TEXT, source TEXT,
+                PRIMARY KEY(repo_canonical_path, source)
+            );
+            CREATE TABLE path_aliases (canonical_path TEXT);
+            CREATE TABLE discovery_roots (created_from_repo TEXT);
+            CREATE TABLE discovery_tombstones (
+                canonical_path TEXT PRIMARY KEY, removed_at INTEGER,
+                reason TEXT, last_known_name TEXT, last_known_source TEXT
+            );
+            "#,
+        )
+        .unwrap();
+        let ordinary = r"\\server\share\repo";
+        let extended = r"\\?\UNC\server\share\repo";
+        conn.execute(
+            "INSERT INTO repos(path, canonical_path, user_state) VALUES (?1, ?1, 'normal')",
+            [ordinary],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO repos(path, canonical_path, user_state) VALUES (?1, ?1, 'normal')",
+            [extended],
+        )
+        .unwrap();
+        let duplicate_id: i64 = conn
+            .query_row(
+                "SELECT rowid FROM repos WHERE canonical_path = ?1",
+                [extended],
+                |row| row.get(0),
+            )
+            .unwrap();
+        conn.execute(
+            "INSERT INTO commits(repo_path, hash, repo_id) VALUES (?1, 'legacy', ?2)",
+            params![extended, duplicate_id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO history_coverage(repo_path) VALUES (?1)",
+            [extended],
+        )
+        .unwrap();
+
+        dedupe_unc_canonical_paths(&mut conn).unwrap();
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM repos", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            conn.query_row("SELECT canonical_path FROM repos", [], |row| row
+                .get::<_, String>(0))
+                .unwrap(),
+            ordinary
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM commits", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM history_coverage", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn destructive_generation_invalidates_older_pinned_snapshot() {
+        let mut conn = upsert_test_db();
+        let first = sample_commit("/r", "keep", 1_000);
+        let ghost = sample_commit("/r", "ghost", 1_001);
+        upsert_commits(&mut conn, &[first.clone(), ghost]).unwrap();
+        let pinned_generation = current_generation(&conn).unwrap();
+        let outcome = reconcile_repo_commits(&mut conn, "/r", &[first], 0, false).unwrap();
+        assert_eq!(outcome.deleted, 1);
+
+        let stale = TimelineFilters {
+            view_generation: Some(pinned_generation),
+            ..TimelineFilters::default()
+        };
+        assert!(ensure_timeline_snapshot_valid(&conn, &stale).is_err());
+        let current = TimelineFilters {
+            view_generation: Some(outcome.generation),
+            ..TimelineFilters::default()
+        };
+        ensure_timeline_snapshot_valid(&conn, &current).unwrap();
     }
 }

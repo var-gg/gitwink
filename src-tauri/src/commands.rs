@@ -1,4 +1,6 @@
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -6,7 +8,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::{
-    cache, discovery, discovery_orchestrator, git, repo_exclusions, settings, update, watcher,
+    cache, discovery, discovery_orchestrator, file_history_jobs, git, history_fts, history_git,
+    history_indexer, history_query, history_store, repo_exclusions, settings, update, watcher,
     window,
 };
 
@@ -124,8 +127,15 @@ fn scan_and_cache_recent_commits(
     let total = total_cap(window_days);
 
     let mut all: Vec<git::CommitSummary> = Vec::new();
+    let mut write_fences = HashMap::new();
     let mut failed_active: Vec<String> = Vec::new();
+    let mut history_changed_paths: Vec<String> = Vec::new();
+    let mut network_paths: Vec<String> = Vec::new();
     for repo in repos {
+        if history_indexer::is_network_path(&repo.path) {
+            network_paths.push(repo.path.clone());
+            continue;
+        }
         // A repo already known missing (moved, disconnected network drive)
         // must not stall the sweep: Repository::open on a dead SMB path can
         // block 10-30s, and this loop is serial — one dead repo delayed
@@ -134,46 +144,169 @@ fn scan_and_cache_recent_commits(
         if repo.status == "missing" {
             continue;
         }
-        let Ok(commits) = git::recent_commits(Path::new(&repo.path), per_repo, cutoff) else {
+        let lifecycle_fence = {
+            let _lifecycle = discovery_orchestrator::lock_repo_lifecycle();
+            match discovery_orchestrator::capture_active_repo_lifecycle_fence(&conn, &repo.path) {
+                Ok(Some(fence)) => fence,
+                _ => continue,
+            }
+        };
+        let watcher_epoch = app
+            .try_state::<watcher::RepoWatcher>()
+            .map(|watcher| watcher.event_epoch(Path::new(&repo.path)));
+        let refs_before = match git::repo_refs_fingerprint(Path::new(&repo.path), None) {
+            Ok(fingerprint) => fingerprint,
+            Err(_) => {
+                failed_active.push(repo.path.clone());
+                continue;
+            }
+        };
+        let Ok(scan) = git::recent_commits_scan(Path::new(&repo.path), per_repo, cutoff) else {
             // Couldn't open an 'active' repo — let the detached reconciler
             // decide whether the path is actually gone (vs a transient git
             // error), off this hot path.
             failed_active.push(repo.path.clone());
             continue;
         };
-        let commits: Vec<git::CommitSummary> = commits
+        // A watcher write or force-push can land while the walk is running.
+        // Never reconcile against a root set different from the one we read:
+        // it could delete the just-inserted commit and then miss the event that
+        // already fired. The next watcher/summon pass will retry.
+        if git::repo_refs_fingerprint(Path::new(&repo.path), None)
+            .ok()
+            .as_deref()
+            != Some(refs_before.as_str())
+        {
+            continue;
+        }
+        let can_reconcile = scan.can_reconcile();
+        let commits: Vec<git::CommitSummary> = scan
+            .rows
             .into_iter()
             .map(|mut c| {
                 c.repo_name = repo.name.clone();
                 c
             })
             .collect();
-        let walk_capped = commits.len() >= per_repo;
-        if let Ok(o) =
-            cache::reconcile_repo_commits(&mut conn, &repo.path, &commits, cutoff, walk_capped)
+        let history_tracked = history_store::coverage(&conn, &repo.path)
+            .ok()
+            .flatten()
+            .is_some_and(|coverage| coverage.published_epoch > 0);
+        let observed_history_roots = history_tracked
+            .then(|| history_git::snapshot_roots(Path::new(&repo.path)).ok())
+            .flatten();
+        if git::repo_refs_fingerprint(Path::new(&repo.path), None)
+            .ok()
+            .as_deref()
+            != Some(refs_before.as_str())
         {
-            // Deletions must be announced: nothing else tells a pinned
-            // reader its count shrank (the generation pin doesn't mask
-            // physical deletes), and the frontend's delete-burst path
-            // does an in-place re-pull off this event.
-            if o.deleted > 0 {
-                let _ = app.emit(
-                    "timeline://invalidated",
-                    cache::TimelineInvalidated {
-                        generation: o.generation,
-                        inserted: 0,
-                        deleted: o.deleted,
-                        repo_path: repo.path.clone(),
-                    },
-                );
+            continue;
+        }
+        let watcher_state = app.try_state::<watcher::RepoWatcher>();
+        let expected_epoch = watcher_epoch.map(|epoch| vec![(repo.path.clone(), epoch)]);
+        let event_guard = expected_epoch.as_ref().and_then(|expected| {
+            watcher_state
+                .as_ref()
+                .and_then(|watcher| watcher.guard_event_epochs(expected))
+        });
+        let can_reconcile = can_reconcile && event_guard.is_some();
+        let _lifecycle = discovery_orchestrator::lock_repo_lifecycle();
+        if !discovery_orchestrator::repo_lifecycle_fence_matches(&conn, &lifecycle_fence)
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        let _ =
+            repo_exclusions::clear_repo_unavailable_observation_in(&conn, &repo.path, unix_now());
+        if can_reconcile {
+            if let Ok(o) =
+                cache::reconcile_repo_commits(&mut conn, &repo.path, &commits, cutoff, false)
+            {
+                // Deletions must be announced: nothing else tells a pinned
+                // reader its count shrank (the generation pin doesn't mask
+                // physical deletes), and the frontend's delete-burst path
+                // does an in-place re-pull off this event.
+                if o.deleted > 0 {
+                    let _ = app.emit(
+                        "timeline://invalidated",
+                        cache::TimelineInvalidated {
+                            generation: o.generation,
+                            inserted: 0,
+                            deleted: o.deleted,
+                            repo_path: repo.path.clone(),
+                        },
+                    );
+                }
             }
         }
+        if history_tracked
+            && history_store::mark_stale(&conn, &repo.path, observed_history_roots.as_ref())
+                .unwrap_or(false)
+        {
+            history_changed_paths.push(repo.path.clone());
+        }
+        write_fences.insert(
+            repo.path.clone(),
+            (lifecycle_fence, refs_before, watcher_epoch),
+        );
         all.extend(commits);
+    }
+    if let Some(indexer) = app.try_state::<Arc<history_indexer::HistoryIndexer>>() {
+        for path in history_changed_paths {
+            let _ = indexer.request(path);
+        }
     }
     all.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
     all.truncate(total);
 
+    // The scan itself is intentionally outside the lifecycle lock. Re-check
+    // its small unique repo set only at the final cache edge: if Settings
+    // excluded a repo during the walk, none of its collected rows can be
+    // reinserted after exclusion purged them.
+    let root_stable_paths = write_fences
+        .iter()
+        .filter_map(|(path, (_, refs, epoch))| {
+            let epoch_ok = match (app.try_state::<watcher::RepoWatcher>(), epoch) {
+                (Some(watcher), Some(epoch)) => watcher.event_epoch(Path::new(path)) == *epoch,
+                (None, _) => true,
+                (Some(_), None) => false,
+            };
+            (epoch_ok
+                && git::repo_refs_fingerprint(Path::new(path), None)
+                    .map(|current| current == *refs)
+                    .unwrap_or(false))
+            .then_some(path.clone())
+        })
+        .collect::<HashSet<_>>();
+    let watcher_state = app.try_state::<watcher::RepoWatcher>();
+    let expected_epochs = write_fences
+        .iter()
+        .filter(|(path, _)| root_stable_paths.contains(*path))
+        .filter_map(|(path, (_, _, epoch))| epoch.map(|epoch| (path.clone(), epoch)))
+        .collect::<Vec<_>>();
+    let guarded_epochs = watcher_state
+        .as_ref()
+        .and_then(|watcher| watcher.guard_matching_event_epochs(&expected_epochs));
+    let event_stable_paths = guarded_epochs
+        .as_ref()
+        .map(|(_, paths)| paths.clone())
+        .unwrap_or_else(|| root_stable_paths.clone());
+    let _lifecycle = discovery_orchestrator::lock_repo_lifecycle();
+    let valid_paths = write_fences
+        .iter()
+        .filter_map(|(path, (fence, _, _))| {
+            let lifecycle_ok =
+                discovery_orchestrator::repo_lifecycle_fence_matches(&conn, fence).unwrap_or(false);
+            let event_ok = watcher_state.is_none() || event_stable_paths.contains(path);
+            (lifecycle_ok && event_ok && root_stable_paths.contains(path)).then_some(path.clone())
+        })
+        .collect::<HashSet<_>>();
+    all.retain(|commit| valid_paths.contains(&commit.repo_path));
     let _ = cache::upsert_commits(&mut conn, &all).map_err(|e| e.to_string())?;
+    drop(_lifecycle);
+    drop(guarded_epochs);
+
+    schedule_network_repo_refills(app.clone(), network_paths);
 
     // Detached, single-flight status reconciliation: flip walk-failed repos
     // whose directory is actually gone to 'missing' (so the NEXT sweep skips
@@ -183,6 +316,74 @@ fn scan_and_cache_recent_commits(
     reconcile_repo_statuses_detached(app.clone(), failed_active);
 
     Ok(all)
+}
+
+static NETWORK_REFILL_PENDING: std::sync::LazyLock<std::sync::Mutex<HashSet<String>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashSet::new()));
+static NETWORK_REFILL_WORKER: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Network repositories never sit on the local fleet's critical path. One
+/// low-concurrency lane coalesces their paths and may block on SMB without
+/// delaying local cache publication or the command response.
+fn schedule_network_repo_refills(app: AppHandle, paths: Vec<String>) {
+    if paths.is_empty() {
+        return;
+    }
+    if let Ok(mut pending) = NETWORK_REFILL_PENDING.lock() {
+        pending.extend(paths);
+    } else {
+        return;
+    }
+    if NETWORK_REFILL_WORKER
+        .compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::AcqRel,
+            std::sync::atomic::Ordering::Acquire,
+        )
+        .is_err()
+    {
+        return;
+    }
+    std::thread::spawn(move || loop {
+        let next = NETWORK_REFILL_PENDING.lock().ok().and_then(|mut pending| {
+            let next = pending.iter().next().cloned();
+            if let Some(path) = &next {
+                pending.remove(path);
+            }
+            next
+        });
+        let Some(path) = next else {
+            NETWORK_REFILL_WORKER.store(false, std::sync::atomic::Ordering::Release);
+            // Close the enqueue-vs-exit race: a caller may have inserted just
+            // before the flag changed. Claim the lane again in this same
+            // worker rather than stranding that path until another summon.
+            let has_pending = NETWORK_REFILL_PENDING
+                .lock()
+                .map(|pending| !pending.is_empty())
+                .unwrap_or(false);
+            if has_pending
+                && NETWORK_REFILL_WORKER
+                    .compare_exchange(
+                        false,
+                        true,
+                        std::sync::atomic::Ordering::AcqRel,
+                        std::sync::atomic::Ordering::Acquire,
+                    )
+                    .is_ok()
+            {
+                continue;
+            }
+            break;
+        };
+        let path_ref = Path::new(&path);
+        if !path_ref.is_dir() {
+            let _ = repo_exclusions::mark_repo_missing(&app, &path);
+            continue;
+        }
+        watcher::refresh_repo_now(&app, path_ref);
+    });
 }
 
 /// One in-flight pass at a time; a sweep that fires while a previous pass is
@@ -203,22 +404,13 @@ fn reconcile_repo_statuses_detached(app: AppHandle, failed_active: Vec<String>) 
         struct ReleaseOnDrop;
         impl Drop for ReleaseOnDrop {
             fn drop(&mut self) {
-                REPO_STATUS_RECONCILE_INFLIGHT
-                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                REPO_STATUS_RECONCILE_INFLIGHT.store(false, std::sync::atomic::Ordering::SeqCst);
             }
-        }
-
-        #[derive(Clone, Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct RepoStatusPayload {
-            canonical_path: String,
-            status: &'static str,
         }
 
         let Ok(conn) = cache::open(&app) else {
             return;
         };
-        let now = unix_now();
 
         // Walk-failed 'active' repos: flip to missing ONLY when the directory
         // is really gone (a transient git error with the dir present stays
@@ -227,22 +419,7 @@ fn reconcile_repo_statuses_detached(app: AppHandle, failed_active: Vec<String>) 
             if Path::new(&path).is_dir() {
                 continue;
             }
-            let updated = conn
-                .execute(
-                    "UPDATE repos SET status = 'missing', missing_since = ?1 \
-                     WHERE (canonical_path = ?2 OR path = ?2) AND status = 'active'",
-                    rusqlite::params![now, &path],
-                )
-                .unwrap_or(0);
-            if updated > 0 {
-                let _ = app.emit(
-                    "timeline://repo-status",
-                    &RepoStatusPayload {
-                        canonical_path: path,
-                        status: "missing",
-                    },
-                );
-            }
+            let _ = repo_exclusions::mark_repo_missing(&app, &path);
         }
 
         // Recovery: probe missing repos; a drive that came back flips to
@@ -257,27 +434,12 @@ fn reconcile_repo_statuses_detached(app: AppHandle, failed_active: Vec<String>) 
                     .and_then(|rows| rows.collect())
             })
             .unwrap_or_default();
+        drop(conn);
         for path in missing {
             if !Path::new(&path).is_dir() {
                 continue;
             }
-            let updated = conn
-                .execute(
-                    "UPDATE repos SET status = 'active', missing_since = NULL, \
-                     last_verified_at = ?1 \
-                     WHERE (canonical_path = ?2 OR path = ?2) AND status = 'missing'",
-                    rusqlite::params![now, &path],
-                )
-                .unwrap_or(0);
-            if updated > 0 {
-                let _ = app.emit(
-                    "timeline://repo-status",
-                    &RepoStatusPayload {
-                        canonical_path: path,
-                        status: "active",
-                    },
-                );
-            }
+            let _ = repo_exclusions::recover_missing_repo(&app, &path);
         }
     });
 }
@@ -303,6 +465,67 @@ pub async fn recent_commits(
 /// while the summon scan is mid-flight). Same-window duplicates are already
 /// deduped frontend-side (useTimelineWindow's lastRefilledKey).
 static REFILL_SERIALIZE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// The schema deliberately leaves legacy rolling-cache text unindexed so
+/// application startup stays independent of cache size. A cold first search
+/// reads through the exact LIKE fallback, then schedules this single-flight
+/// catch-up only after its result is snapshot-validated. Search never waits
+/// for maintenance, and FTS only becomes a hard candidate gate after the
+/// explicit coverage ledger says every eligible row is indexed.
+static SEARCH_FTS_BACKFILL_INFLIGHT: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+struct SearchFtsBackfillLease;
+
+impl Drop for SearchFtsBackfillLease {
+    fn drop(&mut self) {
+        SEARCH_FTS_BACKFILL_INFLIGHT.store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+
+fn schedule_search_index_backfill(
+    app: &AppHandle,
+    conn: &rusqlite::Connection,
+    filters: &cache::TimelineFilters,
+) {
+    let should_use_fts = filters
+        .query
+        .as_deref()
+        .and_then(history_query::substring_expression)
+        .is_some();
+    if !should_use_fts || history_fts::is_ready(conn) {
+        return;
+    }
+
+    if SEARCH_FTS_BACKFILL_INFLIGHT
+        .compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::AcqRel,
+            std::sync::atomic::Ordering::Acquire,
+        )
+        .is_err()
+    {
+        return;
+    }
+
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let _lease = SearchFtsBackfillLease;
+        // Let the sibling cold LIKE count/page calls finish before the first
+        // writer, then leave a real scheduling gap between every short slice.
+        std::thread::sleep(std::time::Duration::from_millis(75));
+        let Ok(mut conn) = cache::open(&app) else {
+            return;
+        };
+        while let Ok(outcome) = history_fts::backfill_batch(&mut conn, 256) {
+            if !outcome.has_more {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(75));
+        }
+    });
+}
 
 #[tauri::command]
 pub async fn refresh_recent_commits(
@@ -330,8 +553,12 @@ pub async fn list_commits_window(
 ) -> Result<cache::CommitWindow, String> {
     tauri::async_runtime::spawn_blocking(move || -> Result<cache::CommitWindow, String> {
         let conn = cache::open(&app).map_err(|e| e.to_string())?;
-        cache::list_commits_window(&conn, &filters, cursor.as_ref(), direction, limit)
-            .map_err(|e| e.to_string())
+        cache::ensure_timeline_snapshot_valid(&conn, &filters).map_err(|e| e.to_string())?;
+        let result = cache::list_commits_window(&conn, &filters, cursor.as_ref(), direction, limit)
+            .map_err(|e| e.to_string())?;
+        cache::ensure_timeline_snapshot_valid(&conn, &filters).map_err(|e| e.to_string())?;
+        schedule_search_index_backfill(&app, &conn, &filters);
+        Ok(result)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -348,8 +575,13 @@ pub async fn list_commits_around_anchor(
 ) -> Result<cache::CommitAround, String> {
     tauri::async_runtime::spawn_blocking(move || -> Result<cache::CommitAround, String> {
         let conn = cache::open(&app).map_err(|e| e.to_string())?;
-        cache::list_commits_around_anchor(&conn, &filters, &anchor, before, after, None)
-            .map_err(|e| e.to_string())
+        cache::ensure_timeline_snapshot_valid(&conn, &filters).map_err(|e| e.to_string())?;
+        let result =
+            cache::list_commits_around_anchor(&conn, &filters, &anchor, before, after, None)
+                .map_err(|e| e.to_string())?;
+        cache::ensure_timeline_snapshot_valid(&conn, &filters).map_err(|e| e.to_string())?;
+        schedule_search_index_backfill(&app, &conn, &filters);
+        Ok(result)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -367,8 +599,12 @@ pub async fn list_commits_at_rank(
 ) -> Result<cache::CommitAround, String> {
     tauri::async_runtime::spawn_blocking(move || -> Result<cache::CommitAround, String> {
         let conn = cache::open(&app).map_err(|e| e.to_string())?;
-        cache::list_commits_at_rank(&conn, &filters, rank, before, after)
-            .map_err(|e| e.to_string())
+        cache::ensure_timeline_snapshot_valid(&conn, &filters).map_err(|e| e.to_string())?;
+        let result = cache::list_commits_at_rank(&conn, &filters, rank, before, after)
+            .map_err(|e| e.to_string())?;
+        cache::ensure_timeline_snapshot_valid(&conn, &filters).map_err(|e| e.to_string())?;
+        schedule_search_index_backfill(&app, &conn, &filters);
+        Ok(result)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -376,13 +612,14 @@ pub async fn list_commits_at_rank(
 
 /// Phase 1 windowed-pull API: filtered total commit count for the scrollbar.
 #[tauri::command]
-pub async fn count_commits(
-    app: AppHandle,
-    filters: cache::TimelineFilters,
-) -> Result<i64, String> {
+pub async fn count_commits(app: AppHandle, filters: cache::TimelineFilters) -> Result<i64, String> {
     tauri::async_runtime::spawn_blocking(move || -> Result<i64, String> {
         let conn = cache::open(&app).map_err(|e| e.to_string())?;
-        cache::count_commits(&conn, &filters).map_err(|e| e.to_string())
+        cache::ensure_timeline_snapshot_valid(&conn, &filters).map_err(|e| e.to_string())?;
+        let result = cache::count_commits(&conn, &filters).map_err(|e| e.to_string())?;
+        cache::ensure_timeline_snapshot_valid(&conn, &filters).map_err(|e| e.to_string())?;
+        schedule_search_index_backfill(&app, &conn, &filters);
+        Ok(result)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -409,13 +646,23 @@ pub async fn get_timeline_generation(app: AppHandle) -> Result<i64, String> {
 pub async fn list_filter_facets(
     app: AppHandle,
     filters: cache::TimelineFilters,
+    include_authors: Option<bool>,
+    include_repos: Option<bool>,
 ) -> Result<cache::FilterFacets, String> {
-    tauri::async_runtime::spawn_blocking(
-        move || -> Result<cache::FilterFacets, String> {
-            let conn = cache::open(&app).map_err(|e| e.to_string())?;
-            cache::list_filter_facets(&conn, &filters).map_err(|e| e.to_string())
-        },
-    )
+    tauri::async_runtime::spawn_blocking(move || -> Result<cache::FilterFacets, String> {
+        let conn = cache::open(&app).map_err(|e| e.to_string())?;
+        cache::ensure_timeline_snapshot_valid(&conn, &filters).map_err(|e| e.to_string())?;
+        let result = cache::list_filter_facets(
+            &conn,
+            &filters,
+            include_authors.unwrap_or(true),
+            include_repos.unwrap_or(true),
+        )
+        .map_err(|e| e.to_string())?;
+        cache::ensure_timeline_snapshot_valid(&conn, &filters).map_err(|e| e.to_string())?;
+        schedule_search_index_backfill(&app, &conn, &filters);
+        Ok(result)
+    })
     .await
     .map_err(|e| e.to_string())?
 }
@@ -470,8 +717,7 @@ pub async fn explicit_add_repo(
 ) -> Result<discovery_orchestrator::DiscoveredRepoPayload, String> {
     let app2 = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        discovery_orchestrator::add_repo_explicit(&app2, &path)
-            .map_err(|e| e.to_string())
+        discovery_orchestrator::add_repo_explicit(&app2, &path).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -489,17 +735,186 @@ pub async fn list_excluded_repos(
     .map_err(|e| e.to_string())?
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryIndexStatus {
+    total_repos: usize,
+    complete_repos: usize,
+    published_repos: usize,
+    indexing_repos: usize,
+    failed_repos: usize,
+    unavailable_repos: usize,
+    queued_repos: usize,
+    commits_scanned: u64,
+    generation: i64,
+    settled: bool,
+    all_complete: bool,
+    last_error: Option<String>,
+}
+
+fn history_repo_scope(
+    conn: &rusqlite::Connection,
+    repo_ids: Option<&[i64]>,
+) -> anyhow::Result<Vec<(String, String)>> {
+    if repo_ids.is_some_and(|ids| ids.is_empty()) {
+        return Ok(Vec::new());
+    }
+    let mut sql = String::from("SELECT path, status FROM repos WHERE user_state != 'removed'");
+    if let Some(ids) = repo_ids {
+        // IDs originate from this same catalog and are integers, so an
+        // inline list avoids SQLite's variable limit for very large scopes.
+        let ids = ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+        sql.push_str(&format!(" AND rowid IN ({ids})"));
+    }
+    sql.push_str(" ORDER BY path");
+    let mut statement = conn.prepare(&sql)?;
+    let paths = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(paths)
+}
+
+fn history_index_status(
+    conn: &rusqlite::Connection,
+    indexer: &history_indexer::HistoryIndexer,
+    scope: &[(String, String)],
+) -> anyhow::Result<HistoryIndexStatus> {
+    let pending = indexer.pending_paths();
+    let mut complete_repos = 0usize;
+    let mut published_repos = 0usize;
+    let mut indexing_repos = 0usize;
+    let mut failed_repos = 0usize;
+    let mut unavailable_repos = 0usize;
+    let mut commits_scanned = 0u64;
+    let mut visible_generation = 0i64;
+    let mut last_error = None;
+
+    for (path, status) in scope {
+        if status != "active" {
+            unavailable_repos += 1;
+            continue;
+        }
+        let Some(coverage) = history_store::coverage(conn, path)? else {
+            continue;
+        };
+        if coverage.published_epoch > 0 {
+            published_repos += 1;
+            visible_generation = visible_generation.max(coverage.completed_generation.unwrap_or(0));
+        }
+        match coverage.state {
+            history_store::CoverageState::Complete => {
+                complete_repos += 1;
+                commits_scanned = commits_scanned.saturating_add(coverage.commits_indexed as u64);
+            }
+            history_store::CoverageState::Indexing => {
+                indexing_repos += 1;
+                commits_scanned = commits_scanned.saturating_add(coverage.commits_indexed as u64);
+            }
+            history_store::CoverageState::Failed => {
+                failed_repos += 1;
+                if last_error.is_none() {
+                    last_error = coverage.last_error;
+                }
+            }
+            history_store::CoverageState::Stale | history_store::CoverageState::Cancelled => {}
+        }
+    }
+    let queued_repos = scope
+        .iter()
+        .filter(|(path, status)| status == "active" && pending.contains(path))
+        .count();
+    let settled = queued_repos == 0;
+    let total_repos = scope.len();
+    Ok(HistoryIndexStatus {
+        total_repos,
+        complete_repos,
+        published_repos,
+        indexing_repos,
+        failed_repos,
+        unavailable_repos,
+        queued_repos,
+        commits_scanned,
+        // Staging batches are deliberately invisible until publication.
+        // Reporting the global cache generation here made every 250ms poll
+        // reload both timelines while a large repo was still private. Only a
+        // completed publication is a user-visible history generation.
+        generation: visible_generation,
+        settled,
+        // A previously complete repo is still pending until this demand has
+        // revalidated its current roots/lifecycle. Never paint "All history"
+        // from yesterday's coverage while that verification is queued.
+        all_complete: settled && unavailable_repos == 0 && complete_repos == total_repos,
+        last_error,
+    })
+}
+
+/// Demand-driven full-history expansion. Opening Search or choosing All time
+/// requests exactly the current repository scope; normal 7/30-day startup
+/// remains independent of repository history size.
+#[tauri::command]
+pub async fn request_history_index(
+    app: AppHandle,
+    indexer: tauri::State<'_, Arc<history_indexer::HistoryIndexer>>,
+    repo_ids: Option<Vec<i64>>,
+    demand_id: u64,
+) -> Result<HistoryIndexStatus, String> {
+    if demand_id == 0 {
+        return Err("history demand id must be positive".to_string());
+    }
+    let indexer = Arc::clone(indexer.inner());
+    tauri::async_runtime::spawn_blocking(move || -> Result<HistoryIndexStatus, String> {
+        let conn = cache::open(&app).map_err(|error| error.to_string())?;
+        let scope =
+            history_repo_scope(&conn, repo_ids.as_deref()).map_err(|error| error.to_string())?;
+        let _accepted = indexer.replace_demand_scope(
+            demand_id,
+            scope
+                .iter()
+                .filter(|(_, status)| status == "active")
+                .map(|(path, _)| path.clone()),
+        );
+        history_index_status(&conn, &indexer, &scope).map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+/// Release only the matching panel lease. A delayed cleanup from an older
+/// React effect cannot cancel a newer search/all-time demand.
+#[tauri::command]
+pub fn release_history_index(
+    indexer: tauri::State<'_, Arc<history_indexer::HistoryIndexer>>,
+    demand_id: u64,
+) -> bool {
+    indexer.release_demand_scope(demand_id)
+}
+
+#[tauri::command]
+pub async fn get_history_index_status(
+    app: AppHandle,
+    indexer: tauri::State<'_, Arc<history_indexer::HistoryIndexer>>,
+    repo_ids: Option<Vec<i64>>,
+) -> Result<HistoryIndexStatus, String> {
+    let indexer = Arc::clone(indexer.inner());
+    tauri::async_runtime::spawn_blocking(move || -> Result<HistoryIndexStatus, String> {
+        let conn = cache::open(&app).map_err(|error| error.to_string())?;
+        let scope =
+            history_repo_scope(&conn, repo_ids.as_deref()).map_err(|error| error.to_string())?;
+        history_index_status(&conn, &indexer, &scope).map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 /// Exclude a repo from discovery/watching without touching its folder or
 /// durable preferences. The Settings window can restore it later.
 #[tauri::command]
-pub async fn exclude_repo(
-    app: AppHandle,
-    canonical_path: String,
-) -> Result<(), String> {
+pub async fn exclude_repo(app: AppHandle, canonical_path: String) -> Result<(), String> {
     let app2 = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        repo_exclusions::exclude_repo(&app2, &canonical_path)
-            .map_err(|e| e.to_string())
+        repo_exclusions::exclude_repo(&app2, &canonical_path).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -508,14 +923,38 @@ pub async fn exclude_repo(
 /// Restore a previously excluded repo and resume discovery/watching. A
 /// disconnected path returns as `missing` so it can recover when available.
 #[tauri::command]
-pub async fn restore_repo(
+pub async fn restore_repo(app: AppHandle, canonical_path: String) -> Result<(), String> {
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        repo_exclusions::restore_repo(&app2, &canonical_path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Accept the repository currently occupying an excluded path as a fresh
+/// identity. Only gitwink metadata/cache is replaced; the folder is untouched.
+#[tauri::command]
+pub async fn inspect_replacement_repo(
     app: AppHandle,
     canonical_path: String,
+) -> Result<repo_exclusions::ReplacementConfirmation, String> {
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        repo_exclusions::inspect_replacement_repo(&app2, &canonical_path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn replace_excluded_repo(
+    app: AppHandle,
+    confirmation: repo_exclusions::ReplacementConfirmation,
 ) -> Result<(), String> {
     let app2 = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        repo_exclusions::restore_repo(&app2, &canonical_path)
-            .map_err(|e| e.to_string())
+        repo_exclusions::replace_excluded_repo(&app2, &confirmation).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -616,8 +1055,7 @@ impl ChangedFilesCache {
 /// Compute a commit's changed files and cap the shipped list, keeping the
 /// true total for the "showing N of M" footer.
 fn changed_files_capped(repo_path: &str, hash: &str) -> Result<ChangedFilesResult, String> {
-    let mut files =
-        git::changed_files(Path::new(repo_path), hash).map_err(|e| e.to_string())?;
+    let mut files = git::changed_files(Path::new(repo_path), hash).map_err(|e| e.to_string())?;
     let total = files.len();
     files.truncate(CHANGED_FILES_LIST_CAP);
     Ok(ChangedFilesResult { files, total })
@@ -658,10 +1096,7 @@ pub struct CommitRef {
 /// is instant. Already-cached commits are skipped; the batch is capped so
 /// a huge request can't run unbounded git work.
 #[tauri::command]
-pub async fn changed_files_batch(
-    app: AppHandle,
-    commits: Vec<CommitRef>,
-) -> Result<(), String> {
+pub async fn changed_files_batch(app: AppHandle, commits: Vec<CommitRef>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let Some(cache) = app.try_state::<ChangedFilesCache>() else {
             return;
@@ -759,9 +1194,7 @@ pub type PendingDiff = std::sync::Mutex<Option<DiffOpenPayload>>;
 /// to seed its UI. React StrictMode in dev mounts useEffect twice, so a
 /// destructive `take()` here would lose the payload on the second mount.
 #[tauri::command]
-pub fn take_pending_diff_open(
-    state: tauri::State<'_, PendingDiff>,
-) -> Option<DiffOpenPayload> {
+pub fn take_pending_diff_open(state: tauri::State<'_, PendingDiff>) -> Option<DiffOpenPayload> {
     state.lock().ok().and_then(|s| s.clone())
 }
 
@@ -849,9 +1282,7 @@ impl LiveSettings {
 
 #[tauri::command]
 pub fn set_panel_sticky(sticky: bool, state: tauri::State<'_, PanelSticky>) {
-    state
-        .0
-        .store(sticky, std::sync::atomic::Ordering::SeqCst);
+    state.0.store(sticky, std::sync::atomic::Ordering::SeqCst);
 }
 
 /// Whether a discovery run is currently in flight. The frontend pulls
@@ -859,9 +1290,7 @@ pub fn set_panel_sticky(sticky: bool, state: tauri::State<'_, PanelSticky>) {
 /// the orchestrator finished before the scan-progress listener was
 /// registered.
 #[tauri::command]
-pub fn get_scan_state(
-    state: tauri::State<'_, discovery_orchestrator::ScanState>,
-) -> bool {
+pub fn get_scan_state(state: tauri::State<'_, discovery_orchestrator::ScanState>) -> bool {
     state.0.load(std::sync::atomic::Ordering::SeqCst)
 }
 
@@ -927,14 +1356,86 @@ pub async fn open_diff(
 /// in the panel timeline.
 #[tauri::command]
 pub async fn file_history(
+    app: AppHandle,
+    jobs: tauri::State<'_, Arc<file_history_jobs::FileHistoryJobs>>,
     repo_path: String,
     file_path: String,
-) -> Result<Vec<git::CommitSummary>, String> {
+    flow_id: String,
+    operation_id: String,
+) -> Result<Option<git::FileHistoryResult>, String> {
+    // Claim the flow before entering spawn_blocking. A new command therefore
+    // cancels the old revwalk synchronously, even if the old React cleanup IPC
+    // is delayed or dropped during navigation.
+    let jobs = Arc::clone(jobs.inner());
+    let operation = jobs.begin(flow_id, operation_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        git::file_history(Path::new(&repo_path), &file_path).map_err(|e| e.to_string())
+        if operation.is_cancelled() {
+            jobs.finish(&operation);
+            return Ok(None);
+        }
+        let lifecycle_fence = {
+            let _lifecycle = discovery_orchestrator::lock_repo_lifecycle();
+            let conn = cache::open(&app).map_err(|error| error.to_string())?;
+            discovery_orchestrator::capture_active_repo_lifecycle_fence(&conn, &repo_path)
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| "Repository is excluded or unavailable".to_string())?
+        };
+        // Notify's in-memory ref epoch is an O(1), cancellation-safe snapshot
+        // key. Root equality is independently rechecked inside the walk, so
+        // no slow repository-open preflight can pile up when navigation
+        // supersedes an unavailable SMB path.
+        let event_epoch = app
+            .try_state::<watcher::RepoWatcher>()
+            .map(|watcher| watcher.event_epoch(Path::new(&repo_path)))
+            .unwrap_or(0);
+        let key = file_history_jobs::FileHistoryJobKey::new(
+            repo_path.clone(),
+            file_path.clone(),
+            format!("event:{event_epoch}"),
+        );
+        let result = jobs.execute(operation, key, |cancellation| {
+            for attempt in 0..2 {
+                let result =
+                    git::file_history_cancellable(Path::new(&repo_path), &file_path, cancellation)
+                        .map_err(|error| error.to_string())?;
+                match result {
+                    Some(result) if result.snapshot_changed && attempt == 0 => continue,
+                    Some(result) if result.snapshot_changed => {
+                        return Err(
+                            "Repository changed repeatedly while loading file history; retry"
+                                .to_string(),
+                        )
+                    }
+                    other => return Ok(other),
+                }
+            }
+            unreachable!("file-history retry loop returns from every iteration")
+        });
+        if matches!(result, Ok(Some(_))) {
+            let _lifecycle = discovery_orchestrator::lock_repo_lifecycle();
+            let conn = cache::open(&app).map_err(|error| error.to_string())?;
+            if !discovery_orchestrator::repo_lifecycle_fence_matches(&conn, &lifecycle_fence)
+                .map_err(|error| error.to_string())?
+            {
+                return Err("Repository lifecycle changed while loading; retry".to_string());
+            }
+        }
+        result
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Best-effort cleanup for an effect that unmounted or navigated away. The
+/// operation id makes this ABA-safe: a late cleanup cannot cancel the newer
+/// request occupying the same UI flow.
+#[tauri::command]
+pub fn cancel_file_history(
+    jobs: tauri::State<'_, Arc<file_history_jobs::FileHistoryJobs>>,
+    flow_id: String,
+    operation_id: String,
+) {
+    jobs.cancel(&flow_id, &operation_id);
 }
 
 /// Payload for `history://open` — tells the panel to scope its timeline to one
@@ -965,28 +1466,88 @@ pub fn open_file_history(app: AppHandle, repo_path: String, file_path: String) {
     );
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoCommitsResult {
+    pub rows: Vec<git::CommitSummary>,
+    pub truncated: bool,
+    pub incomplete: bool,
+    pub limit: usize,
+    pub shallow: bool,
+}
+
 #[tauri::command]
 pub async fn repo_commits(
     app: AppHandle,
     repo_path: String,
     branches: Option<Vec<String>>,
     window_days: Option<i64>,
-) -> Result<Vec<git::CommitSummary>, String> {
+) -> Result<RepoCommitsResult, String> {
     let app = app.clone();
-    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<git::CommitSummary>, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<RepoCommitsResult, String> {
+        let lifecycle_fence = {
+            let _lifecycle = discovery_orchestrator::lock_repo_lifecycle();
+            let conn = cache::open(&app).map_err(|e| e.to_string())?;
+            if discovery_orchestrator::repo_is_excluded(&conn, &repo_path).unwrap_or(true) {
+                return Err("Repository is excluded".to_string());
+            }
+            discovery_orchestrator::capture_active_repo_lifecycle_fence(&conn, &repo_path)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "Repository is no longer registered".to_string())?
+        };
         let cutoff = cutoff_for(window_days);
+        let shallow = git::repo_is_shallow(Path::new(&repo_path)).map_err(|e| e.to_string())?;
         let cap = single_repo_cap(window_days);
         let branches_slice: Option<&[String]> = branches.as_deref();
-        let commits = git::repo_commits(Path::new(&repo_path), branches_slice, cap, cutoff)
+        // Ask for one sentinel beyond the presentation cap. Without it,
+        // `len == cap` cannot distinguish an exact scope from a silently
+        // truncated one, and the UI could falsely call 2,000 rows "All time".
+        let mut attempts = 0usize;
+        let scan = loop {
+            attempts += 1;
+            let refs_before = git::repo_refs_fingerprint(Path::new(&repo_path), branches_slice)
+                .map_err(|e| e.to_string())?;
+            let scan = git::repo_commits(
+                Path::new(&repo_path),
+                branches_slice,
+                cap.saturating_add(1),
+                cutoff,
+            )
             .map_err(|e| e.to_string())?;
+            let refs_after = git::repo_refs_fingerprint(Path::new(&repo_path), branches_slice)
+                .map_err(|e| e.to_string())?;
+            if refs_before == refs_after {
+                break scan;
+            }
+            if attempts >= 2 {
+                return Err("Repository changed repeatedly while loading; retry".to_string());
+            }
+        };
+        let mut commits = scan.rows;
+        let truncated = commits.len() > cap;
+        if truncated {
+            commits.truncate(cap);
+        }
         // Persist into the same commits cache so warm starts paint instantly
         // for this repo too.
         if !commits.is_empty() {
+            let _lifecycle = discovery_orchestrator::lock_repo_lifecycle();
             if let Ok(mut conn) = cache::open(&app) {
+                if !discovery_orchestrator::repo_lifecycle_fence_matches(&conn, &lifecycle_fence)
+                    .unwrap_or(false)
+                {
+                    return Err("Repository lifecycle changed while loading; retry".to_string());
+                }
                 let _ = cache::upsert_commits(&mut conn, &commits);
             }
         }
-        Ok(commits)
+        Ok(RepoCommitsResult {
+            rows: commits,
+            truncated,
+            incomplete: scan.incomplete,
+            limit: cap,
+            shallow,
+        })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1077,9 +1638,7 @@ pub struct AppSettings {
 }
 
 #[tauri::command]
-pub fn get_settings(
-    live: tauri::State<'_, LiveSettings>,
-) -> AppSettings {
+pub fn get_settings(live: tauri::State<'_, LiveSettings>) -> AppSettings {
     // Read the in-memory snapshot, NOT disk — the Settings window's
     // broadcast hot path already updated LiveSettings synchronously,
     // so a newly-opened window's initSettings sees the fresh value
@@ -1108,10 +1667,7 @@ pub fn get_settings(
 /// because re-binding the global shortcut has to succeed before we
 /// commit; the broadcast just keeps the displayed text aligned.
 #[tauri::command]
-pub fn set_live_settings(
-    next: AppSettings,
-    live: tauri::State<'_, LiveSettings>,
-) {
+pub fn set_live_settings(next: AppSettings, live: tauri::State<'_, LiveSettings>) {
     live.with_mut(|s| {
         s.ui_scale = Some(next.ui_scale.clamp(UI_SCALE_MIN, UI_SCALE_MAX));
         s.diff_font_family = next.diff_font_family;
@@ -1469,18 +2025,76 @@ pub async fn discover_repos(app: AppHandle) -> Result<usize, String> {
         for root in &roots {
             let root_str = root.to_string_lossy().into_owned();
             discovery::scan_path(root, |path| {
-                let name = path
+                let Some(mut path_str) = discovery_orchestrator::exact_worktree_identity(&path)
+                else {
+                    return;
+                };
+                if found.iter().any(|repo| {
+                    discovery_orchestrator::repo_identity_match_key(&repo.path)
+                        == discovery_orchestrator::repo_identity_match_key(&path_str)
+                }) {
+                    return;
+                }
+                let name = Path::new(&path_str)
                     .file_name()
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_default();
-                let path_str = path.to_string_lossy().into_owned();
+                // Git walking is read-only and potentially much more
+                // expensive than the final state edge, so keep it outside the
+                // lifecycle lock. The exact exclusion gate is repeated below
+                // immediately before any cache/watch/event mutation.
+                let mut commits =
+                    git::recent_commits(Path::new(&path_str), MAX_COMMITS_PER_REPO, cutoff)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|mut c| {
+                            c.repo_name = name.clone();
+                            c
+                        })
+                        .collect::<Vec<_>>();
+                // The legacy manual scan shares the same final lifecycle gate
+                // as the orchestrator. Resolve first, then serialize only the
+                // DB/cache/watch/event edge so excluded rows cannot leak back.
+                let _lifecycle = discovery_orchestrator::lock_repo_lifecycle();
+                let Ok(mut conn) = cache::open(&app) else {
+                    return;
+                };
+                if discovery_orchestrator::repo_is_excluded(&conn, &path_str).unwrap_or(true) {
+                    return;
+                }
+                if let Ok(Some(stored)) =
+                    discovery_orchestrator::registered_repo_identity(&conn, &path_str)
+                {
+                    path_str = stored;
+                }
                 let repo = cache::Repo {
                     id: 0,
                     path: path_str.clone(),
                     name: name.clone(),
                     status: "active".to_string(),
                 };
-                found.push(repo.clone());
+                if cache::upsert_repos(&mut conn, std::slice::from_ref(&repo)).is_err() {
+                    return;
+                }
+                // A legacy extended-UNC row may retain its stored spelling to
+                // preserve settings keys. Cache rows still use that exact
+                // owner identity so repo_id resolution never falls back to 0.
+                for commit in &mut commits {
+                    commit.repo_path = path_str.clone();
+                }
+
+                let outcome = if commits.is_empty() {
+                    None
+                } else {
+                    cache::upsert_commits(&mut conn, &commits).ok()
+                };
+
+                // Attach the file watcher to this newly-discovered repo.
+                if let Some(w) = app.try_state::<watcher::RepoWatcher>() {
+                    let _ = w.add(Path::new(&path_str));
+                }
+
+                found.push(repo);
                 let _ = app.emit(
                     "discovery://progress",
                     ScanProgress {
@@ -1488,51 +2102,21 @@ pub async fn discover_repos(app: AppHandle) -> Result<usize, String> {
                         found: found.len(),
                     },
                 );
-
-                // Fill the timeline incrementally: read this repo's recent
-                // commits right now and stream them to the panel so rows
-                // appear as repos are found. Errors are silently skipped.
-                let commits = git::recent_commits(&path, MAX_COMMITS_PER_REPO, cutoff)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|mut c| {
-                        c.repo_name = name.clone();
-                        c
-                    })
-                    .collect::<Vec<_>>();
-
-                if !commits.is_empty() {
-                    let outcome = cache::open(&app).ok().and_then(|mut conn| {
-                        // Upsert the repo row FIRST so upsert_commits can
-                        // resolve a real repo_id — its COALESCE falls back
-                        // to 0 when the repos row does not exist yet.
-                        cache::upsert_repos(&mut conn, std::slice::from_ref(&repo)).ok()?;
-                        cache::upsert_commits(&mut conn, &commits).ok()
-                    });
-                    // Lightweight windowed-pull signal — the frontend
-                    // re-pulls the affected windows from the cache.
-                    if let Some(o) = outcome {
-                        let _ = app.emit(
-                            "timeline://invalidated",
-                            cache::TimelineInvalidated {
-                                generation: o.generation,
-                                inserted: o.inserted,
-                                deleted: 0,
-                                repo_path: path_str.clone(),
-                            },
-                        );
-                    }
-                }
-
-                // Attach the file watcher to this newly-discovered repo.
-                if let Some(w) = app.try_state::<watcher::RepoWatcher>() {
-                    w.add(&path);
+                // Lightweight windowed-pull signal — the frontend re-pulls
+                // the affected windows from the cache.
+                if let Some(o) = outcome {
+                    let _ = app.emit(
+                        "timeline://invalidated",
+                        cache::TimelineInvalidated {
+                            generation: o.generation,
+                            inserted: o.inserted,
+                            deleted: 0,
+                            repo_path: path_str,
+                        },
+                    );
                 }
             });
         }
-
-        let mut conn = cache::open(&app).map_err(|e| e.to_string())?;
-        cache::upsert_repos(&mut conn, &found).map_err(|e| e.to_string())?;
 
         let count = found.len();
         let _ = app.emit("discovery://complete", ScanComplete { count });

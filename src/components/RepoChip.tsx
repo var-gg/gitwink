@@ -21,6 +21,9 @@ interface Props {
   repos: Repo[];
   /** repo id → commit count in the active time window (RepoChip facet). */
   repoCounts: Map<number, number>;
+  /** True while counts for a new cross-filter scope are being computed. The
+   * previous scope's badges and checkbox mutations must not look current. */
+  loading?: boolean;
   pinned: string[];
   selectedPath: string | null;
   selectedPaths: string[] | "all";
@@ -40,6 +43,7 @@ export function RepoChip({
   onClose,
   repos,
   repoCounts,
+  loading = false,
   pinned,
   selectedPath,
   selectedPaths,
@@ -55,6 +59,7 @@ export function RepoChip({
     path: string;
     x: number;
     y: number;
+    restoreFocusTo: HTMLElement | null;
   } | null>(null);
   const [excludingPath, setExcludingPath] = useState<string | null>(null);
   const [excludeError, setExcludeError] = useState<string | null>(null);
@@ -130,6 +135,7 @@ export function RepoChip({
   // Single-repo mode: App ignores the multi-select filter, so the row
   // checkboxes render read-only instead of silently doing nothing.
   const singleRepoMode = selectedPath != null;
+  const countsLoading = loading && !singleRepoMode;
 
   const selectedSnapSet = useMemo(
     () => (Array.isArray(selectedSnapshot) ? new Set(selectedSnapshot) : null),
@@ -162,37 +168,20 @@ export function RepoChip({
   }, [repos, pinnedSnapshot, q, selectedSnapSet]);
 
   const selected = selectedPath ? repoByPath.get(selectedPath) : null;
-  const label = selected ? (
-    <>
-      {selected.name}
-      <span
-        className="chip-clear"
-        onClick={(e) => {
-          e.stopPropagation();
-          onSelectAll();
-        }}
-        title="Back to All repos"
-      >
-        ✕
-      </span>
-    </>
-  ) : selectedPaths === "all" ? (
-    <>All repos ({totalRepoCount})</>
-  ) : (
-    <>
-      {selectedPaths.length} repos
-      <span
-        className="chip-clear"
-        onClick={(e) => {
-          e.stopPropagation();
-          onSelectMulti("all");
-        }}
-        title="Clear filter"
-      >
-        ✕
-      </span>
-    </>
-  );
+  const label = selected
+    ? selected.name
+    : selectedPaths === "all"
+      ? `All repos (${totalRepoCount})`
+      : `${selectedPaths.length} ${selectedPaths.length === 1 ? "repo" : "repos"}`;
+  const labelTitle = selected
+    ? `${selected.name} — ${selected.path}`
+    : label;
+  const clearSelection = selected
+    ? onSelectAll
+    : selectedPaths === "all"
+      ? undefined
+      : () => onSelectMulti("all");
+  const clearTitle = selected ? "Back to All repos" : "Clear repository filter";
 
   // Flatten the two sections into one virtual-row list. The Pinned header,
   // the "All repos" button and the empty-state line are known-height
@@ -212,12 +201,14 @@ export function RepoChip({
         <RepoItem
           repo={r}
           count={repoCounts.get(r.id)}
+          countLoading={countsLoading}
           pinned={livePinned.has(r.path)}
           active={selectedPath === r.path}
           selected={
             Array.isArray(selectedPaths) && selectedPaths.includes(r.path)
           }
           checkboxReadonly={singleRepoMode}
+          checkboxReadonlyTitle="Multi-select filter is available in all-repos mode"
           onSelect={() => {
             onSelect(r.path);
             onClose();
@@ -232,8 +223,8 @@ export function RepoChip({
           onPin={() => onTogglePin(r.path)}
           excluding={excludingPath === r.path}
           onExclude={() => void requestExclude(r.path)}
-          onRowContextMenu={(x, y) =>
-            setContextTarget({ path: r.path, x, y })
+          onRowContextMenu={(x, y, restoreFocusTo) =>
+            setContextTarget({ path: r.path, x, y, restoreFocusTo })
           }
         />
       ),
@@ -258,6 +249,7 @@ export function RepoChip({
             "chip-section-all" +
             (selectedPath == null && selectedPaths === "all" ? " active" : "")
           }
+          aria-pressed={selectedPath == null && selectedPaths === "all"}
           onClick={() => {
             onSelectAll();
             onClose();
@@ -284,6 +276,7 @@ export function RepoChip({
     selectedPath,
     selectedPaths,
     singleRepoMode,
+    countsLoading,
     onSelect,
     onSelectMulti,
     onSelectAll,
@@ -299,10 +292,13 @@ export function RepoChip({
       <ChipDropdown
         id="repo"
         label={label}
+        title={labelTitle}
         open={open}
         onToggle={onToggle}
         onClose={onClose}
         active={selectedPath != null || selectedPaths !== "all"}
+        onClear={clearSelection}
+        clearTitle={clearTitle}
       >
         <div className="chip-search">
           <input
@@ -310,6 +306,7 @@ export function RepoChip({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search repos…"
+            aria-label="Search repositories"
           />
         </div>
         {excludeError && (
@@ -332,6 +329,7 @@ export function RepoChip({
               onClick: () => requestExclude(contextTarget.path),
             },
           ]}
+          restoreFocusTo={contextTarget.restoreFocusTo}
           onClose={() => setContextTarget(null)}
         />
       )}
@@ -342,10 +340,12 @@ export function RepoChip({
 function RepoItem({
   repo,
   count,
+  countLoading,
   pinned,
   active,
   selected,
   checkboxReadonly,
+  checkboxReadonlyTitle,
   onSelect,
   onToggleSelect,
   onPin,
@@ -357,16 +357,22 @@ function RepoItem({
   /** commit count in the active window, or undefined when the repo has
    * none / its id isn't resolved yet. */
   count?: number;
+  countLoading: boolean;
   pinned: boolean;
   active: boolean;
   selected: boolean;
   checkboxReadonly: boolean;
+  checkboxReadonlyTitle: string;
   onSelect: () => void;
   onToggleSelect: () => void;
   onPin: () => void;
   excluding: boolean;
   onExclude: () => void;
-  onRowContextMenu: (x: number, y: number) => void;
+  onRowContextMenu: (
+    x: number,
+    y: number,
+    restoreFocusTo: HTMLElement | null,
+  ) => void;
 }) {
   const isMissing = repo.status === "missing";
   return (
@@ -379,7 +385,11 @@ function RepoItem({
       }
       onContextMenu={(e) => {
         e.preventDefault();
-        onRowContextMenu(e.clientX, e.clientY);
+        onRowContextMenu(
+          e.clientX,
+          e.clientY,
+          e.currentTarget.querySelector<HTMLButtonElement>(".chip-item"),
+        );
       }}
     >
       <button
@@ -396,7 +406,7 @@ function RepoItem({
         }
         title={
           checkboxReadonly
-            ? "Multi-select filter is available in all-repos mode"
+            ? checkboxReadonlyTitle
             : "Add to multi-repo filter"
         }
         onClick={(e) => {
@@ -420,7 +430,23 @@ function RepoItem({
         onClick={() => {
           if (!isMissing) onSelect();
         }}
+        onKeyDown={(e) => {
+          if ((e.shiftKey && e.key === "F10") || e.key === "ContextMenu") {
+            e.preventDefault();
+            const rect = e.currentTarget.getBoundingClientRect();
+            onRowContextMenu(
+              rect.left + Math.min(16, rect.width / 2),
+              rect.bottom,
+              e.currentTarget,
+            );
+          }
+        }}
         aria-disabled={isMissing || undefined}
+        aria-label={
+          isMissing
+            ? `${repo.name}, repository missing at ${repo.path}`
+            : `Open ${repo.name} at ${repo.path}`
+        }
         title={
           isMissing
             ? `${repo.path} — moved or deleted on disk. Drop the new path on the panel to relink, or click ✕ to exclude it.`
@@ -428,18 +454,25 @@ function RepoItem({
         }
       >
         <span className="chip-item-titleline">
-          <span className="chip-item-name">
+          <span className="chip-item-name" title={repo.name}>
             {repo.name}
             {isMissing && (
               <span className="chip-item-missing-tag"> · missing</span>
             )}
           </span>
-          {count != null && (
+          {(countLoading || count != null) && (
             <span
-              className="chip-item-count"
-              title="Commits matching the current author and time filters"
+              className={
+                "chip-item-count" + (countLoading ? " loading" : "")
+              }
+              title={
+                countLoading
+                  ? "Updating commits for the current author and time filters"
+                  : "Commits matching the current author and time filters"
+              }
+              aria-label={countLoading ? "Updating commit count" : undefined}
             >
-              {count}
+              {countLoading ? "…" : count}
             </span>
           )}
         </span>
@@ -455,6 +488,7 @@ function RepoItem({
             onExclude();
           }}
           title="Exclude from gitwink (restore later in Settings)"
+          aria-label={`Exclude ${repo.name} from gitwink`}
         >
           {excluding ? "…" : "✕"}
         </button>
@@ -467,6 +501,8 @@ function RepoItem({
             onPin();
           }}
           title={pinned ? "Unpin" : "Pin"}
+          aria-label={pinned ? `Unpin ${repo.name}` : `Pin ${repo.name}`}
+          aria-pressed={pinned}
         >
           ★
         </button>

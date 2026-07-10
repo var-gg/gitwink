@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -207,8 +207,7 @@ fn save_unlocked(app: &AppHandle, settings: &Settings) -> Result<()> {
     let tmp = path.with_extension("json.tmp");
     {
         use std::io::Write;
-        let mut f =
-            fs::File::create(&tmp).with_context(|| format!("create {}", tmp.display()))?;
+        let mut f = fs::File::create(&tmp).with_context(|| format!("create {}", tmp.display()))?;
         f.write_all(&bytes)
             .with_context(|| format!("write {}", tmp.display()))?;
         f.sync_all()
@@ -257,12 +256,25 @@ pub fn save_branch_selection(app: &AppHandle, repo_path: &str, selection: Vec<St
         if selection.is_empty() {
             s.branch_selections.remove(repo_path);
         } else {
-            s.branch_selections
-                .insert(repo_path.to_string(), selection);
+            s.branch_selections.insert(repo_path.to_string(), selection);
         }
     }) {
         eprintln!("settings: failed to persist branch_selections: {e:#}");
     }
+}
+
+/// Forget every path-scoped preference when an excluded folder is explicitly
+/// accepted as a different repository identity. One locked, atomic settings
+/// round-trip prevents a concurrent panel move or pin toggle from resurrecting
+/// either the old pin or an alias's branch selection.
+pub fn clear_repo_preferences(app: &AppHandle, repo_paths: &[String]) -> Result<()> {
+    let paths = repo_paths.iter().cloned().collect::<HashSet<_>>();
+    update_with(app, move |settings| {
+        settings.pinned_repos.retain(|path| !paths.contains(path));
+        settings
+            .branch_selections
+            .retain(|path, _| !paths.contains(path));
+    })
 }
 
 pub fn save_diff_window(app: &AppHandle, state: DiffWindowState) {

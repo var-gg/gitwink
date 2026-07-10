@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use tauri::{Listener, Manager, WindowEvent};
+use tauri::{Emitter, Listener, Manager, WindowEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 mod cache;
@@ -11,7 +11,17 @@ mod discovery;
 mod discovery_orchestrator;
 mod discovery_sources;
 mod fetch;
+mod file_history_jobs;
 mod git;
+mod history_decorations;
+#[allow(dead_code)] // lazy search backfill integration follows the storage foundation
+mod history_fts;
+mod history_git;
+mod history_indexer;
+#[allow(dead_code)] // command search integration follows the storage foundation
+mod history_query;
+mod history_schema;
+mod history_store;
 mod repo_exclusions;
 mod settings;
 mod tray;
@@ -64,19 +74,107 @@ pub fn run() {
             app.manage(commands::ChangedFilesCache::default());
             app.manage(fetch::FetchCooldown::default());
             app.manage(discovery_orchestrator::ScanState::default());
+            app.manage(Arc::new(file_history_jobs::FileHistoryJobs::default()));
 
-            // Spin up the .git watcher and attach it to every repo the
-            // cache already knows about. discover_repos adds new ones
-            // as they're found.
+            // Full history is strictly demand-driven: the worker exists at
+            // startup but performs no DB or Git work until Search / All time
+            // requests a concrete repository scope.
+            let history_app = app.handle().clone();
+            let history_events = app.handle().clone();
+            let history_indexer = Arc::new(history_indexer::HistoryIndexer::start(
+                move || cache::open(&history_app),
+                history_git::DEFAULT_HISTORY_BATCH_SIZE,
+                move |repo_path, outcome| {
+                    if let history_indexer::RunOutcome::Published {
+                        generation,
+                        deleted,
+                        ..
+                    } = outcome
+                    {
+                        let _ = history_events.emit(
+                            "timeline://invalidated",
+                            cache::TimelineInvalidated {
+                                generation,
+                                inserted: 0,
+                                deleted,
+                                repo_path: repo_path.to_string(),
+                            },
+                        );
+                    }
+                },
+            ));
+            app.manage(Arc::clone(&history_indexer));
+            // Resume only durable 512-row maintenance left by a prior crash.
+            // This reads a tiny job table, never commits/Git history, and each
+            // queued turn remains lower priority than visible scan demand.
+            let cleanup_app = app.handle().clone();
+            std::thread::spawn(move || {
+                let Ok(conn) = cache::open(&cleanup_app) else {
+                    return;
+                };
+                let Ok(paths) = history_store::pending_cleanup_paths(&conn) else {
+                    return;
+                };
+                for path in paths {
+                    let _ = history_indexer.request_cleanup(path);
+                }
+            });
+
+            // Spin up the .git watcher immediately, then attach cached active
+            // repos off the setup thread. Resolving .git/common-dir paths can
+            // block on an offline network drive; startup and first paint must
+            // never wait for that I/O. Per-repo reconciliation fences each
+            // attachment against an exclusion/restore racing this backfill.
             if let Ok(watcher_) = watcher::RepoWatcher::start(app.handle().clone()) {
-                if let Ok(conn) = cache::open(app.handle()) {
-                    if let Ok(repos) = cache::list_repos(&conn) {
-                        for r in &repos {
-                            watcher_.add(std::path::Path::new(&r.path));
+                app.manage(watcher_);
+                let watcher_app = app.handle().clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let active_paths = cache::open(&watcher_app)
+                        .and_then(|conn| cache::list_repos(&conn))
+                        .map(|repos| {
+                            repos
+                                .into_iter()
+                                .filter(|repo| repo.status == "active")
+                                .map(|repo| repo.path)
+                                .collect::<Vec<_>>()
+                        });
+                    match active_paths {
+                        Ok(mut paths) => {
+                            // Resolve a few paths concurrently: one dead SMB
+                            // share must not postpone watcher coverage for
+                            // every healthy local repo behind it. RepoWatcher
+                            // serializes only the final map/notify mutation.
+                            paths.sort_by_key(|path| {
+                                path.starts_with(r"\\") || path.starts_with("//")
+                            });
+                            let worker_count = paths.len().min(4);
+                            let queue = Arc::new(std::sync::Mutex::new(
+                                paths.into_iter().collect::<std::collections::VecDeque<_>>(),
+                            ));
+                            let mut workers = Vec::with_capacity(worker_count);
+                            for _ in 0..worker_count {
+                                let worker_app = watcher_app.clone();
+                                let queue = Arc::clone(&queue);
+                                workers.push(std::thread::spawn(move || loop {
+                                    let path = queue
+                                        .lock()
+                                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                        .pop_front();
+                                    let Some(path) = path else {
+                                        break;
+                                    };
+                                    watcher::reconcile_repo_registration(&worker_app, &path);
+                                }));
+                            }
+                            for worker in workers {
+                                let _ = worker.join();
+                            }
+                        }
+                        Err(error) => {
+                            eprintln!("startup watcher backfill failed: {error:#}");
                         }
                     }
-                }
-                app.manage(watcher_);
+                });
             }
 
             tray::setup(app)?;
@@ -96,9 +194,7 @@ pub fn run() {
             // intentionally not touched at any runtime point on Windows
             // (see PanelPinned doc); the panel always honours
             // tauri.conf.json's skipTaskbar=true.
-            let saved_pinned = settings::load(app.handle())
-                .panel_pinned
-                .unwrap_or(false);
+            let saved_pinned = settings::load(app.handle()).panel_pinned.unwrap_or(false);
             if let Some(state) = app.try_state::<commands::PanelPinned>() {
                 state
                     .0
@@ -254,8 +350,9 @@ pub fn run() {
                         // visible, panel still focused) are in
                         // window::maybe_hide_panel_for_blur so the same rule
                         // can be re-applied from child CloseRequested paths.
-                        let stamp =
-                            focus_generation.fetch_add(1, Ordering::SeqCst).wrapping_add(1);
+                        let stamp = focus_generation
+                            .fetch_add(1, Ordering::SeqCst)
+                            .wrapping_add(1);
                         let gen_clone = Arc::clone(&focus_generation);
                         let handle_clone = handle.clone();
                         std::thread::spawn(move || {
@@ -306,6 +403,9 @@ pub fn run() {
             commands::list_commits_at_rank,
             commands::count_commits,
             commands::get_timeline_generation,
+            commands::request_history_index,
+            commands::release_history_index,
+            commands::get_history_index_status,
             commands::list_filter_facets,
             commands::list_branches,
             commands::count_branch_commits,
@@ -314,12 +414,15 @@ pub fn run() {
             commands::list_excluded_repos,
             commands::exclude_repo,
             commands::restore_repo,
+            commands::inspect_replacement_repo,
+            commands::replace_excluded_repo,
             commands::repo_commits,
             commands::changed_files,
             commands::changed_files_batch,
             commands::file_diff,
             commands::commit_file_blobs,
             commands::file_history,
+            commands::cancel_file_history,
             commands::open_file_history,
             commands::open_diff,
             commands::take_pending_diff_open,

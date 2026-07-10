@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AuthorTally } from "../types";
 import {
@@ -38,6 +38,9 @@ interface Props {
   onToggle: () => void;
   onClose: () => void;
   authors: AuthorTally[];
+  /** While a new scope's facets are resolving, replace the old scope's rows
+   * instead of allowing a stale author to be selected. */
+  loading?: boolean;
   selected: string[] | "all";
   onChange: (sel: string[] | "all") => void;
 }
@@ -47,16 +50,23 @@ export function AuthorsChip({
   onToggle,
   onClose,
   authors,
+  loading = false,
   selected,
   onChange,
 }: Props) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<AuthorSort>(loadAuthorSort);
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const scale = useUiScale();
 
   useEffect(() => {
     if (!open) setQuery("");
   }, [open]);
+
+  useEffect(() => {
+    if (!open || loading) return;
+    window.requestAnimationFrame(() => searchRef.current?.focus());
+  }, [open, loading]);
 
   function changeSort(next: AuthorSort) {
     setSort(next);
@@ -85,8 +95,8 @@ export function AuthorsChip({
     [authors],
   );
   const unavailableSelected = useMemo(
-    () => unavailableFacetValues(authorNames, selected),
-    [authorNames, selected],
+    () => (loading ? [] : unavailableFacetValues(authorNames, selected)),
+    [authorNames, selected, loading],
   );
   const visibleUnavailable = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -110,9 +120,10 @@ export function AuthorsChip({
 
   const toggle = useCallback(
     (name: string) => {
+      if (loading) return;
       onChange(toggleFacetValue(selected, name, authorNames));
     },
-    [selected, authorNames, onChange],
+    [selected, authorNames, onChange, loading],
   );
 
   // Flatten into virtual rows: the "All authors" reset button, then one
@@ -123,6 +134,18 @@ export function AuthorsChip({
     const EMPTY_H = chipRowH(scale, EMPTY_H_BASE);
 
     const out: VirtualChipRow[] = [];
+    if (loading) {
+      out.push({
+        key: "__loading",
+        height: EMPTY_H,
+        render: () => (
+          <div className="chip-empty" role="status">
+            Updating authors…
+          </div>
+        ),
+      });
+      return out;
+    }
     out.push({
       key: "__all",
       height: ITEM_H,
@@ -130,6 +153,8 @@ export function AuthorsChip({
         <button
           type="button"
           className={"chip-item" + (selected === "all" ? " active" : "")}
+          role="checkbox"
+          aria-checked={selected === "all"}
           onClick={() => {
             onChange("all");
             onClose();
@@ -160,13 +185,19 @@ export function AuthorsChip({
             <button
               type="button"
               className="chip-item checked chip-item-unavailable"
+              role="checkbox"
+              aria-checked={true}
               title={`${name} has no commits in the current scope. Click to remove this filter.`}
               onClick={() => {
                 onChange(removeUnavailableFacetValue(selected, name));
               }}
             >
-              <span className="chip-check">✓</span>
-              <span className="chip-item-name">{name}</span>
+              <span className="chip-check" aria-hidden="true">
+                ✓
+              </span>
+              <span className="chip-item-name" title={name}>
+                {name}
+              </span>
               <span className="chip-item-count">0</span>
             </button>
           ),
@@ -183,32 +214,40 @@ export function AuthorsChip({
         key: "author:" + name,
         height: ITEM_H,
         render: () => (
-          <button
-            type="button"
+          <div
             className={"chip-item" + (isSelected ? " checked" : "")}
-            onClick={() => toggle(name)}
           >
-            <span className="chip-check">{isSelected ? "✓" : ""}</span>
-            <span className="chip-item-name">{name}</span>
-            <span
+            <button
+              type="button"
+              className="chip-author-toggle"
+              role="checkbox"
+              aria-checked={isSelected}
+              title={name}
+              onClick={() => toggle(name)}
+            >
+              <span className="chip-check" aria-hidden="true">
+                {isSelected ? "✓" : ""}
+              </span>
+              <span className="chip-item-name" title={name}>
+                {name}
+              </span>
+            </button>
+            <button
+              type="button"
               className="chip-only"
-              role="button"
-              tabIndex={-1}
               title={`Show only ${name}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                onChange([name]);
-              }}
+              aria-label={`Show only ${name}`}
+              onClick={() => onChange([name])}
             >
               only
-            </span>
+            </button>
             <span
               className="chip-item-count"
               title="Commits in the current repository and time scope"
             >
               {count}
             </span>
-          </button>
+          </div>
         ),
       });
     }
@@ -228,6 +267,7 @@ export function AuthorsChip({
     onClose,
     toggle,
     scale,
+    loading,
   ]);
 
   return (
@@ -242,10 +282,13 @@ export function AuthorsChip({
     >
       <div className="chip-search">
         <input
+          ref={searchRef}
           autoFocus
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search authors…"
+          aria-label="Search authors"
+          disabled={loading}
         />
       </div>
       <div className="chip-sort" role="group" aria-label="Sort authors">
@@ -256,6 +299,8 @@ export function AuthorsChip({
             type="button"
             className={"chip-sort-btn" + (sort === o.value ? " active" : "")}
             title={o.title}
+            aria-pressed={sort === o.value}
+            disabled={loading}
             onClick={() => changeSort(o.value)}
           >
             {o.label}
