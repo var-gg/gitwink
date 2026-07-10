@@ -80,6 +80,14 @@ import {
 } from "./lib/viewHistory";
 import { timelineSnapshotFilterKey } from "./lib/useTimelineWindow";
 import { isSearchResultCurrent } from "./lib/searchResolution";
+import {
+  filterRollingWindow,
+  nextRollingWindowExpiry,
+} from "./lib/rollingWindow";
+import {
+  canReuseRepoCommitsSnapshot,
+  reusableRepoCommitsFingerprint,
+} from "./lib/repoCommitsReuse";
 import { UpdateModal } from "./components/UpdateModal";
 import { dismissContextMenus } from "./components/overlayLifecycle";
 import type {
@@ -214,6 +222,9 @@ function App() {
   const appliedRepoFacetScopeRef = useRef<string | null>(null);
 
   const [windowDays, setWindowDays] = useState<WindowDays>(7);
+  const [singleRepoWindowNow, setSingleRepoWindowNow] = useState(() =>
+    Math.floor(Date.now() / 1000),
+  );
   const [selectedRepoPath, setSelectedRepoPath] = useState<string | null>(null);
   const [selectedRepoPaths, setSelectedRepoPaths] = useState<string[] | "all">(
     "all",
@@ -1284,7 +1295,10 @@ function App() {
         // so skip re-shipping up to 2,000 full commits over IPC for nothing.
         const fp = await repoRefsFingerprint(selectedRepoPath, branchParam);
         if (cancelled) return;
-        if (sameView && fp !== "" && fp === commitsRefsFpRef.current) {
+        if (
+          sameView &&
+          canReuseRepoCommitsSnapshot(commitsRefsFpRef.current, fp)
+        ) {
           return;
         }
         const result = await repoCommits(
@@ -1293,7 +1307,10 @@ function App() {
           toWindowParam(windowDays),
         );
         if (!cancelled) {
-          commitsRefsFpRef.current = fp;
+          // A partial read or shallow boundary can recover without any ref
+          // tip moving (objects arrive, or the clone is deepened). Never let
+          // that provisional result suppress the next explicit re-summon.
+          commitsRefsFpRef.current = reusableRepoCommitsFingerprint(fp, result);
           setCommits(result.rows);
           setRepoCommitsCoverage({
             truncated: result.truncated,
@@ -1593,11 +1610,51 @@ function App() {
     goForward,
   ]);
 
-  // Single-repo mode tallies authors from its (bounded) loaded commits;
+  // A ref-stable re-summon deliberately skips the expensive Git walk, but a
+  // rolling window still moves. Prune the already-loaded rows locally at the
+  // exact next expiry second; refs cannot add rows while their fingerprint is
+  // unchanged, so this is both cheaper and more accurate than re-walking.
+  useEffect(() => {
+    if (
+      !singleMode ||
+      fileHistory != null ||
+      windowDays === "all" ||
+      commits == null
+    ) {
+      return;
+    }
+    const now = Math.floor(Date.now() / 1000);
+    setSingleRepoWindowNow(now);
+    const nextExpiry = nextRollingWindowExpiry(commits, windowDays, now);
+    if (nextExpiry == null) return;
+    const delay = Math.max(
+      100,
+      Math.min((nextExpiry - now) * 1000 + 50, 2_147_000_000),
+    );
+    const timer = window.setTimeout(
+      () => setSingleRepoWindowNow(Math.floor(Date.now() / 1000)),
+      delay,
+    );
+    return () => window.clearTimeout(timer);
+  }, [
+    singleMode,
+    fileHistory,
+    windowDays,
+    commits,
+    refreshNonce,
+    singleRepoWindowNow,
+  ]);
+
+  const timeScopedSingleRepoCommits = useMemo(() => {
+    if (!commits || fileHistory != null) return commits;
+    return filterRollingWindow(commits, windowDays, singleRepoWindowNow);
+  }, [commits, fileHistory, windowDays, singleRepoWindowNow]);
+
+  // Single-repo mode tallies authors from its (bounded) visible commits;
   // all-repos mode uses the backend facet (`authorsAll`).
   const authorsSingle: AuthorTally[] = useMemo(() => {
     const m = new Map<string, { count: number; lastActivity: number }>();
-    for (const c of commits ?? []) {
+    for (const c of timeScopedSingleRepoCommits ?? []) {
       const cur = m.get(c.author);
       if (cur) {
         cur.count += 1;
@@ -1613,7 +1670,7 @@ function App() {
         lastActivity: info.lastActivity,
       }))
       .sort((a, b) => b.lastActivity - a.lastActivity);
-  }, [commits]);
+  }, [timeScopedSingleRepoCommits]);
   const authors = singleMode ? authorsSingle : authorsAll;
   const branchCatalogIsCurrent =
     branchesRepoPathRef.current === selectedRepoPath;
@@ -1625,14 +1682,14 @@ function App() {
   // The repo filter doesn't apply here (you're inside one repo already);
   // just narrow the loaded commits by the author selection.
   const filteredCommits = useMemo(() => {
-    if (!commits) return null;
+    if (!timeScopedSingleRepoCommits) return null;
     // File history shows every commit that touched the file — the author
     // lens is dimmed/inert in that mode, so don't filter by it.
-    if (fileHistory) return commits;
-    if (selectedAuthors === "all") return commits;
+    if (fileHistory) return timeScopedSingleRepoCommits;
+    if (selectedAuthors === "all") return timeScopedSingleRepoCommits;
     const set = new Set(selectedAuthors);
-    return commits.filter((c) => set.has(c.author));
-  }, [commits, selectedAuthors, fileHistory]);
+    return timeScopedSingleRepoCommits.filter((c) => set.has(c.author));
+  }, [timeScopedSingleRepoCommits, selectedAuthors, fileHistory]);
 
   // Repos the search can actually run over: id is backfilled by listRepos, so
   // id 0 (just-discovered, not yet resolved) can't be searched. The widen
