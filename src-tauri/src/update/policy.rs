@@ -11,10 +11,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::store_update;
 
-const GITHUB_RELEASES_LABEL: &str = "verified gitwink releases on GitHub";
-const MICROSOFT_STORE_LABEL: &str = "Microsoft Store";
-const SCOOP_LABEL: &str = "Scoop";
-const GITWINK_LABEL: &str = "gitwink";
 const SCOOP_UPDATE_COMMAND: &str = "scoop update gitwink";
 
 /// The installed artifact's update-ownership class.
@@ -29,13 +25,24 @@ pub enum InstallChannel {
     Store,
 }
 
+/// Stable provider identity crossing IPC. Presentation layers translate this
+/// code; backend policy never sends English prose as UI data.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UpdateProvider {
+    GithubReleases,
+    MicrosoftStore,
+    Scoop,
+    Gitwink,
+}
+
 /// Capability payload consumed by the UI. Channel names remain available for
 /// diagnostics, but presentation code must branch on these capabilities.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdatePolicyView {
     pub channel: InstallChannel,
-    pub check_provider_label: String,
+    pub check_provider: UpdateProvider,
     pub supports_background_checks: bool,
     pub install_action: UpdateInstallActionView,
 }
@@ -46,14 +53,10 @@ pub struct UpdatePolicyView {
 #[serde(tag = "kind")]
 pub enum UpdateInstallActionView {
     #[serde(rename = "inApp")]
-    InApp {
-        #[serde(rename = "providerLabel")]
-        provider_label: String,
-    },
+    InApp { provider: UpdateProvider },
     #[serde(rename = "externalCommand")]
     ExternalCommand {
-        #[serde(rename = "providerLabel")]
-        provider_label: String,
+        provider: UpdateProvider,
         command: String,
     },
 }
@@ -65,10 +68,10 @@ pub(super) enum CheckBackend {
 }
 
 impl CheckBackend {
-    fn provider_label(self) -> &'static str {
+    fn provider(self) -> UpdateProvider {
         match self {
-            Self::Tauri => GITHUB_RELEASES_LABEL,
-            Self::Store => MICROSOFT_STORE_LABEL,
+            Self::Tauri => UpdateProvider::GithubReleases,
+            Self::Store => UpdateProvider::MicrosoftStore,
         }
     }
 
@@ -84,7 +87,7 @@ pub(super) enum InstallBackend {
     Tauri,
     Store,
     ExternalCommand {
-        provider_label: &'static str,
+        provider: UpdateProvider,
         command: &'static str,
     },
 }
@@ -93,18 +96,17 @@ impl InstallBackend {
     fn view(self) -> UpdateInstallActionView {
         match self {
             Self::Tauri => UpdateInstallActionView::InApp {
-                provider_label: GITWINK_LABEL.to_string(),
+                provider: UpdateProvider::Gitwink,
             },
             Self::Store => UpdateInstallActionView::InApp {
-                provider_label: MICROSOFT_STORE_LABEL.to_string(),
+                provider: UpdateProvider::MicrosoftStore,
             },
-            Self::ExternalCommand {
-                provider_label,
-                command,
-            } => UpdateInstallActionView::ExternalCommand {
-                provider_label: provider_label.to_string(),
-                command: command.to_string(),
-            },
+            Self::ExternalCommand { provider, command } => {
+                UpdateInstallActionView::ExternalCommand {
+                    provider,
+                    command: command.to_string(),
+                }
+            }
         }
     }
 }
@@ -143,7 +145,7 @@ impl UpdatePolicy {
     pub(super) fn view(self) -> UpdatePolicyView {
         UpdatePolicyView {
             channel: self.channel,
-            check_provider_label: self.check_backend.provider_label().to_string(),
+            check_provider: self.check_backend.provider(),
             supports_background_checks: self.check_backend.supports_background_checks(),
             install_action: self.install_backend.view(),
         }
@@ -160,7 +162,7 @@ impl UpdatePolicy {
                 channel,
                 check_backend: CheckBackend::Tauri,
                 install_backend: InstallBackend::ExternalCommand {
-                    provider_label: SCOOP_LABEL,
+                    provider: UpdateProvider::Scoop,
                     command: SCOOP_UPDATE_COMMAND,
                 },
             },
@@ -222,7 +224,7 @@ mod tests {
 
     use super::{
         policy_for_environment, CheckBackend, InstallBackend, InstallChannel,
-        UpdateInstallActionView,
+        UpdateInstallActionView, UpdateProvider,
     };
 
     fn policy(path: &str) -> super::UpdatePolicy {
@@ -255,7 +257,7 @@ mod tests {
                 InstallChannel::Scoop,
                 CheckBackend::Tauri,
                 InstallBackend::ExternalCommand {
-                    provider_label: "Scoop",
+                    provider: UpdateProvider::Scoop,
                     command: "scoop update gitwink",
                 },
             ),
@@ -307,11 +309,11 @@ mod tests {
             serde_json::to_value(scoop).unwrap(),
             json!({
                 "channel": "scoop",
-                "checkProviderLabel": "verified gitwink releases on GitHub",
+                "checkProvider": "githubReleases",
                 "supportsBackgroundChecks": true,
                 "installAction": {
                     "kind": "externalCommand",
-                    "providerLabel": "Scoop",
+                    "provider": "scoop",
                     "command": "scoop update gitwink"
                 }
             })

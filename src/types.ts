@@ -227,16 +227,23 @@ export interface CommitFileBlobs {
  * intentionally share `standalone` because they install the same artifact. */
 export type InstallChannel = "standalone" | "scoop" | "store";
 
+/** Stable identity from Rust; UI catalogs own localized provider wording. */
+export type UpdateProvider =
+  | "githubReleases"
+  | "microsoftStore"
+  | "scoop"
+  | "gitwink";
+
 /** Capability contract for the final install step. Presentation code branches
  * on this union rather than hard-coding Store/Scoop channel names. */
 export type UpdateInstallAction =
-  | { kind: "inApp"; providerLabel: string }
-  | { kind: "externalCommand"; providerLabel: string; command: string };
+  | { kind: "inApp"; provider: UpdateProvider }
+  | { kind: "externalCommand"; provider: UpdateProvider; command: string };
 
 export interface UpdatePolicy {
   /** Diagnostic identity only; behaviour comes from the capabilities below. */
   channel: InstallChannel;
-  checkProviderLabel: string;
+  checkProvider: UpdateProvider;
   supportsBackgroundChecks: boolean;
   installAction: UpdateInstallAction;
 }

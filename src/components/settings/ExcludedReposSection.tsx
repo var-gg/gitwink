@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import { useLingui } from "@lingui/react";
 
 import {
   listExcludedRepos,
@@ -9,9 +10,12 @@ import {
   restoreRepo,
 } from "../../lib/ipc";
 import type { ExcludedRepo, ReplacementConfirmation } from "../../types";
+import { repositoryMessages as m } from "../../i18n/messages/repositories";
+import { translate } from "../../i18n/translate";
 import "./ExcludedReposSection.css";
 
 export function ExcludedReposSection() {
+  const { i18n } = useLingui();
   const [repos, setRepos] = useState<ExcludedRepo[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<{
@@ -38,11 +42,11 @@ export function ExcludedReposSection() {
       setError(null);
     } catch (err) {
       if (sequence !== refreshSequence.current) return;
-      setError(errorMessage(err, "Couldn't load excluded repositories"));
+      setError(errorMessage(err, i18n._(m.loadError)));
     } finally {
       if (sequence === refreshSequence.current) setLoading(false);
     }
-  }, []);
+  }, [i18n]);
 
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
@@ -99,21 +103,29 @@ export function ExcludedReposSection() {
       await restoreRepo(repo.path);
       focusAfterIndex.current = repos.findIndex((item) => item.path === repo.path);
       setConfirmation(null);
-      setAnnouncement(`${repo.name} restored.`);
+      setAnnouncement(
+        translate(i18n, m.restoredAnnouncement, { repo: repo.name }),
+      );
       await refresh();
     } catch (err) {
-      const message = errorMessage(err, `Couldn't restore ${repo.name}`);
+      const message = errorMessage(
+        err,
+        translate(i18n, m.restoreError, { repo: repo.name }),
+      );
       if (message.includes("REPOSITORY_IDENTITY_MISMATCH")) {
         try {
           setBusy({ path: repo.path, kind: "inspect" });
           setConfirmation(await inspectReplacementRepo(repo.path));
           setError(
-            "This folder now contains a different Git repository. Review the replacement details before confirming.",
+            i18n._(m.identityMismatch),
           );
         } catch (inspectError) {
           setConfirmation(null);
           setError(
-            errorMessage(inspectError, `Couldn't inspect ${repo.name}`),
+            errorMessage(
+              inspectError,
+              translate(i18n, m.inspectError, { repo: repo.name }),
+            ),
           );
         }
       } else {
@@ -132,7 +144,12 @@ export function ExcludedReposSection() {
       setConfirmation(await inspectReplacementRepo(repo.path));
     } catch (err) {
       setConfirmation(null);
-      setError(errorMessage(err, `Couldn't inspect ${repo.name}`));
+      setError(
+        errorMessage(
+          err,
+          translate(i18n, m.inspectError, { repo: repo.name }),
+        ),
+      );
     } finally {
       setBusy(null);
     }
@@ -146,18 +163,20 @@ export function ExcludedReposSection() {
       await replaceExcludedRepo(confirmation);
       focusAfterIndex.current = repos.findIndex((item) => item.path === repo.path);
       setConfirmation(null);
-      setAnnouncement(`${repo.name} replaced with the repository currently in its folder.`);
+      setAnnouncement(
+        translate(i18n, m.replacedAnnouncement, { repo: repo.name }),
+      );
       await refresh();
     } catch (err) {
       const message = errorMessage(
         err,
-        `Couldn't use the current ${repo.name} repository`,
+        translate(i18n, m.replaceError, { repo: repo.name }),
       );
       if (message.includes("REPLACEMENT_CONFIRMATION_EXPIRED")) {
         focusInspectPath.current = repo.path;
         setConfirmation(null);
         setError(
-          "The repository changed after you reviewed it. Review the current repository again before confirming.",
+          i18n._(m.confirmationExpired),
         );
       } else {
         setError(message);
@@ -174,17 +193,16 @@ export function ExcludedReposSection() {
         className="settings-section-title"
         tabIndex={-1}
       >
-        Repositories
+        {i18n._(m.title)}
       </h2>
       <p className="settings-hint settings-exclusions-intro">
-        Excluded repositories are ignored by discovery and removed from the
-        panel, but their folders, pin state and branch preferences stay intact.
+        {i18n._(m.intro)}
       </p>
 
       {loading ? (
-        <p className="settings-exclusions-empty">Loading…</p>
+        <p className="settings-exclusions-empty">{i18n._(m.loading)}</p>
       ) : repos.length === 0 ? (
-        <p className="settings-exclusions-empty">No excluded repositories.</p>
+        <p className="settings-exclusions-empty">{i18n._(m.empty)}</p>
       ) : (
         <div className="settings-exclusions-list" role="list">
           {repos.map((repo, index) => {
@@ -207,12 +225,20 @@ export function ExcludedReposSection() {
                   </span>
                   <span className="settings-exclusion-meta">
                     {repo.folderAvailable == null
-                      ? "Folder availability is checked on restore"
+                      ? i18n._(m.folderCheckedOnRestore)
                       : repo.folderAvailable
-                        ? "Folder available"
-                        : "Folder unavailable — restores as missing until it returns"}
+                        ? i18n._(m.folderAvailable)
+                        : i18n._(m.folderUnavailable)}
                     {repo.excludedAt > 0 && (
-                      <> · Excluded {formatTimestamp(repo.excludedAt)}</>
+                      <>
+                        {" · "}
+                        {translate(i18n, m.excludedAt, {
+                          when: formatTimestamp(
+                            repo.excludedAt,
+                            settingsLocale(i18n.locale),
+                          ),
+                        })}
+                      </>
                     )}
                   </span>
                   {confirmingReplace && (
@@ -220,12 +246,9 @@ export function ExcludedReposSection() {
                       id={warningId}
                       className="settings-exclusion-replace-warning"
                     >
-                      Reviewed: <strong>{confirmation.repoName}</strong>. The
-                      confirmation is valid only while this exact repository
-                      and exclusion lifecycle remain unchanged. {" "}
-                      This forgets gitwink's old cache, pin and branch choices
-                      for this path, then registers the Git repository that is
-                      there now. The folder itself is never changed.
+                      {translate(i18n, m.replacementWarning, {
+                        repo: confirmation.repoName,
+                      })}
                     </span>
                   )}
                 </div>
@@ -237,28 +260,37 @@ export function ExcludedReposSection() {
                     }}
                     type="button"
                     className="settings-exclusion-restore"
-                    aria-label={`Restore ${repo.name}`}
+                    aria-label={translate(i18n, m.restoreAria, {
+                      repo: repo.name,
+                    })}
                     disabled={busy != null}
                     onClick={() => void restore(repo)}
                   >
-                    {restoring ? "Restoring…" : "Restore"}
+                    {restoring ? i18n._(m.restoring) : i18n._(m.restore)}
                   </button>
                   {confirmingReplace ? (
                     <>
                       <button
                         type="button"
                         className="settings-exclusion-replace confirm"
-                        aria-label={`Confirm replacing ${repo.name} with ${confirmation.repoName}`}
+                        aria-label={translate(i18n, m.confirmReplaceAria, {
+                          oldRepo: repo.name,
+                          newRepo: confirmation.repoName,
+                        })}
                         aria-describedby={warningId}
                         disabled={busy != null}
                         onClick={() => void replace(repo)}
                       >
-                        {replacing ? "Replacing…" : "Confirm replace"}
+                        {replacing
+                          ? i18n._(m.replacing)
+                          : i18n._(m.confirmReplace)}
                       </button>
                       <button
                         type="button"
                         className="settings-exclusion-cancel"
-                        aria-label={`Cancel replacing ${repo.name}`}
+                        aria-label={translate(i18n, m.cancelReplaceAria, {
+                          repo: repo.name,
+                        })}
                         disabled={busy != null}
                         onClick={() => {
                           focusInspectPath.current = repo.path;
@@ -266,7 +298,7 @@ export function ExcludedReposSection() {
                           setError(null);
                         }}
                       >
-                        Cancel
+                        {i18n._(m.cancel)}
                       </button>
                     </>
                   ) : (
@@ -277,11 +309,13 @@ export function ExcludedReposSection() {
                       }}
                       type="button"
                       className="settings-exclusion-replace"
-                      aria-label={`Use the current repository in ${repo.name}'s folder`}
+                      aria-label={translate(i18n, m.useCurrentAria, {
+                        repo: repo.name,
+                      })}
                       disabled={busy != null}
                       onClick={() => void inspectReplacement(repo)}
                     >
-                      {inspecting ? "Inspecting…" : "Use current repo…"}
+                      {inspecting ? i18n._(m.inspecting) : i18n._(m.inspect)}
                     </button>
                   )}
                 </div>
@@ -303,11 +337,15 @@ export function ExcludedReposSection() {
   );
 }
 
-function formatTimestamp(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleString(undefined, {
+function formatTimestamp(unixSeconds: number, locale: string): string {
+  return new Date(unixSeconds * 1000).toLocaleString(locale, {
     dateStyle: "medium",
     timeStyle: "short",
   });
+}
+
+function settingsLocale(locale: string): string {
+  return locale === "ko" ? "ko-KR" : locale === "ja" ? "ja-JP" : "en-US";
 }
 
 function errorMessage(error: unknown, fallback: string): string {

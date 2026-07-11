@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLingui } from "@lingui/react/macro";
 
 import { useUiScale } from "../lib/settings";
 import { constrainFixedOverlay } from "./overlayLayout";
@@ -6,6 +7,7 @@ import {
   DISMISS_CONTEXT_MENUS_EVENT,
   MODAL_OPEN_EVENT,
 } from "./overlayLifecycle";
+import { filterMessages } from "../i18n/messages/filters";
 
 export interface MenuItem {
   label?: string;
@@ -46,6 +48,7 @@ export function ContextMenu({
   onClose,
   restoreFocusTo,
 }: Props) {
+  const { i18n } = useLingui();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(
     restoreFocusTo ??
@@ -178,7 +181,7 @@ export function ContextMenu({
       ref={menuRef}
       className="context-menu"
       role="menu"
-      aria-label="Context menu"
+      aria-label={i18n._(filterMessages.contextMenu)}
       tabIndex={-1}
       style={{ left: pos.x, top: pos.y }}
       onContextMenu={(e) => e.preventDefault()}

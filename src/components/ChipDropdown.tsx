@@ -6,10 +6,12 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
+import { useLingui } from "@lingui/react/macro";
 
 import { useUiScale } from "../lib/settings";
 import { constrainAnchoredOverlay } from "./overlayLayout";
 import { MODAL_OPEN_EVENT } from "./overlayLifecycle";
+import { filterMessages } from "../i18n/messages/filters";
 
 const DROPDOWN_WIDTH_BASE = 280;
 const DROPDOWN_MAX_HEIGHT_BASE = 320;
@@ -46,8 +48,9 @@ export function ChipDropdown({
   align = "left",
   active,
   onClear,
-  clearTitle = "Clear filter",
+  clearTitle,
 }: Props) {
+  const { i18n } = useLingui();
   const ref = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
@@ -177,6 +180,7 @@ export function ChipDropdown({
   // still override with an explicit `title` prop.
   const effectiveTitle =
     title ?? (typeof label === "string" ? label : undefined);
+  const effectiveClearTitle = clearTitle ?? i18n._(filterMessages.clearFilter);
   const dropdownStyle: CSSProperties = {
     width: layout.width,
     maxHeight: layout.maxHeight,
@@ -231,8 +235,8 @@ export function ChipDropdown({
                 triggerRef.current?.focus({ preventScroll: true });
               });
             }}
-            title={clearTitle}
-            aria-label={clearTitle}
+            title={effectiveClearTitle}
+            aria-label={effectiveClearTitle}
           >
             ✕
           </button>

@@ -7,6 +7,8 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
+use crate::locale::LocalePreference;
+
 /// Serializes every settings round-trip (load → mutate → save) across the
 /// process. Writers run on at least four independent threads — the panel
 /// move-debounce thread, the diff-window persist threads, sync IPC
@@ -57,6 +59,10 @@ pub struct Settings {
     /// Update-checker behaviour — see `UpdateCheckMode`.
     #[serde(default)]
     pub update_check: UpdateCheckMode,
+    /// UI language preference. `System` resolves through the OS locale at
+    /// runtime; unsupported languages fall back to English.
+    #[serde(default)]
+    pub locale: LocalePreference,
     /// Version the user chose to "Skip" in the update modal. Suppresses
     /// the update indicator for exactly this version; a newer release
     /// re-surfaces it (different version string).
@@ -371,5 +377,13 @@ pub fn save_auto_fetch_notice_seen(app: &AppHandle, seen: bool) {
 pub fn save_update_check_mode(app: &AppHandle, mode: UpdateCheckMode) {
     if let Err(e) = update_with(app, |s| s.update_check = mode) {
         eprintln!("settings: failed to persist update_check: {e:#}");
+    }
+}
+
+/// Persist the UI language preference. Rebuilding native surfaces and the
+/// live settings cache is the caller's job — see `set_locale`.
+pub fn save_locale(app: &AppHandle, locale: LocalePreference) {
+    if let Err(e) = update_with(app, |s| s.locale = locale) {
+        eprintln!("settings: failed to persist locale: {e:#}");
     }
 }

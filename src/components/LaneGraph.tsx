@@ -1,5 +1,8 @@
 import type { LaneCommit, LaneEdge } from "../lib/lanes";
 import type { CommitSummary } from "../types";
+import { useLingui } from "@lingui/react/macro";
+import type { I18n } from "@lingui/core";
+import { panelMessages } from "../i18n/messages/panel";
 
 interface Props {
   /** Full lane-commit list (newest-first) — sliced to the visible band. */
@@ -30,14 +33,14 @@ const CIRCLE_R = 3.5;
  * a short hash for orientation. Single-repo mode renders the marker
  * column as a spacer (the SVG IS the marker), so without this title
  * the hover affordance is silently lost. */
-function commitTooltip(commit: CommitSummary): string {
+function commitTooltip(commit: CommitSummary, i18n: I18n): string {
   const glyph = commit.isTagged ? "★" : commit.isMerge ? "◆" : "●";
   const label = commit.isTagged
-    ? "Tagged commit"
+    ? i18n._(panelMessages.taggedCommit)
     : commit.isMerge
-      ? "Merge commit"
-      : "Commit";
-  const summary = commit.summary || "(no summary)";
+      ? i18n._(panelMessages.mergeCommit)
+      : i18n._(panelMessages.commit);
+  const summary = commit.summary || i18n._(panelMessages.noSummary);
   return `${glyph} ${label} · ${commit.shortHash}\n${summary}`;
 }
 
@@ -57,6 +60,7 @@ export function LaneGraph({
   bandTop,
   bandHeight,
 }: Props) {
+  const { i18n } = useLingui();
   const width = Math.max(totalLanes * LANE_WIDTH, LANE_WIDTH);
   const height = Math.max(bandHeight, 0);
   const cx = (lane: number) => lane * LANE_WIDTH + LANE_WIDTH / 2;
@@ -106,7 +110,7 @@ export function LaneGraph({
             stroke="rgba(0,0,0,0.22)"
             strokeWidth={0.5}
           >
-            <title>{commitTooltip(lc.commit)}</title>
+            <title>{commitTooltip(lc.commit, i18n)}</title>
           </circle>
         );
       })}

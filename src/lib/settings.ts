@@ -3,6 +3,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { useSyncExternalStore } from "react";
 
 import type { UpdatePolicy } from "../types";
+import type { AppLocale, LocalePreference } from "../i18n/runtime";
 
 /** Self-update behaviour. Mirrors Rust `UpdateCheckMode` (serialized
  *  lowercase) — "enabled" auto-checks every 24h, "manual" only on tray
@@ -23,6 +24,9 @@ export interface AppSettings {
    *  Default false ⇒ show it once (also the upgrade-time disclosure). */
   autoFetchNoticeSeen: boolean;
   updateCheck: UpdateCheckMode;
+  /** Stored language choice and the backend-resolved active locale. */
+  localePreference: LocalePreference;
+  resolvedLocale: AppLocale;
   /** Backend-computed capabilities; broadcast back for snapshot consistency
    * but ignored as an authority by every update command. */
   updatePolicy: UpdatePolicy;
@@ -41,11 +45,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoFetchOnShow: true,
   autoFetchNoticeSeen: false,
   updateCheck: "enabled",
+  localePreference: "system",
+  resolvedLocale: "en",
   updatePolicy: {
     channel: "standalone",
-    checkProviderLabel: "verified gitwink releases on GitHub",
+    checkProvider: "githubReleases",
     supportsBackgroundChecks: true,
-    installAction: { kind: "inApp", providerLabel: "gitwink" },
+    installAction: { kind: "inApp", provider: "gitwink" },
   },
 };
 

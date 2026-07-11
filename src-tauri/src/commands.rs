@@ -1628,6 +1628,10 @@ pub struct AppSettings {
     /// Self-update behaviour. Serialized as "enabled" / "manual" /
     /// "disabled" via the enum's lowercase rename.
     pub update_check: settings::UpdateCheckMode,
+    /// Stored choice (`system` / `en` / `ko` / `ja`).
+    pub locale_preference: crate::locale::LocalePreference,
+    /// Backend-resolved locale used to load one frontend catalog.
+    pub resolved_locale: crate::locale::AppLocale,
     /// Computed update capabilities; accepted on the live-broadcast input but
     /// never trusted or persisted. Backend commands use their own runtime
     /// policy snapshot.
@@ -1641,6 +1645,7 @@ pub fn get_settings(app: AppHandle, live: tauri::State<'_, LiveSettings>) -> App
     // so a newly-opened window's initSettings sees the fresh value
     // even when the debounced disk write hasn't landed yet.
     let s = live.snapshot();
+    let locale_preference = s.locale;
     AppSettings {
         ui_scale: s.ui_scale.unwrap_or(1.0).clamp(UI_SCALE_MIN, UI_SCALE_MAX),
         diff_font_family: s.diff_font_family,
@@ -1652,6 +1657,8 @@ pub fn get_settings(app: AppHandle, live: tauri::State<'_, LiveSettings>) -> App
         auto_fetch_on_show: s.auto_fetch_on_show.unwrap_or(true),
         auto_fetch_notice_seen: s.auto_fetch_notice_seen.unwrap_or(false),
         update_check: s.update_check,
+        locale_preference,
+        resolved_locale: crate::locale::resolve_system(locale_preference),
         update_policy: update::policy_view(&app),
     }
 }
@@ -1677,6 +1684,7 @@ pub fn set_live_settings(next: AppSettings, live: tauri::State<'_, LiveSettings>
             s.auto_fetch_notice_seen = Some(true);
         }
         s.update_check = next.update_check;
+        s.locale = next.locale_preference;
     });
 }
 
@@ -1821,6 +1829,22 @@ pub fn set_update_check(app: AppHandle, mode: settings::UpdateCheckMode) {
     if mode == settings::UpdateCheckMode::Enabled {
         update::check_now_background(&app);
     }
+}
+
+/// Persist and apply a language choice without restarting. The returned
+/// resolved locale lets every webview load the right lazy catalog; rebuilding
+/// the update indicator also rebuilds the native tray menu and tooltip.
+#[tauri::command]
+pub fn set_locale(
+    app: AppHandle,
+    preference: crate::locale::LocalePreference,
+) -> crate::locale::AppLocale {
+    settings::save_locale(&app, preference);
+    if let Some(live) = app.try_state::<LiveSettings>() {
+        live.with_mut(|s| s.locale = preference);
+    }
+    update::refresh_indicator(&app);
+    crate::locale::resolve_system(preference)
 }
 
 /// Persist the auto-fetch-on-show toggle and update the live cache. No

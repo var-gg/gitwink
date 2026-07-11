@@ -42,10 +42,9 @@ pub(super) async fn install(app: &AppHandle, backend: InstallBackend) -> Result<
     match backend {
         InstallBackend::Store => store_update::install(app).await,
         InstallBackend::Tauri => install_tauri_update(app).await,
-        InstallBackend::ExternalCommand {
-            provider_label,
-            command,
-        } => bail!("{provider_label} manages this installation. Run `{command}` instead."),
+        InstallBackend::ExternalCommand { provider, command } => bail!(
+            "EXTERNAL_UPDATE_PROVIDER:{provider:?}: run `{command}` through the owning package manager"
+        ),
     }
 }
 

@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useLingui } from "@lingui/react/macro";
 import type { Highlighter } from "shiki";
 
 import { parseDiff, type DiffSide } from "../lib/diff";
@@ -23,6 +24,7 @@ import {
 } from "../lib/highlight";
 import { sbsHeaderH, sbsLineH, useUiScale } from "../lib/settings";
 import { DiffMinimap } from "./DiffMinimap";
+import { diffMessages } from "../i18n/messages/diff";
 
 interface Props {
   text: string;
@@ -86,6 +88,7 @@ function saveSplit(v: number): void {
 }
 
 export function SideBySideDiff({ text, filePath, fileKey, locked }: Props) {
+  const { i18n } = useLingui();
   const scale = useUiScale();
   const lineH = sbsLineH(scale);
   const headerH = sbsHeaderH(scale);
@@ -493,7 +496,7 @@ export function SideBySideDiff({ text, filePath, fileKey, locked }: Props) {
   }
 
   if (items.length === 0) {
-    return <div className="sbs-empty">No textual diff.</div>;
+    return <div className="sbs-empty">{i18n._(diffMessages.noText)}</div>;
   }
 
   // Largest row index whose top edge is <= y. Binary search → O(log n) per tick.
@@ -610,9 +613,9 @@ export function SideBySideDiff({ text, filePath, fileKey, locked }: Props) {
             className="sbs-find-input"
             type="text"
             value={findQuery}
-            placeholder="Find in diff…"
+            placeholder={i18n._(diffMessages.find)}
             spellCheck={false}
-            aria-label="Find in diff"
+            aria-label={i18n._(diffMessages.findAria)}
             // No autoFocus: with a persisted-open bar this would steal focus
             // on every file switch. Ctrl+F focuses explicitly (rAF above).
             onChange={(e) => setFindQuery(e.target.value)}
@@ -642,8 +645,8 @@ export function SideBySideDiff({ text, filePath, fileKey, locked }: Props) {
             className="sbs-find-btn"
             disabled={findMatches.length === 0}
             onClick={() => gotoFindMatch(-1)}
-            title="Previous match (Shift+Enter)"
-            aria-label="Previous match"
+            title={i18n._(diffMessages.previousMatchTitle)}
+            aria-label={i18n._(diffMessages.previousMatch)}
           >
             ↑
           </button>
@@ -652,8 +655,8 @@ export function SideBySideDiff({ text, filePath, fileKey, locked }: Props) {
             className="sbs-find-btn"
             disabled={findMatches.length === 0}
             onClick={() => gotoFindMatch(1)}
-            title="Next match (Enter)"
-            aria-label="Next match"
+            title={i18n._(diffMessages.nextMatchTitle)}
+            aria-label={i18n._(diffMessages.nextMatch)}
           >
             ↓
           </button>
@@ -661,8 +664,8 @@ export function SideBySideDiff({ text, filePath, fileKey, locked }: Props) {
             type="button"
             className="sbs-find-btn"
             onClick={() => setFindOpen(false)}
-            title="Close (Esc)"
-            aria-label="Close find"
+            title={i18n._(diffMessages.closeFindTitle)}
+            aria-label={i18n._(diffMessages.closeFind)}
           >
             ✕
           </button>
@@ -674,8 +677,8 @@ export function SideBySideDiff({ text, filePath, fileKey, locked }: Props) {
           className="sbs-resizer"
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize old/new columns"
-          title="Drag to resize · double-click to reset"
+          aria-label={i18n._(diffMessages.resizeColumns)}
+          title={i18n._(diffMessages.resizeColumnsTitle)}
           onPointerDown={onResizerDown}
           onPointerMove={onResizerMove}
           onPointerUp={finishDrag}

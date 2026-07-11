@@ -10,18 +10,18 @@ import {
 
 const standalone: UpdatePolicy = {
   channel: "standalone",
-  checkProviderLabel: "verified gitwink releases on GitHub",
+  checkProvider: "githubReleases",
   supportsBackgroundChecks: true,
-  installAction: { kind: "inApp", providerLabel: "gitwink" },
+  installAction: { kind: "inApp", provider: "gitwink" },
 };
 
 const scoop: UpdatePolicy = {
   channel: "scoop",
-  checkProviderLabel: "verified gitwink releases on GitHub",
+  checkProvider: "githubReleases",
   supportsBackgroundChecks: true,
   installAction: {
     kind: "externalCommand",
-    providerLabel: "Scoop",
+    provider: "scoop",
     command: "scoop update gitwink",
   },
 };

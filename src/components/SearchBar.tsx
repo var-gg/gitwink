@@ -7,6 +7,9 @@
 // firing on the same keypress).
 
 import { useEffect, useRef } from "react";
+import { useLingui } from "@lingui/react/macro";
+import { filterMessages } from "../i18n/messages/filters";
+import { translate } from "../i18n/translate";
 
 export const SEARCH_QUERY_MAX_LENGTH = 512;
 
@@ -50,6 +53,7 @@ export function SearchBar({
   onMove,
   onActivate,
 }: Props) {
+  const { i18n } = useLingui();
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -68,9 +72,9 @@ export function SearchBar({
         type="text"
         maxLength={SEARCH_QUERY_MAX_LENGTH}
         value={value}
-        placeholder="Search commits — message, author, SHA prefix…"
+        placeholder={i18n._(filterMessages.searchCommitsPlaceholder)}
         spellCheck={false}
-        aria-label="Search commits"
+        aria-label={i18n._(filterMessages.searchCommitsAria)}
         role="combobox"
         aria-autocomplete="list"
         aria-haspopup="listbox"
@@ -114,8 +118,8 @@ export function SearchBar({
         <button
           type="button"
           className="search-bar-clear"
-          aria-label="Clear search"
-          title="Clear search"
+          aria-label={i18n._(filterMessages.clearSearch)}
+          title={i18n._(filterMessages.clearSearch)}
           // preventDefault on mousedown keeps focus in the input (so the
           // bar doesn't blur-close), then we re-focus after clearing.
           onMouseDown={(e) => e.preventDefault()}
@@ -129,18 +133,25 @@ export function SearchBar({
       )}
       {value.trim() !== "" && (
         <span className="search-bar-count" aria-live="polite">
-          {count == null ? "…" : `${count} match${count === 1 ? "" : "es"}`}
+          {count == null
+            ? "…"
+            : translate(i18n, filterMessages.searchMatchCount, { count })}
         </span>
       )}
-      <span className="search-bar-scope" title={`Search scope: ${scopeLabel}`}>
+      <span
+        className="search-bar-scope"
+        title={translate(i18n, filterMessages.searchScope, {
+          scope: scopeLabel,
+        })}
+      >
         {scopeLabel}
       </span>
       {count != null && count > 0 && (
         <span
           className="search-bar-hint"
-          title="↑↓ select · Enter jump to its history · click a row to preview · Esc close"
+          title={i18n._(filterMessages.searchKeyboardHint)}
         >
-          ↵ jump to history
+          ↵ {i18n._(filterMessages.jumpToHistory)}
         </span>
       )}
     </div>

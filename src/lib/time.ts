@@ -18,8 +18,8 @@ export function compactAge(unixSeconds: number): string {
 }
 
 /** Full local date-time, for the tooltip behind a compact age. */
-export function fullDateTime(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleString(undefined, {
+export function fullDateTime(unixSeconds: number, locale?: string): string {
+  return new Date(unixSeconds * 1000).toLocaleString(locale, {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

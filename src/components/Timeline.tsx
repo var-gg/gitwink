@@ -21,6 +21,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useLingui } from "@lingui/react/macro";
 
 import { bridgeParents } from "../lib/bridge";
 import { colorForBranch } from "../lib/colors";
@@ -42,6 +43,9 @@ import { CommitDetail } from "./CommitDetail";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import type { ExpansionControl } from "./TimelineWindowed";
 import { LaneGraph } from "./LaneGraph";
+import { panelMessages } from "../i18n/messages/panel";
+import { translate } from "../i18n/translate";
+import { commitMenuLabels } from "../i18n/clipboard";
 
 /** Extra rows rendered above/below the viewport for scroll smoothness. */
 const OVERSCAN = 8;
@@ -82,8 +86,8 @@ interface Props {
 
 /** Full local datetime for hover tooltips — 24-hour, 2-digit components in
  * the user's locale so it's unambiguous regardless of region. */
-function formatFullTime(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleString(undefined, {
+function formatFullTime(unixSeconds: number, locale?: string): string {
+  return new Date(unixSeconds * 1000).toLocaleString(locale, {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -103,6 +107,7 @@ export function Timeline({
   linear,
   expansionControlRef,
 }: Props) {
+  const { i18n } = useLingui();
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportH, setViewportH] = useState(0);
   const [selected, setSelected] = useState(0);
@@ -619,6 +624,7 @@ export function Timeline({
       filePath,
       selection,
       onCopyAiContext: (c) => void copyAiContext(c),
+      labels: commitMenuLabels(i18n),
     });
     if (items.length === 0) return;
     setContextMenu({ x: e.clientX, y: e.clientY, items });
@@ -652,22 +658,24 @@ export function Timeline({
             }
           >
             {copyStatus === "copied"
-              ? "Copied as AI context ✓"
-              : "Copy failed — try again"}
+              ? i18n._(panelMessages.copiedAi)
+              : i18n._(panelMessages.copyFailedTry)}
           </span>
         )}
       </div>
       {anchorMiss && (
         <div className="timeline-anchor-miss" role="status">
           <span className="timeline-anchor-miss-text">
-            Commit <code>{anchorMiss}</code> is older than the{" "}
-            {commits.length} commits loaded here.
+            {translate(i18n, panelMessages.anchorOlder, {
+              hash: anchorMiss,
+              count: commits.length,
+            })}
           </span>
           <button
             type="button"
             className="timeline-anchor-miss-x"
-            aria-label="Dismiss"
-            title="Dismiss"
+            aria-label={i18n._(panelMessages.dismiss)}
+            title={i18n._(panelMessages.dismiss)}
             onClick={() => setAnchorMiss(null)}
           >
             ✕
@@ -675,7 +683,7 @@ export function Timeline({
         </div>
       )}
       {total === 0 ? (
-        <p className="panel-empty">No commits match.</p>
+        <p className="panel-empty">{i18n._(panelMessages.noCommits)}</p>
       ) : (
         <ul
           className="timeline-windowed-list timeline-single"
@@ -715,7 +723,7 @@ export function Timeline({
                   <span className="timeline-lane-spacer" aria-hidden="true" />
                   <span
                     className="timeline-time"
-                    title={formatFullTime(c.timestamp)}
+                    title={formatFullTime(c.timestamp, i18n.locale)}
                   >
                     {timeAgo(c.timestamp)}
                   </span>
@@ -729,8 +737,10 @@ export function Timeline({
                         className="timeline-remote-tip"
                         title={
                           c.remoteTipExtraCount > 0
-                            ? `Remote tracking refs at this commit (read-only, from your last git fetch). +${c.remoteTipExtraCount} more.`
-                            : "Remote tracking ref at this commit (read-only, from your last git fetch)."
+                            ? translate(i18n, panelMessages.remoteTips, {
+                                count: c.remoteTipExtraCount,
+                              })
+                            : i18n._(panelMessages.remoteTip)
                         }
                       >
                         {c.remoteTipLabel}
@@ -755,13 +765,13 @@ export function Timeline({
                         type="button"
                         className="commit-copy-btn"
                         onClick={() => void copyAiContext(c)}
-                        title="Copy as AI context (c)"
+                        title={i18n._(panelMessages.copyAiTitle)}
                       >
                         {copyStatus === "copied"
-                          ? "Copied ✓"
+                          ? i18n._(panelMessages.copied)
                           : copyStatus === "error"
-                            ? "Copy failed"
-                            : "Copy as AI context"}
+                            ? i18n._(panelMessages.copyFailed)
+                            : i18n._(panelMessages.copyAi)}
                       </button>
                     </div>
                     <ChangedFiles

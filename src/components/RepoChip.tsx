@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLingui } from "@lingui/react/macro";
 
 import type { Repo } from "../types";
 import { ChipDropdown } from "./ChipDropdown";
 import { ContextMenu } from "./ContextMenu";
 import { VirtualChipList, type VirtualChipRow } from "./VirtualChipList";
 import { chipRowH, useUiScale } from "../lib/settings";
+import { filterMessages } from "../i18n/messages/filters";
+import { translate } from "../i18n/translate";
 
 // Virtualised-row BASE heights (px) at scale 1.0 — chipRowH multiplies
 // these by the current --ui-scale so the JS row heights track the CSS
@@ -54,6 +57,7 @@ export function RepoChip({
   onExclude,
   totalRepoCount,
 }: Props) {
+  const { i18n } = useLingui();
   const [query, setQuery] = useState("");
   const [contextTarget, setContextTarget] = useState<{
     path: string;
@@ -171,8 +175,10 @@ export function RepoChip({
   const label = selected
     ? selected.name
     : selectedPaths === "all"
-      ? `All repos (${totalRepoCount})`
-      : `${selectedPaths.length} ${selectedPaths.length === 1 ? "repo" : "repos"}`;
+      ? translate(i18n, filterMessages.allReposCount, { count: totalRepoCount })
+      : translate(i18n, filterMessages.repoCount, {
+          count: selectedPaths.length,
+        });
   const labelTitle = selected
     ? `${selected.name} — ${selected.path}`
     : label;
@@ -181,7 +187,9 @@ export function RepoChip({
     : selectedPaths === "all"
       ? undefined
       : () => onSelectMulti("all");
-  const clearTitle = selected ? "Back to All repos" : "Clear repository filter";
+  const clearTitle = selected
+    ? i18n._(filterMessages.backToAllRepos)
+    : i18n._(filterMessages.clearRepo);
 
   // Flatten the two sections into one virtual-row list. The Pinned header,
   // the "All repos" button and the empty-state line are known-height
@@ -208,7 +216,7 @@ export function RepoChip({
             Array.isArray(selectedPaths) && selectedPaths.includes(r.path)
           }
           checkboxReadonly={singleRepoMode}
-          checkboxReadonlyTitle="Multi-select filter is available in all-repos mode"
+          checkboxReadonlyTitle={i18n._(filterMessages.multiRepoOnly)}
           onSelect={() => {
             onSelect(r.path);
             onClose();
@@ -235,7 +243,9 @@ export function RepoChip({
       out.push({
         key: "__pinned",
         height: SECTION_H,
-        render: () => <div className="chip-section">📌 Pinned</div>,
+        render: () => (
+          <div className="chip-section">{i18n._(filterMessages.pinned)}</div>
+        ),
       });
       for (const r of pinnedRepos) out.push(repoRow(r));
     }
@@ -255,7 +265,7 @@ export function RepoChip({
             onClose();
           }}
         >
-          All repos
+          {i18n._(filterMessages.allRepos)}
         </button>
       ),
     });
@@ -264,7 +274,9 @@ export function RepoChip({
       out.push({
         key: "__empty",
         height: EMPTY_H,
-        render: () => <div className="chip-empty">No repos match.</div>,
+        render: () => (
+          <div className="chip-empty">{i18n._(filterMessages.noReposMatch)}</div>
+        ),
       });
     }
     return out;
@@ -285,6 +297,8 @@ export function RepoChip({
     requestExclude,
     onClose,
     scale,
+    i18n,
+    i18n.locale,
   ]);
 
   return (
@@ -305,13 +319,15 @@ export function RepoChip({
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search repos…"
-            aria-label="Search repositories"
+            placeholder={i18n._(filterMessages.searchRepos)}
+            aria-label={i18n._(filterMessages.searchReposAria)}
           />
         </div>
         {excludeError && (
           <div className="chip-action-error" role="alert">
-            Couldn't exclude repository: {excludeError}
+            {translate(i18n, filterMessages.excludeFailed, {
+              error: excludeError,
+            })}
           </div>
         )}
         <VirtualChipList rows={rows} resetKey={query} />
@@ -322,9 +338,8 @@ export function RepoChip({
           y={contextTarget.y}
           items={[
             {
-              label: "Exclude from gitwink",
-              description:
-                "Keeps the folder and preferences. Restore later in Settings.",
+              label: i18n._(filterMessages.exclude),
+              description: i18n._(filterMessages.excludeDescription),
               disabled: excludingPath != null,
               onClick: () => requestExclude(contextTarget.path),
             },
@@ -374,6 +389,7 @@ function RepoItem({
     restoreFocusTo: HTMLElement | null,
   ) => void;
 }) {
+  const { i18n } = useLingui();
   const isMissing = repo.status === "missing";
   return (
     <div
@@ -397,7 +413,9 @@ function RepoItem({
         role="checkbox"
         aria-checked={selected}
         aria-disabled={checkboxReadonly || undefined}
-        aria-label={`Filter timeline to ${repo.name}`}
+        aria-label={translate(i18n, filterMessages.filterTimelineTo, {
+          repo: repo.name,
+        })}
         tabIndex={checkboxReadonly ? -1 : 0}
         className={
           "chip-checkbox" +
@@ -407,7 +425,7 @@ function RepoItem({
         title={
           checkboxReadonly
             ? checkboxReadonlyTitle
-            : "Add to multi-repo filter"
+            : i18n._(filterMessages.addToMultiRepo)
         }
         onClick={(e) => {
           e.stopPropagation();
@@ -444,12 +462,18 @@ function RepoItem({
         aria-disabled={isMissing || undefined}
         aria-label={
           isMissing
-            ? `${repo.name}, repository missing at ${repo.path}`
-            : `Open ${repo.name} at ${repo.path}`
+            ? translate(i18n, filterMessages.missingAria, {
+                repo: repo.name,
+                path: repo.path,
+              })
+            : translate(i18n, filterMessages.openAria, {
+                repo: repo.name,
+                path: repo.path,
+              })
         }
         title={
           isMissing
-            ? `${repo.path} — moved or deleted on disk. Drop the new path on the panel to relink, or click ✕ to exclude it.`
+            ? translate(i18n, filterMessages.missingTitle, { path: repo.path })
             : repo.path
         }
       >
@@ -457,7 +481,9 @@ function RepoItem({
           <span className="chip-item-name" title={repo.name}>
             {repo.name}
             {isMissing && (
-              <span className="chip-item-missing-tag"> · missing</span>
+              <span className="chip-item-missing-tag">
+                {` · ${i18n._(filterMessages.missing)}`}
+              </span>
             )}
           </span>
           {(countLoading || count != null) && (
@@ -467,10 +493,14 @@ function RepoItem({
               }
               title={
                 countLoading
-                  ? "Updating commits for the current author and time filters"
-                  : "Commits matching the current author and time filters"
+                  ? i18n._(filterMessages.updatingCommitCounts)
+                  : i18n._(filterMessages.matchingCommitCounts)
               }
-              aria-label={countLoading ? "Updating commit count" : undefined}
+              aria-label={
+                countLoading
+                  ? i18n._(filterMessages.updatingCommitCountAria)
+                  : undefined
+              }
             >
               {countLoading ? "…" : count}
             </span>
@@ -487,8 +517,10 @@ function RepoItem({
             e.stopPropagation();
             onExclude();
           }}
-          title="Exclude from gitwink (restore later in Settings)"
-          aria-label={`Exclude ${repo.name} from gitwink`}
+          title={i18n._(filterMessages.excludeTitle)}
+          aria-label={translate(i18n, filterMessages.excludeAria, {
+            repo: repo.name,
+          })}
         >
           {excluding ? "…" : "✕"}
         </button>
@@ -500,8 +532,16 @@ function RepoItem({
             e.stopPropagation();
             onPin();
           }}
-          title={pinned ? "Unpin" : "Pin"}
-          aria-label={pinned ? `Unpin ${repo.name}` : `Pin ${repo.name}`}
+          title={
+            pinned
+              ? i18n._(filterMessages.unpin)
+              : i18n._(filterMessages.pin)
+          }
+          aria-label={translate(
+            i18n,
+            pinned ? filterMessages.unpinAria : filterMessages.pinAria,
+            { repo: repo.name },
+          )}
           aria-pressed={pinned}
         >
           ★

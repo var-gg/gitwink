@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
+import { useLingui } from "@lingui/react/macro";
 
 import { commitFileBlobs } from "../lib/ipc";
 import type { CommitFileBlobs } from "../types";
+import { diffMessages } from "../i18n/messages/diff";
+import { translate } from "../i18n/translate";
 
 interface Props {
   repoPath: string;
@@ -38,6 +41,7 @@ export function ImageDiff({
   oldSize,
   newSize,
 }: Props) {
+  const { i18n } = useLingui();
   const [blobs, setBlobs] = useState<CommitFileBlobs | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,22 +63,29 @@ export function ImageDiff({
   }, [repoPath, hash, filePath, oldPath]);
 
   if (error) {
-    return <div className="image-diff-error">Error: {error}</div>;
+    return (
+      <div className="image-diff-error">
+        {translate(i18n, diffMessages.error, { error })}
+      </div>
+    );
   }
   if (!blobs) {
-    return <div className="image-diff-loading">Loading image…</div>;
+    return (
+      <div className="image-diff-loading">
+        {i18n._(diffMessages.loadingImage)}
+      </div>
+    );
   }
 
   if (blobs.isLfs) {
     return (
       <div className="binary-info">
-        <div className="binary-info-title">Git LFS file</div>
+        <div className="binary-info-title">{i18n._(diffMessages.lfsFile)}</div>
         <div className="binary-info-meta">
           {formatSize(oldSize)} → {formatSize(newSize)}
         </div>
         <div className="binary-info-hint">
-          The actual image is stored in Git LFS. gitwink doesn't fetch LFS
-          objects in v0.1, so there's nothing to preview.
+          {i18n._(diffMessages.lfsHint)}
         </div>
       </div>
     );
@@ -91,22 +102,30 @@ export function ImageDiff({
   return (
     <div className="image-diff">
       <div className="image-diff-side">
-        <div className="image-diff-label">Before · {formatSize(oldSize)}</div>
+        <div className="image-diff-label">
+          {i18n._(diffMessages.before)} · {formatSize(oldSize)}
+        </div>
         <div className="image-diff-frame image-diff-frame-old">
           {oldSrc ? (
-            <img src={oldSrc} alt="before" />
+            <img src={oldSrc} alt={i18n._(diffMessages.beforeAlt)} />
           ) : (
-            <div className="image-diff-empty">(file did not exist)</div>
+            <div className="image-diff-empty">
+              {i18n._(diffMessages.fileDidNotExist)}
+            </div>
           )}
         </div>
       </div>
       <div className="image-diff-side">
-        <div className="image-diff-label">After · {formatSize(newSize)}</div>
+        <div className="image-diff-label">
+          {i18n._(diffMessages.after)} · {formatSize(newSize)}
+        </div>
         <div className="image-diff-frame image-diff-frame-new">
           {newSrc ? (
-            <img src={newSrc} alt="after" />
+            <img src={newSrc} alt={i18n._(diffMessages.afterAlt)} />
           ) : (
-            <div className="image-diff-empty">(deleted)</div>
+            <div className="image-diff-empty">
+              {i18n._(diffMessages.deleted)}
+            </div>
           )}
         </div>
       </div>

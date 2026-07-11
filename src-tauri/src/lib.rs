@@ -23,6 +23,7 @@ mod history_indexer;
 mod history_query;
 mod history_schema;
 mod history_store;
+mod locale;
 mod repo_exclusions;
 mod settings;
 mod store_update;
@@ -466,6 +467,7 @@ pub fn run() {
             commands::set_panel_pinned,
             commands::open_settings_window,
             commands::set_update_check,
+            commands::set_locale,
             commands::set_auto_fetch_on_show,
             commands::ack_auto_fetch_notice,
             commands::maybe_fetch_repo,

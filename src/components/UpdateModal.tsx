@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { I18n } from "@lingui/core";
+import { useLingui } from "@lingui/react";
 
 import {
   onUpdateProgress,
@@ -6,11 +8,12 @@ import {
   updateSkip,
   updateSnooze,
 } from "../lib/ipc";
+import { shouldPresentUpdate } from "../lib/updatePolicy";
 import {
-  shouldPresentUpdate,
-  updateModalTitle,
-  waitingForProviderLabel,
-} from "../lib/updatePolicy";
+  updateMessages as m,
+  updateProviderLabel,
+} from "../i18n/messages/updates";
+import { translate } from "../i18n/translate";
 import type {
   AvailableUpdate,
   UpdateProgress,
@@ -26,6 +29,7 @@ interface UpdateModalProps {
 /** Panel-overlay modal for the self-updater. Summoned by the backend
  * (tray "Update available" / a manual check) — never auto-pops. */
 export function UpdateModal({ state, onClose }: UpdateModalProps) {
+  const { i18n } = useLingui();
   const [installing, setInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<UpdateProgress | null>(null);
@@ -65,13 +69,15 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
     return (
       <Backdrop onClose={onClose} focusEpoch={0}>
         <header className="update-modal-header">
-          <span className="update-modal-title">Update available</span>
+          <span className="update-modal-title">{i18n._(m.available)}</span>
           <span className="update-modal-version">v{update.version}</span>
         </header>
         <div className="update-modal-changelog">
-          This installation is managed by {installAction.providerLabel}, which
-          owns the final update step. Run <code>{installAction.command}</code> in
-          a terminal to get v{update.version}.
+          {translate(i18n, m.managedExternally, {
+            provider: updateProviderLabel(i18n, installAction.provider),
+            command: installAction.command,
+            version: update.version,
+          })}
         </div>
         <div className="update-modal-actions">
           <button
@@ -79,7 +85,7 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
             className="update-btn update-btn-primary"
             onClick={onClose}
           >
-            Got it
+            {i18n._(m.gotIt)}
           </button>
         </div>
       </Backdrop>
@@ -101,7 +107,7 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
           ? e
           : e instanceof Error
             ? e.message
-            : "Update failed",
+            : i18n._(m.failed),
       );
       setProgress(null);
       setInstalling(false);
@@ -124,11 +130,17 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
       focusEpoch={installing ? 1 : 0}
     >
       <header className="update-modal-header">
-        <span className="update-modal-title">{updateModalTitle(installAction)}</span>
+        <span className="update-modal-title">
+          {installAction.kind === "inApp"
+            ? translate(i18n, m.inAppTitle, {
+                provider: updateProviderLabel(i18n, installAction.provider),
+              })
+            : i18n._(m.available)}
+        </span>
         <span className="update-modal-version">v{update.version}</span>
       </header>
       <div className="update-modal-changelog">
-        {update.notes.trim() || "No release notes provided for this version."}
+        {update.notes.trim() || i18n._(m.noNotes)}
       </div>
       {installing && progress && (
         <div className="update-modal-progress" aria-live="polite">
@@ -136,7 +148,8 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
             <span>
               {updateProgressLabel(
                 progress,
-                waitingForProviderLabel(installAction),
+                updateProviderLabel(i18n, installAction.provider),
+                i18n,
               )}
             </span>
             {progress.phase === "downloading" && (
@@ -150,7 +163,7 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
                 ? undefined
                 : progress.progress
             }
-            aria-label="Update progress"
+            aria-label={i18n._(m.progress)}
           />
         </div>
       )}
@@ -169,9 +182,10 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
           {installing
             ? updateProgressLabel(
                 progress,
-                waitingForProviderLabel(installAction),
+                updateProviderLabel(i18n, installAction.provider),
+                i18n,
               )
-            : "Update now"}
+            : i18n._(m.updateNow)}
         </button>
         {canDeferUpdate(update) && (
           <>
@@ -181,7 +195,7 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
               onClick={() => void later()}
               disabled={installing}
             >
-              Later
+              {i18n._(m.later)}
             </button>
             <button
               type="button"
@@ -189,7 +203,7 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
               onClick={() => void skip()}
               disabled={installing}
             >
-              Skip v{update.version}
+              {translate(i18n, m.skip, { version: update.version })}
             </button>
           </>
         )}
@@ -201,18 +215,21 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
 export function updateProgressLabel(
   progress: UpdateProgress | null,
   providerLabel = "update provider",
+  i18n?: I18n,
 ): string {
   switch (progress?.phase) {
     case "waiting":
-      return `Waiting for ${providerLabel}…`;
+      return i18n
+        ? translate(i18n, m.waiting, { provider: providerLabel })
+        : `Waiting for ${providerLabel}…`;
     case "downloading":
-      return "Downloading…";
+      return i18n ? i18n._(m.downloading) : "Downloading…";
     case "installing":
-      return "Installing…";
+      return i18n ? i18n._(m.installing) : "Installing…";
     case "restarting":
-      return "Restarting…";
+      return i18n ? i18n._(m.restarting) : "Restarting…";
     default:
-      return "Preparing…";
+      return i18n ? i18n._(m.preparing) : "Preparing…";
   }
 }
 
@@ -245,6 +262,7 @@ export function modalTabDestination(
 }
 
 function Backdrop({ children, onClose, focusEpoch }: BackdropProps) {
+  const { i18n } = useLingui();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(
     typeof document !== "undefined" &&
@@ -328,7 +346,7 @@ function Backdrop({ children, onClose, focusEpoch }: BackdropProps) {
         className="update-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="gitwink update"
+        aria-label={i18n._(m.dialog)}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >

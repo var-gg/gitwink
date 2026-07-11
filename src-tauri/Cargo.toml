@@ -35,6 +35,7 @@ walkdir = "2"
 notify = "6"
 rusqlite = { version = "0.31", features = ["bundled"] }
 base64 = "0.22"
+sys-locale = "0.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # Microsoft Store-native update discovery and installation for the packaged

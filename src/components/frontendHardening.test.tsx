@@ -1,5 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
+import { setupI18n } from "@lingui/core";
+import { I18nProvider } from "@lingui/react";
 
 import {
   BRANCH_COUNT_MAX_RETRIES,
@@ -20,13 +23,20 @@ import {
 } from "./searchAccessibility";
 
 const noop = () => {};
+const testI18n = setupI18n({ locale: "en", messages: {} });
+
+function renderLocalized(node: ReactNode) {
+  return renderToStaticMarkup(
+    <I18nProvider i18n={testI18n}>{node}</I18nProvider>,
+  );
+}
 
 function renderSearch(overrides?: {
   resultsAvailable?: boolean;
   resultsBusy?: boolean;
   activeDescendant?: string | null;
 }) {
-  return renderToStaticMarkup(
+  return renderLocalized(
     <SearchBar
       value="fix race"
       count={2}
@@ -62,7 +72,7 @@ describe("overlay keyboard ownership", () => {
   });
 
   it("keeps the pointer jump glyph presentational inside a listbox option", () => {
-    const markup = renderToStaticMarkup(
+    const markup = renderLocalized(
       <SearchResultJumpAffordance onActivate={noop} />,
     );
     expect(markup).toContain('class="row-jump"');

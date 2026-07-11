@@ -11,8 +11,10 @@
 // also re-aligns them). Wheel/keyboard scrolling on a column still works.
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { useLingui } from "@lingui/react/macro";
 
 import type { MinimapSegment } from "../lib/diffView";
+import { diffMessages } from "../i18n/messages/diff";
 
 export type { MinimapSegment };
 
@@ -43,6 +45,7 @@ export const DiffMinimap = memo(function DiffMinimap({
   rightRef,
   locked,
 }: Props) {
+  const { i18n } = useLingui();
   const railRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
   const [left, setLeft] = useState<Band>(FULL);
@@ -156,8 +159,8 @@ export const DiffMinimap = memo(function DiffMinimap({
       ref={railRef}
       role="scrollbar"
       aria-orientation="vertical"
-      aria-label="Diff overview — click or drag to jump to a change"
-      title="Diff overview — click or drag to jump to a change"
+      aria-label={i18n._(diffMessages.overview)}
+      title={i18n._(diffMessages.overview)}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
@@ -181,7 +184,7 @@ export const DiffMinimap = memo(function DiffMinimap({
             {left.overflow && (
               <div
                 className="sbs-minimap-thumb dual old"
-                title="Old (before) viewport"
+                title={i18n._(diffMessages.oldViewport)}
                 style={{
                   top: `${left.top * 100}%`,
                   height: `${left.height * 100}%`,
@@ -191,7 +194,7 @@ export const DiffMinimap = memo(function DiffMinimap({
             {right.overflow && (
               <div
                 className="sbs-minimap-thumb dual new"
-                title="New (after) viewport"
+                title={i18n._(diffMessages.newViewport)}
                 style={{
                   top: `${right.top * 100}%`,
                   height: `${right.height * 100}%`,
@@ -205,8 +208,8 @@ export const DiffMinimap = memo(function DiffMinimap({
         <button
           type="button"
           className="sbs-minimap-realign"
-          title="Re-align the two sides"
-          aria-label="Re-align the two sides"
+          title={i18n._(diffMessages.realign)}
+          aria-label={i18n._(diffMessages.realign)}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={realign}
         >

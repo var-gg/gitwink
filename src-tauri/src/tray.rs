@@ -5,7 +5,8 @@ use tauri::{
     App, AppHandle, Wry,
 };
 
-use crate::settings::{self, UpdateCheckMode};
+use crate::locale::{self, AppLocale};
+use crate::settings::{self, Settings, UpdateCheckMode};
 use crate::{update, window};
 
 const TRAY_ID: &str = "main";
@@ -22,7 +23,9 @@ fn tray_tooltip_base() -> &'static str {
 }
 
 pub fn setup(app: &App) -> tauri::Result<()> {
-    let menu = build_menu(app.handle(), None)?;
+    let settings = settings::load(app.handle());
+    let app_locale = locale::resolve_system(settings.locale);
+    let menu = build_menu(app.handle(), None, &settings, app_locale)?;
 
     let icon = app
         .default_window_icon()
@@ -59,22 +62,28 @@ pub fn setup(app: &App) -> tauri::Result<()> {
 /// but was demoted to a footer link inside the Settings window itself —
 /// two "Settings*" items in a small tray menu were redundant. The same
 /// affordance is still reachable: tray → Settings… → "Open settings.json".
-fn build_menu(app: &AppHandle, update_version: Option<&str>) -> tauri::Result<Menu<Wry>> {
+fn build_menu(
+    app: &AppHandle,
+    update_version: Option<&str>,
+    settings: &Settings,
+    app_locale: AppLocale,
+) -> tauri::Result<Menu<Wry>> {
+    let strings = locale::native_catalog(app_locale);
     let reset = MenuItem::with_id(
         app,
         "reset_position",
-        "Reset panel position",
+        strings.reset_panel_position,
         true,
         None::<&str>,
     )?;
-    let settings_item = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit gitwink", true, None::<&str>)?;
+    let settings_item = MenuItem::with_id(app, "settings", strings.settings, true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", strings.quit, true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
 
     // Every channel can check from the tray: Direct installs update in place,
     // Scoop points to its package-manager command, and Store builds use the
     // native StoreContext APIs. Only the explicit Off setting hides it.
-    let hide_updater = settings::load(app).update_check == UpdateCheckMode::Disabled;
+    let hide_updater = settings.update_check == UpdateCheckMode::Disabled;
     if hide_updater {
         return Menu::with_items(app, &[&settings_item, &reset, &sep, &quit]);
     }
@@ -82,7 +91,7 @@ fn build_menu(app: &AppHandle, update_version: Option<&str>) -> tauri::Result<Me
     let check = MenuItem::with_id(
         app,
         "check_updates",
-        "Check for updates",
+        strings.check_for_updates,
         true,
         None::<&str>,
     )?;
@@ -91,7 +100,7 @@ fn build_menu(app: &AppHandle, update_version: Option<&str>) -> tauri::Result<Me
             let update_item = MenuItem::with_id(
                 app,
                 "update_available",
-                format!("Update available: v{v}"),
+                format!("{}: v{v}", strings.update_available_prefix),
                 true,
                 None::<&str>,
             )?;
@@ -138,7 +147,10 @@ pub fn set_update_indicator(app: &AppHandle, version: Option<String>) {
         let Some(tray) = app.tray_by_id(TRAY_ID) else {
             return;
         };
-        if let Ok(menu) = build_menu(&app, version.as_deref()) {
+        let settings = settings::load(&app);
+        let app_locale = locale::resolve_system(settings.locale);
+        let strings = locale::native_catalog(app_locale);
+        if let Ok(menu) = build_menu(&app, version.as_deref(), &settings, app_locale) {
             let _ = tray.set_menu(Some(menu));
         }
         if let Some(base) = app.default_window_icon().cloned() {
@@ -150,7 +162,11 @@ pub fn set_update_indicator(app: &AppHandle, version: Option<String>) {
             let _ = tray.set_icon(Some(icon));
         }
         let tip = if version.is_some() {
-            format!("{} — update available", tray_tooltip_base())
+            format!(
+                "{} — {}",
+                tray_tooltip_base(),
+                strings.update_available_tooltip
+            )
         } else {
             tray_tooltip_base().to_string()
         };

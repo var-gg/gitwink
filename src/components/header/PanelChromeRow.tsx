@@ -1,4 +1,9 @@
 import type { UpdateCheckNotice, UpstreamStatus } from "../../types";
+import type { I18n } from "@lingui/core";
+import { useLingui } from "@lingui/react";
+
+import { panelMessages as m } from "../../i18n/messages/panel";
+import { translate } from "../../i18n/translate";
 
 export type FetchNowState = "idle" | "fetching" | "ok" | "failed" | "busy";
 
@@ -44,14 +49,19 @@ export function PanelChromeRow({
   onTogglePinned,
   onDismiss,
 }: Props) {
+  const { i18n } = useLingui();
   return (
     <div className="panel-chrome-row">
       {updateVersion ? (
         <button
           type="button"
           className="panel-header-iconwrap panel-header-update-button has-update"
-          title={`Update available — v${updateVersion} · click to update`}
-          aria-label={`Update gitwink to version ${updateVersion}`}
+          title={translate(i18n, m.updateAvailableTitle, {
+            version: updateVersion,
+          })}
+          aria-label={translate(i18n, m.updateAria, {
+            version: updateVersion,
+          })}
           onClick={onOpenUpdate}
           data-no-drag
         >
@@ -77,14 +87,14 @@ export function PanelChromeRow({
       )}
 
       {(canGoBack || canGoForward) && (
-        <span className="view-nav" role="group" aria-label="View history">
+        <span className="view-nav" role="group" aria-label={i18n._(m.viewHistory)}>
           <button
             type="button"
             className="view-nav-btn"
             onClick={onBack}
             disabled={!canGoBack}
-            title="Back (Alt+←)"
-            aria-label="Back"
+            title={i18n._(m.backTitle)}
+            aria-label={i18n._(m.back)}
           >
             ‹
           </button>
@@ -93,8 +103,8 @@ export function PanelChromeRow({
             className="view-nav-btn"
             onClick={onForward}
             disabled={!canGoForward}
-            title="Forward (Alt+→)"
-            aria-label="Forward"
+            title={i18n._(m.forwardTitle)}
+            aria-label={i18n._(m.forward)}
           >
             ›
           </button>
@@ -110,7 +120,7 @@ export function PanelChromeRow({
         aria-live="polite"
       >
         {scanning ? (
-          <span className="panel-status">Scanning…</span>
+          <span className="panel-status">{i18n._(m.scanning)}</span>
         ) : updateCheckNotice ? (
           <span
             className={
@@ -119,7 +129,7 @@ export function PanelChromeRow({
             }
             title={updateCheckNotice.detail}
           >
-            {updateCheckNoticeLabel(updateCheckNotice)}
+            {updateCheckNoticeLabel(updateCheckNotice, i18n)}
           </span>
         ) : null}
         {showRepoSync && upstream && <UpstreamBadge status={upstream} />}
@@ -132,8 +142,8 @@ export function PanelChromeRow({
         type="button"
         className={"panel-search-btn" + (searchOpen ? " active" : "")}
         onClick={onToggleSearch}
-        title="Search commits — message, author, SHA (/)"
-        aria-label={searchOpen ? "Close commit search" : "Search commits"}
+        title={i18n._(m.searchCommitsTitle)}
+        aria-label={searchOpen ? i18n._(m.closeSearch) : i18n._(m.searchCommits)}
         aria-pressed={searchOpen}
       >
         ⌕
@@ -144,10 +154,10 @@ export function PanelChromeRow({
         onClick={onTogglePinned}
         title={
           pinned
-            ? "Unpin — return to glance mode (auto-hides on blur, always-on-top)"
-            : "Pin — keep open while clicking elsewhere; not always-on-top. Summon via tray / hotkey."
+            ? i18n._(m.unpinTitle)
+            : i18n._(m.pinTitle)
         }
-        aria-label={pinned ? "Unpin panel" : "Pin panel"}
+        aria-label={pinned ? i18n._(m.unpinPanel) : i18n._(m.pinPanel)}
         aria-pressed={pinned}
       >
         📌
@@ -156,8 +166,8 @@ export function PanelChromeRow({
         type="button"
         className="panel-close"
         onClick={onDismiss}
-        title="Close (Esc) — closes diff window too"
-        aria-label="Close panel"
+        title={i18n._(m.closeTitle)}
+        aria-label={i18n._(m.closePanel)}
       >
         ✕
       </button>
@@ -165,14 +175,17 @@ export function PanelChromeRow({
   );
 }
 
-export function updateCheckNoticeLabel(notice: UpdateCheckNotice): string {
+export function updateCheckNoticeLabel(
+  notice: UpdateCheckNotice,
+  i18n?: I18n,
+): string {
   switch (notice.kind) {
     case "checking":
-      return "Checking updates…";
+      return i18n ? i18n._(m.updateChecking) : "Checking updates…";
     case "current":
-      return "✓ Up to date";
+      return i18n ? i18n._(m.updateCurrent) : "✓ Up to date";
     case "error":
-      return "⚠ Update check failed";
+      return i18n ? i18n._(m.updateFailed) : "⚠ Update check failed";
   }
 }
 
@@ -183,27 +196,28 @@ function FetchNowButton({
   state: FetchNowState;
   onFetch: () => void;
 }) {
+  const { i18n } = useLingui();
   const failed = state === "failed" || state === "busy";
   const label =
     state === "fetching"
-      ? "Fetching origin"
+      ? i18n._(m.fetchFetching)
       : state === "ok"
-        ? "Fetched — origin refs are current"
+        ? i18n._(m.fetchCurrent)
         : state === "busy"
-          ? "Another fetch is running"
+          ? i18n._(m.fetchBusy)
           : state === "failed"
-            ? "Fetch failed"
-            : "Fetch origin now";
+            ? i18n._(m.fetchFailed)
+            : i18n._(m.fetchNow);
   const title =
     state === "fetching"
-      ? "Fetching origin…"
+      ? i18n._(m.fetchFetchingTitle)
       : state === "ok"
-        ? "Fetched ✓ — origin refs are current"
+        ? i18n._(m.fetchCurrentTitle)
         : state === "busy"
-          ? "Another fetch is running — try again in a moment"
+          ? i18n._(m.fetchBusyTitle)
           : state === "failed"
-            ? "Fetch failed (offline? no origin? another fetch mid-flight?) — counts reflect the last successful fetch"
-            : "Fetch origin now — refresh against the remote (read-only; never merges or pushes)";
+            ? i18n._(m.fetchFailedTitle)
+            : i18n._(m.fetchNowTitle);
   return (
     <button
       type="button"
@@ -222,26 +236,43 @@ function FetchNowButton({
   );
 }
 
-function formatFetchAge(unixSeconds: number): string {
+function formatFetchAge(i18n: I18n, unixSeconds: number): string {
   const ageSec = Math.max(0, Math.floor(Date.now() / 1000) - unixSeconds);
-  if (ageSec < 60) return "just now";
-  if (ageSec < 3600) return `${Math.floor(ageSec / 60)}m ago`;
-  if (ageSec < 86_400) return `${Math.floor(ageSec / 3600)}h ago`;
-  return `${Math.floor(ageSec / 86_400)}d ago`;
+  if (ageSec < 60) return i18n._(m.justNow);
+  if (ageSec < 3600) {
+    return translate(i18n, m.minutesAgo, { count: Math.floor(ageSec / 60) });
+  }
+  if (ageSec < 86_400) {
+    return translate(i18n, m.hoursAgo, { count: Math.floor(ageSec / 3600) });
+  }
+  return translate(i18n, m.daysAgo, { count: Math.floor(ageSec / 86_400) });
 }
 
 /** Compact local-vs-upstream status. It shares the chrome status area with
  * scanning/update messages instead of consuming filter-row width. */
 function UpstreamBadge({ status }: { status: UpstreamStatus }) {
+  const { i18n } = useLingui();
   const synced = status.ahead === 0 && status.behind === 0;
   const ahead = status.ahead.toString() + (status.aheadCapped ? "+" : "");
   const behind = status.behind.toString() + (status.behindCapped ? "+" : "");
   const fetchHint = status.lastFetchUnix
-    ? `Last fetch: ${formatFetchAge(status.lastFetchUnix)}`
-    : "No fetch recorded yet";
+    ? translate(i18n, m.lastFetch, {
+        age: formatFetchAge(i18n, status.lastFetchUnix),
+      })
+    : i18n._(m.noFetch);
   const title = synced
-    ? `${status.localBranch} is in sync with ${status.upstream}.\n${fetchHint}. Reflects your last fetch.`
-    : `${status.localBranch} vs ${status.upstream}: ${status.ahead} ahead, ${status.behind} behind.\n${fetchHint}. Reflects your last fetch.`;
+    ? translate(i18n, m.upstreamSyncedTitle, {
+        local: status.localBranch,
+        upstream: status.upstream,
+        fetch: fetchHint,
+      })
+    : translate(i18n, m.upstreamDivergedTitle, {
+        local: status.localBranch,
+        upstream: status.upstream,
+        ahead: status.ahead,
+        behind: status.behind,
+        fetch: fetchHint,
+      });
 
   return (
     <span
@@ -252,8 +283,14 @@ function UpstreamBadge({ status }: { status: UpstreamStatus }) {
       title={title}
       aria-label={
         synced
-          ? `In sync with ${status.upstream}`
-          : `${status.ahead} ahead, ${status.behind} behind ${status.upstream}`
+          ? translate(i18n, m.upstreamSyncedAria, {
+              upstream: status.upstream,
+            })
+          : translate(i18n, m.upstreamDivergedAria, {
+              ahead: status.ahead,
+              behind: status.behind,
+              upstream: status.upstream,
+            })
       }
     >
       {synced ? (

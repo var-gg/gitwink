@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useLingui } from "@lingui/react";
 
 import {
   broadcastSettings,
   useSettingsSnapshot,
   type UpdateCheckMode,
 } from "../lib/settings";
-import {
-  automaticCheckDescription,
-  updateSettingsSummary,
-} from "../lib/updatePolicy";
+import type { AppLocale, LocalePreference } from "../i18n/runtime";
+import { settingsMessages as m } from "../i18n/messages/settings";
+import { updateProviderLabel } from "../i18n/messages/updates";
+import { translate } from "../i18n/translate";
 import { ExcludedReposSection } from "./settings/ExcludedReposSection";
 
 /** UI-scale slider bounds — mirror UI_SCALE_MIN/MAX in commands.rs. 100%
@@ -78,6 +79,7 @@ function codeToTauriKey(code: string): string | null {
 }
 
 export function Settings() {
+  const { i18n } = useLingui();
   // Live store subscription — NOT a mount-time copy. This window is hidden
   // (not closed) on X, so a frozen snapshot would go stale the moment any
   // other window changes a setting (📌 pin), and the next edit here would
@@ -91,6 +93,8 @@ export function Settings() {
   const [recording, setRecording] = useState(false);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
   const [bindingHotkey, setBindingHotkey] = useState(false);
+  const [languageBusy, setLanguageBusy] = useState(false);
+  const [languageError, setLanguageError] = useState<string | null>(null);
   const hotkeyBinding = useRef(false);
   // Mirror settings into a ref so the recording effect doesn't have to
   // re-subscribe to keydown whenever an unrelated setting changes.
@@ -124,6 +128,26 @@ export function Settings() {
     // so debounce buys nothing and the user expects the tray dot /
     // "Check for updates" item to react right away.
     void invoke("set_update_check", { mode });
+  }
+
+  async function setLanguage(preference: LocalePreference) {
+    if (languageBusy || preference === settings.localePreference) return;
+    setLanguageBusy(true);
+    setLanguageError(null);
+    try {
+      const resolvedLocale = await invoke<AppLocale>("set_locale", {
+        preference,
+      });
+      await broadcastSettings({
+        ...settingsRef.current,
+        localePreference: preference,
+        resolvedLocale,
+      });
+    } catch (error) {
+      setLanguageError(String(error));
+    } finally {
+      setLanguageBusy(false);
+    }
   }
 
   function setAutoFetch(enabled: boolean) {
@@ -168,6 +192,7 @@ export function Settings() {
         flushPending();
         setRecording(false);
         setHotkeyError(null);
+        setLanguageError(null);
       }
     }
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -204,7 +229,7 @@ export function Settings() {
       const accel = keyEventToAccelerator(e);
       if (!accel) {
         setHotkeyError(
-          "Need at least one modifier (Ctrl / Alt / Shift) + a key.",
+          i18n._(m.hotkeyModifierError),
         );
         return;
       }
@@ -231,17 +256,69 @@ export function Settings() {
     document.addEventListener("keydown", onKeyDown, { capture: true });
     return () =>
       document.removeEventListener("keydown", onKeyDown, { capture: true });
-  }, [recording]);
+  }, [recording, i18n]);
+
+  const updateSummary = translate(
+    i18n,
+    settings.updatePolicy.installAction.kind === "externalCommand"
+      ? m.policyExternal
+      : m.policyInApp,
+    {
+      checkProvider: updateProviderLabel(
+        i18n,
+        settings.updatePolicy.checkProvider,
+      ),
+      installProvider: updateProviderLabel(
+        i18n,
+        settings.updatePolicy.installAction.provider,
+      ),
+    },
+  );
+  const automaticHint = translate(i18n, m.automaticHint, {
+    provider: updateProviderLabel(i18n, settings.updatePolicy.checkProvider),
+  });
 
   return (
     <div className="settings">
-      <h1 className="settings-title">Settings</h1>
+      <h1 className="settings-title">{i18n._(m.title)}</h1>
 
       <section className="settings-section">
-        <h2 className="settings-section-title">Appearance</h2>
+        <h2 className="settings-section-title">{i18n._(m.languageTitle)}</h2>
+        <div className="settings-row">
+          <label className="settings-label" htmlFor="app-language">
+            {i18n._(m.languageLabel)}
+          </label>
+          <select
+            id="app-language"
+            className="settings-input"
+            value={settings.localePreference}
+            disabled={languageBusy}
+            aria-describedby={languageError ? "language-error" : "language-help"}
+            onChange={(event) =>
+              void setLanguage(event.target.value as LocalePreference)
+            }
+          >
+            <option value="system">{i18n._(m.languageSystem)}</option>
+            <option value="en">{i18n._(m.languageEnglish)}</option>
+            <option value="ko">{i18n._(m.languageKorean)}</option>
+            <option value="ja">{i18n._(m.languageJapanese)}</option>
+          </select>
+        </div>
+        {languageError && (
+          <p id="language-error" className="settings-error" role="alert">
+            {languageError}
+          </p>
+        )}
+        <p id="language-help" className="settings-hint">
+          {i18n._(m.languageHint)}
+        </p>
+      </section>
+
+      <section className="settings-section">
+        <h2 className="settings-section-title">{i18n._(m.appearanceTitle)}</h2>
         <div className="settings-row">
           <label className="settings-label" htmlFor="ui-scale">
-            Size
+            {i18n._(m.sizeLabel)}
           </label>
           <input
             id="ui-scale"
@@ -258,21 +335,19 @@ export function Settings() {
           </span>
         </div>
         <p className="settings-hint">
-          Scales the whole panel (header, chips, timeline, expansion) and
-          resizes the panel window proportionally. 100% is the most
-          compact size.
+          {i18n._(m.sizeHint)}
         </p>
 
         <div className="settings-row">
           <label className="settings-label" htmlFor="diff-font">
-            Font
+            {i18n._(m.fontLabel)}
           </label>
           <input
             id="diff-font"
             className="settings-input"
             type="text"
             list="diff-font-presets"
-            placeholder="Built-in monospace"
+            placeholder={i18n._(m.fontPlaceholder)}
             value={settings.diffFontFamily ?? ""}
             onChange={(e) => setFont(e.target.value)}
           />
@@ -283,16 +358,14 @@ export function Settings() {
           </datalist>
         </div>
         <p className="settings-hint">
-          Diff view font. Empty = built-in monospace stack. Any installed
-          font is fine — proportional fonts render but the gutter and
-          line-number alignment look ragged, so monospace is recommended.
+          {i18n._(m.fontHint)}
         </p>
       </section>
 
       <section className="settings-section">
-        <h2 className="settings-section-title">Shortcut</h2>
+        <h2 className="settings-section-title">{i18n._(m.shortcutTitle)}</h2>
         <div className="settings-row">
-          <label className="settings-label">Panel hotkey</label>
+          <label className="settings-label">{i18n._(m.hotkeyLabel)}</label>
           <button
             type="button"
             className={"settings-hotkey" + (recording ? " recording" : "")}
@@ -307,7 +380,7 @@ export function Settings() {
             }}
           >
             {recording
-              ? "Press a shortcut… (Esc to cancel)"
+              ? i18n._(m.hotkeyRecording)
               : settings.panelHotkey}
           </button>
         </div>
@@ -317,18 +390,16 @@ export function Settings() {
           </p>
         )}
         <p id="hotkey-help" className="settings-hint">
-          Required: at least one modifier (Ctrl / Alt / Shift) + a key.
-          OS-reserved combos (Alt+Tab, Win+L, etc.) cannot be captured
-          and won't react.
+          {i18n._(m.hotkeyHelp)}
         </p>
       </section>
 
       <ExcludedReposSection />
 
       <section className="settings-section">
-        <h2 className="settings-section-title">Updates</h2>
+        <h2 className="settings-section-title">{i18n._(m.updatesTitle)}</h2>
         <p className="settings-hint">
-          {updateSettingsSummary(settings.updatePolicy)}
+          {updateSummary}
         </p>
         {settings.updatePolicy.supportsBackgroundChecks ? (
           <div className="settings-radio-group" role="radiogroup">
@@ -336,18 +407,18 @@ export function Settings() {
               [
                 {
                   value: "enabled",
-                  label: "Automatic checks",
-                  hint: automaticCheckDescription(settings.updatePolicy),
+                  label: i18n._(m.updatesAutomatic),
+                  hint: automaticHint,
                 },
                 {
                   value: "manual",
-                  label: "Manual only",
-                  hint: 'No background checks; use the tray "Check for updates" entry.',
+                  label: i18n._(m.updatesManual),
+                  hint: i18n._(m.updatesManualHint),
                 },
                 {
                   value: "disabled",
-                  label: "Off",
-                  hint: 'Updater fully disabled. Tray hides the "Check for updates" entry.',
+                  label: i18n._(m.updatesOff),
+                  hint: i18n._(m.updatesOffHint),
                 },
               ] as const
             ).map((opt) => (
@@ -366,13 +437,13 @@ export function Settings() {
           </div>
         ) : (
           <p className="settings-hint">
-            This installation does not support checks inside gitwink.
+            {i18n._(m.updatesUnsupported)}
           </p>
         )}
       </section>
 
       <section className="settings-section">
-        <h2 className="settings-section-title">Auto-fetch</h2>
+        <h2 className="settings-section-title">{i18n._(m.autoFetchTitle)}</h2>
         <label className="settings-radio">
           <input
             type="checkbox"
@@ -380,17 +451,11 @@ export function Settings() {
             onChange={(e) => setAutoFetch(e.target.checked)}
           />
           <span className="settings-radio-label">
-            Fetch on panel open <span className="settings-radio-default">(on by default)</span>
+            {i18n._(m.autoFetchLabel)}{" "}
+            <span className="settings-radio-default">{i18n._(m.defaultOn)}</span>
           </span>
           <span className="settings-radio-hint">
-            When viewing a single repo, run a quiet background{" "}
-            <code>git fetch origin</code> as the panel opens, so a teammate's
-            just-pushed commit shows up. Only updates the remote-tracking
-            mirror (<code>refs/remotes/origin/*</code>) — never your local
-            branches, tags, or working tree. Never blocks the panel, stays
-            silent if it needs a password or has no network, and skips repos
-            fetched in the last few minutes. The all-repos view never fetches.
-            (gitwink still never merges, pushes, or rewrites your work.)
+            {i18n._(m.autoFetchHint)}
           </span>
         </label>
       </section>
@@ -401,12 +466,10 @@ export function Settings() {
           className="settings-link"
           onClick={openSettingsFile}
         >
-          Open settings.json
+          {i18n._(m.openSettingsFile)}
         </button>
         <span className="settings-footer-hint">
-          Reveals the raw config in your default editor. Most knobs above
-          are mirrored here — auto-managed fields (window positions, repo
-          state) shouldn't need hand-edits.
+          {i18n._(m.openSettingsFileHint)}
         </span>
       </footer>
     </div>
