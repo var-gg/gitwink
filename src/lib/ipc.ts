@@ -25,6 +25,7 @@ import type {
   ScanProgress,
   TimelineFilters,
   TimelineInvalidated,
+  UpdateProgress,
   UpdateStatePayload,
   UpstreamStatus,
   WindowDirection,
@@ -524,8 +525,7 @@ export async function ackAutoFetchNotice(): Promise<void> {
 
 // ----- self-update -----
 
-/** Snapshot the updater state for the modal: the pending update (if any)
- * plus whether this is a Scoop install. */
+/** Snapshot the updater state and authoritative installer channel. */
 export async function updateGetState(): Promise<UpdateStatePayload> {
   return invoke<UpdateStatePayload>("update_get_state");
 }
@@ -565,6 +565,18 @@ export async function onUpdateNone(cb: () => void): Promise<UnlistenFn> {
   return listen("update://none", () => cb());
 }
 
+/** A user-triggered update check has started. */
+export async function onUpdateChecking(cb: () => void): Promise<UnlistenFn> {
+  return listen("update://checking", () => cb());
+}
+
+/** A user-triggered update check failed with an actionable backend detail. */
+export async function onUpdateCheckError(
+  cb: (message: string) => void,
+): Promise<UnlistenFn> {
+  return listen<string>("update://check-error", (e) => cb(e.payload));
+}
+
 /** Backend pushes the current update-available version (or null when there's
  * nothing to show — skipped / snoozed / disabled / up to date) whenever the
  * indicator state changes. Drives the header-icon update badge. */
@@ -572,4 +584,12 @@ export async function onUpdateIndicator(
   cb: (version: string | null) => void,
 ): Promise<UnlistenFn> {
   return listen<string | null>("update://indicator", (e) => cb(e.payload));
+}
+
+/** Normalized download/install progress from either the Direct or Store
+ * installer. */
+export async function onUpdateProgress(
+  cb: (progress: UpdateProgress) => void,
+): Promise<UnlistenFn> {
+  return listen<UpdateProgress>("update://progress", (e) => cb(e.payload));
 }

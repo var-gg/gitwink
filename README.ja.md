@@ -29,8 +29,9 @@ winget install gitwink
 ```
 
 Store ビルドは認証時に Microsoft が自動的に署名するため、SmartScreen の
-警告は表示されない。アップデートも Store が管理する — このチャンネルでは
-gitwink のアプリ内アップデーターは無効化される。
+警告は表示されない。アップデートの正本は Microsoft Store のまま、認証済み
+パッケージがこの端末で利用可能になると、gitwink 内から Store のネイティブ
+更新サービスでダウンロード・インストールできる。
 
 **Windows — [Scoop](https://scoop.sh):**
 
@@ -147,9 +148,10 @@ git ツールは *何であるべきか* — はエッセイ
 
 Tauri 2 · Rust · React + TypeScript · `git2` · SQLite · カスタム SVG
 DAG 描画 · 読み取り専用(merge・push・書き換えなし) · テレメトリ・
-アナリティクスなし — ネットワーク利用は最小限: アプリ更新確認(GitHub)と
-表示中リポジトリの `origin` fetch — パネルを開いたとき自動(既定でオン、
-オフ可能)、または ↻ ボタンで明示的に。
+アナリティクスなし — ネットワーク利用は最小限: アプリ更新確認(直接配布 /
+Scoop は GitHub、Store 版は Microsoft Store)と表示中リポジトリの `origin`
+fetch — パネルを開いたとき自動(既定でオン、オフ可能)、または ↻ ボタンで
+明示的に。
 
 ## 開発
 

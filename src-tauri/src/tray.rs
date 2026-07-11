@@ -71,13 +71,10 @@ fn build_menu(app: &AppHandle, update_version: Option<&str>) -> tauri::Result<Me
     let quit = MenuItem::with_id(app, "quit", "Quit gitwink", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
 
-    // Microsoft Store installs update via the Store itself — gitwink
-    // shows no in-app updater UI. Same goes for the Disabled mode the
-    // user picked in Settings ("no tray affordances" per UpdateCheckMode
-    // doc). Scoop installs keep the item since manual_check still
-    // surfaces the modal with the `scoop update` hint.
-    let hide_updater = update::installed_via_msix()
-        || settings::load(app).update_check == UpdateCheckMode::Disabled;
+    // Every channel can check from the tray: Direct installs update in place,
+    // Scoop points to its package-manager command, and Store builds use the
+    // native StoreContext APIs. Only the explicit Off setting hides it.
+    let hide_updater = settings::load(app).update_check == UpdateCheckMode::Disabled;
     if hide_updater {
         return Menu::with_items(app, &[&settings_item, &reset, &sep, &quit]);
     }

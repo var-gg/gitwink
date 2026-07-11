@@ -28,8 +28,9 @@ winget install gitwink
 ```
 
 Store 빌드는 인증 단계에서 Microsoft가 자동 서명하므로 SmartScreen 경고가
-뜨지 않는다. 업데이트도 Store가 관리한다 — 이 채널에서는 gitwink 인앱
-업데이터가 비활성화된다.
+뜨지 않는다. 업데이트의 기준은 Microsoft Store이며, 이 기기에 인증된 새
+패키지가 도착하면 gitwink 안에서 Store의 네이티브 업데이트 서비스로
+다운로드·설치할 수 있다.
 
 **Windows — [Scoop](https://scoop.sh):**
 
@@ -142,8 +143,9 @@ side-by-side diff, 바이너리 자산의 인라인 이미지 프리뷰, 위치/
 
 Tauri 2 · Rust · React + TypeScript · `git2` · SQLite · 커스텀
 SVG DAG 드로어 · 읽기 전용(merge·push·재작성 안 함) · 텔레메트리·애널리틱스
-없음 — 네트워크는 최소한: 앱 업데이트 확인(GitHub)과 보고 있는 repo의
-`origin` fetch — 패널 열 때 자동(기본 켜짐, off 가능) 또는 ↻ 버튼으로 명시적.
+없음 — 네트워크는 최소한: 앱 업데이트 확인(직접 설치/Scoop은 GitHub,
+Store 설치는 Microsoft Store)과 보고 있는 repo의 `origin` fetch — 패널 열 때
+자동(기본 켜짐, off 가능) 또는 ↻ 버튼으로 명시적.
 
 ## 개발
 

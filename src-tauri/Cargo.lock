@@ -1492,6 +1492,9 @@ dependencies = [
  "tempfile",
  "tokio-util",
  "walkdir",
+ "windows",
+ "windows-collections",
+ "windows-future",
 ]
 
 [[package]]

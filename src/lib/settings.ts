@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { useSyncExternalStore } from "react";
 
+import type { UpdateChannel } from "../types";
+
 /** Self-update behaviour. Mirrors Rust `UpdateCheckMode` (serialized
  *  lowercase) — "enabled" auto-checks every 24h, "manual" only on tray
  *  click, "disabled" turns the updater off entirely (no tray dot, no
@@ -21,9 +23,8 @@ export interface AppSettings {
    *  Default false ⇒ show it once (also the upgrade-time disclosure). */
   autoFetchNoticeSeen: boolean;
   updateCheck: UpdateCheckMode;
-  /** False for Scoop / Microsoft Store installs — the Updates section
-   *  of the Settings window hides because those channels manage their
-   *  own updates. */
+  updateChannel: UpdateChannel;
+  /** False only for Scoop, whose package manager owns the install action. */
   updaterAvailable: boolean;
 }
 
@@ -40,6 +41,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoFetchOnShow: true,
   autoFetchNoticeSeen: false,
   updateCheck: "enabled",
+  updateChannel: "direct",
   updaterAvailable: true,
 };
 

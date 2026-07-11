@@ -223,20 +223,32 @@ export interface CommitFileBlobs {
   isLfs: boolean;
 }
 
+export type UpdateChannel = "direct" | "scoop" | "store";
+
 /** A pending self-update — mirrors update::AvailableUpdate (Rust). */
 export interface AvailableUpdate {
   version: string;
-  /** Release notes / changelog text from the GitHub release. */
+  /** Release notes or a channel-specific update explanation. */
   notes: string;
+  mandatory: boolean;
 }
 
 /** Updater snapshot for the modal — mirrors commands::UpdateStatePayload. */
 export interface UpdateStatePayload {
   /** The pending update, or null when up to date / not yet checked. */
   available: AvailableUpdate | null;
-  /** True for Scoop installs — the modal shows a `scoop update` hint
-   * instead of an in-app "Update now" button. */
-  scoop: boolean;
+  channel: UpdateChannel;
+}
+
+export interface UpdateProgress {
+  phase: "preparing" | "waiting" | "downloading" | "installing" | "restarting";
+  /** Normalized completion in the inclusive 0…1 range. */
+  progress: number;
+}
+
+export interface UpdateCheckNotice {
+  kind: "checking" | "current" | "error";
+  detail?: string;
 }
 
 // ----- windowed-pull timeline (mirrors the Rust cache.rs structs) -----

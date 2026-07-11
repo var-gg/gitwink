@@ -1,7 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { updateInstall, updateSkip, updateSnooze } from "../lib/ipc";
-import type { UpdateStatePayload } from "../types";
+import {
+  onUpdateProgress,
+  updateInstall,
+  updateSkip,
+  updateSnooze,
+} from "../lib/ipc";
+import type {
+  AvailableUpdate,
+  UpdateProgress,
+  UpdateStatePayload,
+} from "../types";
 import { announceModalOpen } from "./overlayLifecycle";
 
 interface UpdateModalProps {
@@ -14,18 +23,36 @@ interface UpdateModalProps {
 export function UpdateModal({ state, onClose }: UpdateModalProps) {
   const [installing, setInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<UpdateProgress | null>(null);
 
   const update = state.available;
-  const visible = state.scoop || update != null;
+  const visible = state.channel === "scoop" || update != null;
 
   useLayoutEffect(() => {
     if (visible) announceModalOpen();
   }, [visible]);
 
+  useEffect(() => {
+    let mounted = true;
+    let unlisten: (() => void) | undefined;
+    void onUpdateProgress((next) => {
+      if (mounted) setProgress(next);
+    })
+      .then((stop) => {
+        if (mounted) unlisten = stop;
+        else stop();
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
+  }, []);
+
   // Scoop installs: no in-app update path — point the user at the CLI. The
   // badge + version still show (detection is the same), only the action is a
   // command rather than an in-app install.
-  if (state.scoop) {
+  if (state.channel === "scoop") {
     return (
       <Backdrop onClose={onClose} focusEpoch={0}>
         <header className="update-modal-header">
@@ -54,12 +81,15 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
     );
   }
 
-  // Defensive: backend only emits show-modal with an update or scoop=true.
+  // Defensive: backend only emits show-modal with an update or Scoop channel.
   if (!update) return null;
+
+  const store = state.channel === "store";
 
   async function install() {
     setInstalling(true);
     setError(null);
+    setProgress({ phase: "preparing", progress: 0 });
     try {
       await updateInstall();
       // On success the app relaunches before this resolves; reaching
@@ -73,6 +103,7 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
             ? e.message
             : "Update failed",
       );
+      setProgress(null);
       setInstalling(false);
     }
   }
@@ -93,13 +124,38 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
       focusEpoch={installing ? 1 : 0}
     >
       <header className="update-modal-header">
-        <span className="update-modal-title">Update available</span>
+        <span className="update-modal-title">
+          {store ? "Microsoft Store update" : "Update available"}
+        </span>
         <span className="update-modal-version">v{update.version}</span>
       </header>
       <div className="update-modal-changelog">
         {update.notes.trim() || "No release notes provided for this version."}
       </div>
-      {error && <div className="update-modal-error">{error}</div>}
+      {installing && progress && (
+        <div className="update-modal-progress" aria-live="polite">
+          <div className="update-modal-progress-row">
+            <span>{updateProgressLabel(progress)}</span>
+            {progress.phase === "downloading" && (
+              <span>{Math.round(progress.progress * 100)}%</span>
+            )}
+          </div>
+          <progress
+            max={1}
+            value={
+              progress.phase === "preparing" || progress.phase === "waiting"
+                ? undefined
+                : progress.progress
+            }
+            aria-label="Update progress"
+          />
+        </div>
+      )}
+      {error && (
+        <div className="update-modal-error" role="alert">
+          {error}
+        </div>
+      )}
       <div className="update-modal-actions">
         <button
           type="button"
@@ -107,27 +163,54 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
           onClick={() => void install()}
           disabled={installing}
         >
-          {installing ? "Updating…" : "Update now"}
+          {installing
+            ? updateProgressLabel(progress)
+            : "Update now"}
         </button>
-        <button
-          type="button"
-          className="update-btn"
-          onClick={() => void later()}
-          disabled={installing}
-        >
-          Later
-        </button>
-        <button
-          type="button"
-          className="update-btn update-btn-quiet"
-          onClick={() => void skip()}
-          disabled={installing}
-        >
-          Skip v{update.version}
-        </button>
+        {canDeferUpdate(update) && (
+          <>
+            <button
+              type="button"
+              className="update-btn"
+              onClick={() => void later()}
+              disabled={installing}
+            >
+              Later
+            </button>
+            <button
+              type="button"
+              className="update-btn update-btn-quiet"
+              onClick={() => void skip()}
+              disabled={installing}
+            >
+              Skip v{update.version}
+            </button>
+          </>
+        )}
       </div>
     </Backdrop>
   );
+}
+
+export function updateProgressLabel(progress: UpdateProgress | null): string {
+  switch (progress?.phase) {
+    case "waiting":
+      return "Waiting for Microsoft Store…";
+    case "downloading":
+      return "Downloading…";
+    case "installing":
+      return "Installing…";
+    case "restarting":
+      return "Restarting…";
+    default:
+      return "Preparing…";
+  }
+}
+
+export function canDeferUpdate(
+  update: Pick<AvailableUpdate, "mandatory">,
+): boolean {
+  return !update.mandatory;
 }
 
 interface BackdropProps {

@@ -1,4 +1,4 @@
-import type { UpstreamStatus } from "../../types";
+import type { UpdateCheckNotice, UpstreamStatus } from "../../types";
 
 export type FetchNowState = "idle" | "fetching" | "ok" | "failed" | "busy";
 
@@ -10,7 +10,7 @@ interface Props {
   onBack: () => void;
   onForward: () => void;
   scanning: boolean;
-  upToDate: boolean;
+  updateCheckNotice: UpdateCheckNotice | null;
   upstream: UpstreamStatus | null;
   showRepoSync: boolean;
   fetchNow: FetchNowState;
@@ -33,7 +33,7 @@ export function PanelChromeRow({
   onBack,
   onForward,
   scanning,
-  upToDate,
+  updateCheckNotice,
   upstream,
   showRepoSync,
   fetchNow,
@@ -111,8 +111,16 @@ export function PanelChromeRow({
       >
         {scanning ? (
           <span className="panel-status">Scanning…</span>
-        ) : upToDate ? (
-          <span className="panel-status">✓ Up to date</span>
+        ) : updateCheckNotice ? (
+          <span
+            className={
+              "panel-status" +
+              (updateCheckNotice.kind === "error" ? " error" : "")
+            }
+            title={updateCheckNotice.detail}
+          >
+            {updateCheckNoticeLabel(updateCheckNotice)}
+          </span>
         ) : null}
         {showRepoSync && upstream && <UpstreamBadge status={upstream} />}
         {showRepoSync && (
@@ -155,6 +163,17 @@ export function PanelChromeRow({
       </button>
     </div>
   );
+}
+
+export function updateCheckNoticeLabel(notice: UpdateCheckNotice): string {
+  switch (notice.kind) {
+    case "checking":
+      return "Checking updates…";
+    case "current":
+      return "✓ Up to date";
+    case "error":
+      return "⚠ Update check failed";
+  }
 }
 
 function FetchNowButton({

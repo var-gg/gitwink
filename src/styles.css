@@ -337,6 +337,17 @@ body,
   flex-shrink: 0;
 }
 
+.panel-status.error {
+  color: rgb(180, 55, 55);
+  opacity: 0.9;
+}
+
+@media (prefers-color-scheme: dark) {
+  .panel-status.error {
+    color: rgb(255, 145, 125);
+  }
+}
+
 /* ----- one-time auto-fetch disclosure banner ----- */
 
 .autofetch-notice {
@@ -3501,8 +3512,30 @@ body,
   border-radius: 3px;
 }
 
+.update-modal-progress {
+  display: grid;
+  gap: 6px;
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.update-modal-progress-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.update-modal-progress progress {
+  width: 100%;
+  height: 6px;
+  accent-color: rgb(80, 130, 240);
+}
+
 .update-modal-error {
   font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
   color: rgba(190, 50, 50, 1);
   padding: 6px 8px;
   background: rgba(220, 80, 80, 0.12);
@@ -3563,6 +3596,10 @@ body,
     color: #ededed;
     border-color: rgba(255, 255, 255, 0.14);
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  }
+
+  .update-modal-progress {
+    color: rgba(255, 255, 255, 0.68);
   }
   .update-modal-version {
     color: rgba(140, 180, 255, 1);

@@ -8,7 +8,12 @@ import {
 import { contextMenuDismissesOnTab } from "./ContextMenu";
 import { SearchBar } from "./SearchBar";
 import { SearchResultJumpAffordance } from "./TimelineWindowed";
-import { modalTabDestination } from "./UpdateModal";
+import {
+  canDeferUpdate,
+  modalTabDestination,
+  updateProgressLabel,
+} from "./UpdateModal";
+import { updateCheckNoticeLabel } from "./header/PanelChromeRow";
 import {
   SEARCH_RESULTS_LIST_ID,
   searchResultOptionId,
@@ -70,6 +75,37 @@ describe("overlay keyboard ownership", () => {
     expect(modalTabDestination(3, 2, false)).toBe(0);
     expect(modalTabDestination(3, 0, true)).toBe(2);
     expect(modalTabDestination(3, 1, false)).toBeNull();
+  });
+
+  it("describes update phases without exposing backend state names", () => {
+    expect(updateProgressLabel(null)).toBe("Preparing…");
+    expect(updateProgressLabel({ phase: "waiting", progress: 0 })).toBe(
+      "Waiting for Microsoft Store…",
+    );
+    expect(updateProgressLabel({ phase: "downloading", progress: 0.42 })).toBe(
+      "Downloading…",
+    );
+    expect(updateProgressLabel({ phase: "installing", progress: 0.9 })).toBe(
+      "Installing…",
+    );
+    expect(updateProgressLabel({ phase: "restarting", progress: 1 })).toBe(
+      "Restarting…",
+    );
+  });
+
+  it("keeps every manual update-check outcome visible and concise", () => {
+    expect(updateCheckNoticeLabel({ kind: "checking" })).toBe(
+      "Checking updates…",
+    );
+    expect(updateCheckNoticeLabel({ kind: "current" })).toBe("✓ Up to date");
+    expect(updateCheckNoticeLabel({ kind: "error" })).toBe(
+      "⚠ Update check failed",
+    );
+  });
+
+  it("never offers skip or snooze for a mandatory Store update", () => {
+    expect(canDeferUpdate({ mandatory: true })).toBe(false);
+    expect(canDeferUpdate({ mandatory: false })).toBe(true);
   });
 });
 

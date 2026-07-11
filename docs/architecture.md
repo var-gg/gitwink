@@ -39,8 +39,9 @@
   history.
 - **No telemetry, no analytics, no auto-uploads**, and no repo data ever
   leaves the machine to us. The only outbound network is the self-updater
-  (GitHub Releases) and the panel-open auto-fetch (your repo's own `origin`,
-  via your own Git credentials).
+  (GitHub Releases for direct/Scoop installs, the device's Microsoft Store
+  catalog for Store installs) and the panel-open auto-fetch (your repo's own
+  `origin`, via your own Git credentials).
 - **Cold start ≤300ms / idle RAM ≤100MB.** Architecture preserves this:
   - Lazy-load git data, eager-load only the cached timeline.
   - No long-lived per-repo polling; rely on `notify` (v0.2) for refresh.

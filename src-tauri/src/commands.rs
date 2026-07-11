@@ -9,8 +9,8 @@ use tauri_plugin_updater::UpdaterExt;
 
 use crate::{
     cache, discovery, discovery_orchestrator, file_history_jobs, git, history_fts, history_git,
-    history_indexer, history_query, history_store, repo_exclusions, settings, update, watcher,
-    window,
+    history_indexer, history_query, history_store, repo_exclusions, settings, store_update, update,
+    watcher, window,
 };
 
 /// Per-repo walk cap for the windowed refill. Sized to swallow a whole
@@ -1630,10 +1630,10 @@ pub struct AppSettings {
     /// "disabled" via the enum's lowercase rename. Meaningful only when
     /// `updater_available` is true.
     pub update_check: settings::UpdateCheckMode,
-    /// False for Scoop and Microsoft Store (MSIX) installs — those
-    /// channels manage their own updates, so the Updates section in
-    /// the Settings window is hidden and the `update_check` knob is
-    /// inert. The frontend uses this flag to gate the UI.
+    /// Computed install channel; never persisted from the frontend.
+    pub update_channel: update::UpdateChannel,
+    /// False only for Scoop, where the package manager owns the action.
+    /// Direct and Store builds both support in-app update controls.
     pub updater_available: bool,
 }
 
@@ -1655,7 +1655,8 @@ pub fn get_settings(live: tauri::State<'_, LiveSettings>) -> AppSettings {
         auto_fetch_on_show: s.auto_fetch_on_show.unwrap_or(true),
         auto_fetch_notice_seen: s.auto_fetch_notice_seen.unwrap_or(false),
         update_check: s.update_check,
-        updater_available: !update::installed_via_scoop() && !update::installed_via_msix(),
+        update_channel: update::install_channel(),
+        updater_available: !update::installed_via_scoop(),
     }
 }
 
@@ -1946,13 +1947,11 @@ fn unix_now() -> i64 {
 pub struct UpdateStatePayload {
     /// The pending update, or `None` when up to date / not yet checked.
     pub available: Option<update::AvailableUpdate>,
-    /// True for Scoop installs — the modal shows a `scoop update` hint
-    /// instead of an in-app "Update now" button.
-    pub scoop: bool,
+    pub channel: update::UpdateChannel,
 }
 
-/// Snapshot the updater state for the modal: the pending update (if any)
-/// plus whether this is a Scoop install.
+/// Snapshot the updater state for the modal, including the authoritative
+/// installer channel that owns the update action.
 #[tauri::command]
 pub fn update_get_state(app: AppHandle) -> UpdateStatePayload {
     // Never panic the IPC command on a poisoned mutex — a poisoned lock
@@ -1965,31 +1964,57 @@ pub fn update_get_state(app: AppHandle) -> UpdateStatePayload {
         .unwrap_or(None);
     UpdateStatePayload {
         available,
-        scoop: update::installed_via_scoop(),
+        channel: update::install_channel(),
     }
 }
 
 /// Download + install the pending update, then relaunch. The NSIS
-/// installer runs in `passive` mode (progress UI, no prompts). Refuses
-/// to run for Scoop installs.
+/// installer runs in `passive` mode. Store builds use StoreContext and
+/// fall back to Windows consent UI when silent delivery is unavailable.
 #[tauri::command]
 pub async fn update_install(app: AppHandle) -> Result<(), String> {
-    if update::installed_via_scoop() {
+    let channel = update::install_channel();
+    if channel == update::UpdateChannel::Scoop {
         return Err("Installed via Scoop — run `scoop update gitwink` instead.".into());
     }
-    if update::installed_via_msix() {
-        return Err("Installed from the Microsoft Store — the Store manages updates.".into());
+    let _install_guard = update::InstallGuard::acquire(&app).map_err(str::to_string)?;
+
+    match channel {
+        update::UpdateChannel::Scoop => unreachable!("Scoop returned before acquiring install"),
+        update::UpdateChannel::Store => {
+            store_update::install(&app)
+                .await
+                .map_err(|e| format!("{e:#}"))?;
+            update::emit_progress(&app, "restarting", 1.0);
+            app.restart();
+        }
+        update::UpdateChannel::Direct => {}
     }
+
     let updater = app.updater().map_err(|e| e.to_string())?;
     let pending = updater
         .check()
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "No update available.".to_string())?;
+    let progress_app = app.clone();
+    let finish_app = app.clone();
+    let mut downloaded = 0u64;
     pending
-        .download_and_install(|_, _| {}, || {})
+        .download_and_install(
+            move |chunk, total| {
+                downloaded = downloaded.saturating_add(chunk as u64);
+                let progress = total
+                    .filter(|total| *total > 0)
+                    .map(|total| downloaded as f64 / total as f64)
+                    .unwrap_or(0.0);
+                update::emit_progress(&progress_app, "downloading", progress);
+            },
+            move || update::emit_progress(&finish_app, "installing", 1.0),
+        )
         .await
         .map_err(|e| e.to_string())?;
+    update::emit_progress(&app, "restarting", 1.0);
     app.restart();
 }
 

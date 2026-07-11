@@ -24,6 +24,7 @@ mod history_schema;
 mod history_store;
 mod repo_exclusions;
 mod settings;
+mod store_update;
 mod tray;
 mod update;
 mod watcher;
@@ -202,10 +203,9 @@ pub fn run() {
             }
             window::apply_panel_pinned(app.handle(), saved_pinned);
 
-            // Self-update: managed state + background check loop (one
-            // check on startup, then every 24h). update::start is a
-            // no-op for Scoop and Microsoft Store (MSIX) installs — those
-            // channels manage their own updates.
+            // Channel-aware updates: GitHub-backed for Direct/Scoop and
+            // StoreContext-backed for Microsoft Store MSIX. One check on
+            // startup, then every 24h; no channel auto-opens UI.
             app.manage(update::UpdateState::default());
             update::start(app.handle().clone());
 

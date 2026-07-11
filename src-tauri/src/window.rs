@@ -5,7 +5,7 @@ use tauri::{
     WebviewWindowBuilder, WindowEvent,
 };
 
-use crate::{commands, settings};
+use crate::{commands, settings, update};
 
 const PANEL_LABEL: &str = "panel";
 const DIFF_LABEL: &str = "diff";
@@ -319,6 +319,7 @@ pub fn resize_panel_for_scale(app: &AppHandle, scale: f32) {
 ///
 /// The rule: hide iff
 ///   - not sticky (add-repo / native picker), AND
+///   - no update install / Store consent flow is active, AND
 ///   - not pinned (pinned mode never auto-hides), AND
 ///   - no child window (settings or diff) is visible, AND
 ///   - the panel itself is no longer focused.
@@ -335,6 +336,9 @@ pub fn maybe_hide_panel_for_blur(app: &AppHandle) {
         .map(|s| s.0.load(Ordering::SeqCst))
         .unwrap_or(false);
     if sticky {
+        return;
+    }
+    if update::install_in_progress(app) {
         return;
     }
     let pinned = app

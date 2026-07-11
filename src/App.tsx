@@ -53,7 +53,6 @@ import {
   onRepoStatus,
   onTimelineInvalidated,
   onUpdateIndicator,
-  onUpdateNone,
   onUpdateShowModal,
   repoCommits,
   releaseHistoryIndex,
@@ -80,6 +79,7 @@ import {
 } from "./lib/viewHistory";
 import { timelineSnapshotFilterKey } from "./lib/useTimelineWindow";
 import { isSearchResultCurrent } from "./lib/searchResolution";
+import { useUpdateCheckNotice } from "./lib/useUpdateCheckNotice";
 import {
   filterRollingWindow,
   nextRollingWindowExpiry,
@@ -105,7 +105,7 @@ import "./styles.css";
 function visibleUpdateModalState(
   state: UpdateStatePayload,
 ): UpdateStatePayload | null {
-  return state.scoop || state.available != null ? state : null;
+  return state.channel === "scoop" || state.available != null ? state : null;
 }
 
 function startDrag(e: React.PointerEvent<HTMLElement>) {
@@ -441,8 +441,7 @@ function App() {
   // Available-update version (or null) for the passive header-icon badge —
   // kept in sync with the tray dot via the `update://indicator` event.
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
-  // Transient "you're up to date" line after a manual check found nothing.
-  const [upToDate, setUpToDate] = useState(false);
+  const updateCheckNotice = useUpdateCheckNotice();
 
   // Open the update modal from the header badge — same path as the tray
   // "Update available" item.
@@ -645,7 +644,6 @@ function App() {
     let unTimelineInvalidated: UnlistenFn | undefined;
     let unFileHistory: UnlistenFn | undefined;
     let unUpdateModal: UnlistenFn | undefined;
-    let unUpdateNone: UnlistenFn | undefined;
     let unUpdateIndicator: UnlistenFn | undefined;
 
     (async () => {
@@ -765,12 +763,6 @@ function App() {
           if (mounted) setUpdateModal(visibleUpdateModalState(st));
         } catch {}
       });
-      // A manual check found nothing — show a brief "up to date" line.
-      unUpdateNone = await onUpdateNone(() => {
-        if (!mounted) return;
-        setUpToDate(true);
-        window.setTimeout(() => setUpToDate(false), 3000);
-      });
       // Header badge: mirror the tray's "update available" indicator. Register
       // the listener first, then ask the backend to re-emit the current gated
       // indicator (respects skip / snooze) so a badge found before the panel
@@ -827,7 +819,6 @@ function App() {
       unTimelineInvalidated?.();
       unFileHistory?.();
       unUpdateModal?.();
-      unUpdateNone?.();
       unUpdateIndicator?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1896,7 +1887,7 @@ function App() {
           onBack={goBack}
           onForward={goForward}
           scanning={scanning}
-          upToDate={upToDate && !scanning}
+          updateCheckNotice={updateCheckNotice}
           upstream={upstream}
           showRepoSync={singleMode && !fileHistory && !searchOpen}
           fetchNow={fetchNow}

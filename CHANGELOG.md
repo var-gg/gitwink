@@ -5,6 +5,25 @@ All notable changes to gitwink will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Microsoft Store-native in-app updates.** Store installs now ask the
+  device's Store catalog—not GitHub—whether a certified package is actually
+  available, show the same header/tray indicator as direct installs, and can
+  download, install, report progress and restart without sending the user to
+  the Store app. Silent delivery is used when Windows permits it; otherwise the
+  native consent prompt is attached to the gitwink panel.
+
+### Fixed
+
+- **Manual update checks always finish visibly.** Overlapping automatic and
+  manual checks coalesce, Store results are cached within Microsoft's query
+  window, and explicit checks now show checking, up-to-date or failure feedback
+  even when the panel was hidden. Mandatory Store updates cannot be suppressed
+  by stale skip or snooze preferences.
+
 ## [0.11.0] — 2026-07-11
 
 A repository-lifecycle and history release. Repositories can now leave and

@@ -324,13 +324,21 @@ export function Settings() {
       {settings.updaterAvailable && (
         <section className="settings-section">
           <h2 className="settings-section-title">Updates</h2>
+          <p className="settings-hint">
+            {settings.updateChannel === "store"
+              ? "Delivered and installed securely by Microsoft Store."
+              : "Delivered from verified gitwink releases."}
+          </p>
           <div className="settings-radio-group" role="radiogroup">
             {(
               [
                 {
                   value: "enabled",
-                  label: "Automatic",
-                  hint: "Check on startup + every 24h. Tray dot when one's ready.",
+                  label: "Automatic checks",
+                  hint:
+                    settings.updateChannel === "store"
+                      ? "Ask Microsoft Store on startup + every 24h, then install in-app when ready."
+                      : "Check on startup + every 24h. Tray dot when one's ready.",
                 },
                 {
                   value: "manual",
