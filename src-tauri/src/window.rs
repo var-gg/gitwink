@@ -11,29 +11,35 @@ use crate::{commands, settings, update};
 const PANEL_LABEL: &str = "panel";
 const DIFF_LABEL: &str = "diff";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PanelToggleIntent {
+    Hide,
+    Surface,
+}
+
+fn panel_toggle_intent(visible: bool, focused: bool) -> PanelToggleIntent {
+    if visible && focused {
+        PanelToggleIntent::Hide
+    } else {
+        // A visible-but-unfocused panel may be covered by a fullscreen or
+        // newer topmost window. Treat the tray/hotkey as a summon in that
+        // state instead of "toggling" an already invisible-to-the-user panel.
+        PanelToggleIntent::Surface
+    }
+}
+
 pub fn toggle_panel(app: &AppHandle) {
     let Some(window) = app.get_webview_window(PANEL_LABEL) else {
         return;
     };
 
     let visible = window.is_visible().unwrap_or(false);
-    if visible {
-        let _ = window.hide();
-    } else {
-        position_panel(&window);
-        // Re-assert always-on-top on every summon (open_diff drops it so
-        // the diff window isn't trapped behind the panel, and it can
-        // still be false from an earlier diff session). assert_* reads
-        // the pinned state so glance summons re-float and pinned summons
-        // stay un-topmost.
-        assert_panel_always_on_top(app);
-        let _ = window.show();
-        let _ = window.set_focus();
-        // The webview is only un-hidden on show, never re-created, so the
-        // bootstrap commit fetch runs once per app launch. Nudge the
-        // frontend to re-pull so a commit the file-watcher missed (or a
-        // repo whose watcher never attached) still surfaces on summon.
-        let _ = window.emit("panel://shown", ());
+    let focused = window.is_focused().unwrap_or(false);
+    match panel_toggle_intent(visible, focused) {
+        PanelToggleIntent::Hide => {
+            let _ = window.hide();
+        }
+        PanelToggleIntent::Surface => surface_panel(app, &window, !visible),
     }
 }
 
@@ -50,12 +56,23 @@ pub fn show_panel(app: &AppHandle) {
     let Some(window) = app.get_webview_window(PANEL_LABEL) else {
         return;
     };
-    if !window.is_visible().unwrap_or(false) {
-        position_panel(&window);
+    let reposition = !window.is_visible().unwrap_or(false);
+    surface_panel(app, &window, reposition);
+}
+
+fn surface_panel(app: &AppHandle, window: &WebviewWindow, reposition: bool) {
+    if reposition {
+        position_panel(window);
     }
-    assert_panel_always_on_top(app);
+    let _ = window.unminimize();
     let _ = window.show();
+    // Apply stacking after the native window is visible. Settings/diff,
+    // maximize and pin state still decide whether topmost is appropriate.
+    assert_panel_always_on_top(app);
     let _ = window.set_focus();
+    // The webview is only un-hidden on show, never re-created, so the
+    // bootstrap commit fetch runs once per app launch. Nudge the frontend to
+    // re-pull so a commit missed by a watcher still surfaces on summon.
     let _ = window.emit("panel://shown", ());
 }
 
@@ -486,5 +503,24 @@ fn position_near_cursor(window: &WebviewWindow, win_w: i32, win_h: i32) {
 pub(crate) fn reposition_panel(app: &AppHandle) {
     if let Some(panel) = app.get_webview_window(PANEL_LABEL) {
         position_panel(&panel);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn focused_visible_panel_toggles_closed() {
+        assert_eq!(panel_toggle_intent(true, true), PanelToggleIntent::Hide);
+    }
+
+    #[test]
+    fn obscured_or_hidden_panel_is_surfaced() {
+        assert_eq!(panel_toggle_intent(true, false), PanelToggleIntent::Surface);
+        assert_eq!(
+            panel_toggle_intent(false, false),
+            PanelToggleIntent::Surface
+        );
     }
 }
