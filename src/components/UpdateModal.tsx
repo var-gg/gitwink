@@ -6,6 +6,11 @@ import {
   updateSkip,
   updateSnooze,
 } from "../lib/ipc";
+import {
+  shouldPresentUpdate,
+  updateModalTitle,
+  waitingForProviderLabel,
+} from "../lib/updatePolicy";
 import type {
   AvailableUpdate,
   UpdateProgress,
@@ -26,7 +31,7 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
   const [progress, setProgress] = useState<UpdateProgress | null>(null);
 
   const update = state.available;
-  const visible = state.channel === "scoop" || update != null;
+  const visible = shouldPresentUpdate(state);
 
   useLayoutEffect(() => {
     if (visible) announceModalOpen();
@@ -49,24 +54,24 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
     };
   }, []);
 
-  // Scoop installs: no in-app update path — point the user at the CLI. The
-  // badge + version still show (detection is the same), only the action is a
-  // command rather than an in-app install.
-  if (state.channel === "scoop") {
+  // Defensive: the backend only emits show-modal after publishing an update.
+  if (!update) return null;
+
+  const installAction = state.policy.installAction;
+
+  // Externally managed installs still share discovery/badges, but the final
+  // action remains owned by the package manager described by the policy.
+  if (installAction.kind === "externalCommand") {
     return (
       <Backdrop onClose={onClose} focusEpoch={0}>
         <header className="update-modal-header">
-          <span className="update-modal-title">
-            {update ? "Update available" : "Update gitwink"}
-          </span>
-          {update && (
-            <span className="update-modal-version">v{update.version}</span>
-          )}
+          <span className="update-modal-title">Update available</span>
+          <span className="update-modal-version">v{update.version}</span>
         </header>
         <div className="update-modal-changelog">
-          This copy of gitwink was installed with Scoop, which manages its own
-          updates. Run <code>scoop update gitwink</code> in a terminal to get{" "}
-          {update ? `v${update.version}` : "the latest version"}.
+          This installation is managed by {installAction.providerLabel}, which
+          owns the final update step. Run <code>{installAction.command}</code> in
+          a terminal to get v{update.version}.
         </div>
         <div className="update-modal-actions">
           <button
@@ -80,11 +85,6 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
       </Backdrop>
     );
   }
-
-  // Defensive: backend only emits show-modal with an update or Scoop channel.
-  if (!update) return null;
-
-  const store = state.channel === "store";
 
   async function install() {
     setInstalling(true);
@@ -124,9 +124,7 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
       focusEpoch={installing ? 1 : 0}
     >
       <header className="update-modal-header">
-        <span className="update-modal-title">
-          {store ? "Microsoft Store update" : "Update available"}
-        </span>
+        <span className="update-modal-title">{updateModalTitle(installAction)}</span>
         <span className="update-modal-version">v{update.version}</span>
       </header>
       <div className="update-modal-changelog">
@@ -135,7 +133,12 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
       {installing && progress && (
         <div className="update-modal-progress" aria-live="polite">
           <div className="update-modal-progress-row">
-            <span>{updateProgressLabel(progress)}</span>
+            <span>
+              {updateProgressLabel(
+                progress,
+                waitingForProviderLabel(installAction),
+              )}
+            </span>
             {progress.phase === "downloading" && (
               <span>{Math.round(progress.progress * 100)}%</span>
             )}
@@ -164,7 +167,10 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
           disabled={installing}
         >
           {installing
-            ? updateProgressLabel(progress)
+            ? updateProgressLabel(
+                progress,
+                waitingForProviderLabel(installAction),
+              )
             : "Update now"}
         </button>
         {canDeferUpdate(update) && (
@@ -192,10 +198,13 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
   );
 }
 
-export function updateProgressLabel(progress: UpdateProgress | null): string {
+export function updateProgressLabel(
+  progress: UpdateProgress | null,
+  providerLabel = "update provider",
+): string {
   switch (progress?.phase) {
     case "waiting":
-      return "Waiting for Microsoft Store…";
+      return `Waiting for ${providerLabel}…`;
     case "downloading":
       return "Downloading…";
     case "installing":

@@ -223,7 +223,23 @@ export interface CommitFileBlobs {
   isLfs: boolean;
 }
 
-export type UpdateChannel = "direct" | "scoop" | "store";
+/** Installed artifact's update-ownership class. WinGet and direct downloads
+ * intentionally share `standalone` because they install the same artifact. */
+export type InstallChannel = "standalone" | "scoop" | "store";
+
+/** Capability contract for the final install step. Presentation code branches
+ * on this union rather than hard-coding Store/Scoop channel names. */
+export type UpdateInstallAction =
+  | { kind: "inApp"; providerLabel: string }
+  | { kind: "externalCommand"; providerLabel: string; command: string };
+
+export interface UpdatePolicy {
+  /** Diagnostic identity only; behaviour comes from the capabilities below. */
+  channel: InstallChannel;
+  checkProviderLabel: string;
+  supportsBackgroundChecks: boolean;
+  installAction: UpdateInstallAction;
+}
 
 /** A pending self-update — mirrors update::AvailableUpdate (Rust). */
 export interface AvailableUpdate {
@@ -237,7 +253,7 @@ export interface AvailableUpdate {
 export interface UpdateStatePayload {
   /** The pending update, or null when up to date / not yet checked. */
   available: AvailableUpdate | null;
-  channel: UpdateChannel;
+  policy: UpdatePolicy;
 }
 
 export interface UpdateProgress {

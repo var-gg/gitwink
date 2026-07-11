@@ -54,6 +54,13 @@ mod imp {
     type UpdateOperation =
         IAsyncOperationWithProgress<StorePackageUpdateResult, StorePackageUpdateStatus>;
 
+    /// Package identity is stronger than an install-path heuristic. A
+    /// packaged desktop app cannot safely replace itself with an NSIS updater,
+    /// even when a sideloaded package uses a nonstandard install path.
+    pub fn has_package_identity() -> bool {
+        Package::Current().is_ok()
+    }
+
     // Microsoft documents a 30-minute minimum interval for this Store query.
     // Cache both a positive and a negative result so manual checks and the
     // subsequent install action cannot accidentally burn the device quota.
@@ -435,7 +442,12 @@ mod imp {
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{check, install};
+pub use imp::{check, has_package_identity, install};
+
+#[cfg(not(target_os = "windows"))]
+pub fn has_package_identity() -> bool {
+    false
+}
 
 #[cfg(not(target_os = "windows"))]
 pub async fn check(_app: &AppHandle) -> anyhow::Result<Option<StoreAvailableUpdate>> {

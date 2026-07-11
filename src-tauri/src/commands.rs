@@ -5,12 +5,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_updater::UpdaterExt;
 
 use crate::{
     cache, discovery, discovery_orchestrator, file_history_jobs, git, history_fts, history_git,
-    history_indexer, history_query, history_store, repo_exclusions, settings, store_update, update,
-    watcher, window,
+    history_indexer, history_query, history_store, repo_exclusions, settings, update, watcher,
+    window,
 };
 
 /// Per-repo walk cap for the windowed refill. Sized to swallow a whole
@@ -1627,18 +1626,16 @@ pub struct AppSettings {
     /// Default false (show it once). Persisted via `ack_auto_fetch_notice`.
     pub auto_fetch_notice_seen: bool,
     /// Self-update behaviour. Serialized as "enabled" / "manual" /
-    /// "disabled" via the enum's lowercase rename. Meaningful only when
-    /// `updater_available` is true.
+    /// "disabled" via the enum's lowercase rename.
     pub update_check: settings::UpdateCheckMode,
-    /// Computed install channel; never persisted from the frontend.
-    pub update_channel: update::UpdateChannel,
-    /// False only for Scoop, where the package manager owns the action.
-    /// Direct and Store builds both support in-app update controls.
-    pub updater_available: bool,
+    /// Computed update capabilities; accepted on the live-broadcast input but
+    /// never trusted or persisted. Backend commands use their own runtime
+    /// policy snapshot.
+    pub update_policy: update::UpdatePolicyView,
 }
 
 #[tauri::command]
-pub fn get_settings(live: tauri::State<'_, LiveSettings>) -> AppSettings {
+pub fn get_settings(app: AppHandle, live: tauri::State<'_, LiveSettings>) -> AppSettings {
     // Read the in-memory snapshot, NOT disk — the Settings window's
     // broadcast hot path already updated LiveSettings synchronously,
     // so a newly-opened window's initSettings sees the fresh value
@@ -1655,14 +1652,13 @@ pub fn get_settings(live: tauri::State<'_, LiveSettings>) -> AppSettings {
         auto_fetch_on_show: s.auto_fetch_on_show.unwrap_or(true),
         auto_fetch_notice_seen: s.auto_fetch_notice_seen.unwrap_or(false),
         update_check: s.update_check,
-        update_channel: update::install_channel(),
-        updater_available: !update::installed_via_scoop(),
+        update_policy: update::policy_view(&app),
     }
 }
 
 /// Project an incoming AppSettings (the user-facing slice the frontend
 /// passes via broadcastSettings) into the live Settings cache. Skips
-/// `updater_available` (computed) and re-clamps `ui_scale` defensively
+/// `update_policy` (computed) and re-clamps `ui_scale` defensively
 /// so an out-of-range value from a stale frontend can't poison the
 /// cache. Hotkey persistence still goes through `set_panel_hotkey`
 /// because re-binding the global shortcut has to succeed before we
@@ -1947,7 +1943,7 @@ fn unix_now() -> i64 {
 pub struct UpdateStatePayload {
     /// The pending update, or `None` when up to date / not yet checked.
     pub available: Option<update::AvailableUpdate>,
-    pub channel: update::UpdateChannel,
+    pub policy: update::UpdatePolicyView,
 }
 
 /// Snapshot the updater state for the modal, including the authoritative
@@ -1964,58 +1960,18 @@ pub fn update_get_state(app: AppHandle) -> UpdateStatePayload {
         .unwrap_or(None);
     UpdateStatePayload {
         available,
-        channel: update::install_channel(),
+        policy: update::policy_view(&app),
     }
 }
 
-/// Download + install the pending update, then relaunch. The NSIS
-/// installer runs in `passive` mode. Store builds use StoreContext and
-/// fall back to Windows consent UI when silent delivery is unavailable.
+/// Execute the install action selected by the runtime update policy. The
+/// provider layer owns Tauri/Store/external routing; this IPC surface cannot
+/// accidentally bypass a package manager.
 #[tauri::command]
 pub async fn update_install(app: AppHandle) -> Result<(), String> {
-    let channel = update::install_channel();
-    if channel == update::UpdateChannel::Scoop {
-        return Err("Installed via Scoop — run `scoop update gitwink` instead.".into());
-    }
-    let _install_guard = update::InstallGuard::acquire(&app).map_err(str::to_string)?;
-
-    match channel {
-        update::UpdateChannel::Scoop => unreachable!("Scoop returned before acquiring install"),
-        update::UpdateChannel::Store => {
-            store_update::install(&app)
-                .await
-                .map_err(|e| format!("{e:#}"))?;
-            update::emit_progress(&app, "restarting", 1.0);
-            app.restart();
-        }
-        update::UpdateChannel::Direct => {}
-    }
-
-    let updater = app.updater().map_err(|e| e.to_string())?;
-    let pending = updater
-        .check()
+    update::install(&app)
         .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "No update available.".to_string())?;
-    let progress_app = app.clone();
-    let finish_app = app.clone();
-    let mut downloaded = 0u64;
-    pending
-        .download_and_install(
-            move |chunk, total| {
-                downloaded = downloaded.saturating_add(chunk as u64);
-                let progress = total
-                    .filter(|total| *total > 0)
-                    .map(|total| downloaded as f64 / total as f64)
-                    .unwrap_or(0.0);
-                update::emit_progress(&progress_app, "downloading", progress);
-            },
-            move || update::emit_progress(&finish_app, "installing", 1.0),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-    update::emit_progress(&app, "restarting", 1.0);
-    app.restart();
+        .map_err(|error| format!("{error:#}"))
 }
 
 /// "Skip vX" — suppress the update indicator for the current version.

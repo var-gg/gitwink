@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   download, install, report progress and restart without sending the user to
   the Store app. Silent delivery is used when Windows permits it; otherwise the
   native consent prompt is attached to the gitwink panel.
+- **Capability-driven update delivery.** Store, Scoop, WinGet/direct and macOS
+  distributions now share an explicit policy contract that separates update
+  discovery from install ownership. Adding a channel no longer requires UI
+  code to recognize provider names. GitHub releases remain drafts until CI
+  proves that MSI, NSIS and both macOS architectures have valid signed routes.
 
 ### Fixed
 
@@ -23,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window, and explicit checks now show checking, up-to-date or failure feedback
   even when the panel was hidden. Mandatory Store updates cannot be suppressed
   by stale skip or snooze preferences.
+- **Scoop update preferences remain configurable.** Scoop owns installation,
+  but users can still select automatic, manual or disabled GitHub checks instead
+  of having the entire Updates section hidden.
 
 ## [0.11.0] — 2026-07-11
 

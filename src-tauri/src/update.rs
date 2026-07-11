@@ -1,10 +1,15 @@
-//! Channel-aware self-update orchestration.
+//! Capability-driven self-update orchestration.
 //!
-//! Direct and Scoop builds discover releases through Tauri's GitHub-backed
-//! updater. Microsoft Store builds use StoreContext instead, so the badge is
-//! shown only after the Store package is actually available to this device.
+//! `policy` resolves update ownership once at startup, `provider` performs the
+//! channel-specific I/O, and this module owns the common scheduling/state/UI
+//! contract. Microsoft Store builds therefore never consult GitHub, while a
+//! package-manager install can still share discovery without pretending that
+//! gitwink owns its final install step.
 //! A found update lights the tray dot + panel badge; there is deliberately no
 //! toast. "Skip" / "Later" state lives in `settings.json`.
+
+mod policy;
+mod provider;
 
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -12,12 +17,13 @@ use std::sync::{
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_updater::UpdaterExt;
 
 use crate::settings::{self, UpdateCheckMode};
-use crate::{store_update, tray, window};
+use crate::{tray, window};
+
+pub use policy::UpdatePolicyView;
 
 const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const SNOOZE_SECS: i64 = 24 * 60 * 60;
@@ -25,11 +31,24 @@ const SNOOZE_SECS: i64 = 24 * 60 * 60;
 /// The latest update gitwink knows about. `None` ⇒ up to date (or not
 /// checked yet). Tauri-managed so the tray handler + IPC commands all
 /// read the same slot.
-#[derive(Default)]
 pub struct UpdateState {
     pub available: Mutex<Option<AvailableUpdate>>,
     check: Mutex<CheckCoordinator>,
     installing: AtomicBool,
+    policy: policy::UpdatePolicy,
+}
+
+impl Default for UpdateState {
+    fn default() -> Self {
+        Self {
+            available: Mutex::new(None),
+            check: Mutex::new(CheckCoordinator::default()),
+            installing: AtomicBool::new(false),
+            // Resolve exactly once for this process. Every check, command and
+            // settings payload subsequently reads the same immutable policy.
+            policy: policy::UpdatePolicy::detect(),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -97,12 +116,12 @@ impl CheckCoordinator {
 /// Process-wide install lease. The modal disables its own button, but the
 /// backend invariant also protects against duplicate IPC calls and multiple
 /// webviews. Any error path releases the lease automatically.
-pub struct InstallGuard {
+struct InstallGuard {
     app: AppHandle,
 }
 
 impl InstallGuard {
-    pub fn acquire(app: &AppHandle) -> Result<Self, &'static str> {
+    fn acquire(app: &AppHandle) -> Result<Self, &'static str> {
         let state = app.state::<UpdateState>();
         state
             .installing
@@ -138,31 +157,6 @@ fn can_suppress(update: &AvailableUpdate) -> bool {
     !update.mandatory
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum UpdateChannel {
-    Direct,
-    Scoop,
-    Store,
-}
-
-pub fn install_channel() -> UpdateChannel {
-    std::env::current_exe()
-        .map(|path| classify_install_path(&path.to_string_lossy()))
-        .unwrap_or(UpdateChannel::Direct)
-}
-
-fn classify_install_path(path: &str) -> UpdateChannel {
-    let normalized = path.to_lowercase().replace('/', "\\");
-    if normalized.contains("\\windowsapps\\") {
-        UpdateChannel::Store
-    } else if normalized.contains("\\scoop\\apps\\") {
-        UpdateChannel::Scoop
-    } else {
-        UpdateChannel::Direct
-    }
-}
-
 fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -170,19 +164,10 @@ fn now() -> i64 {
         .unwrap_or(0)
 }
 
-/// True when this binary runs out of a Scoop install dir. Scoop owns the
-/// install action (`scoop update gitwink`), while gitwink still performs
-/// discovery so users receive the same update badge as other channels.
-pub fn installed_via_scoop() -> bool {
-    install_channel() == UpdateChannel::Scoop
-}
-
-/// True when this binary runs as an installed MSIX package — a Microsoft
-/// Store install lives under `…\WindowsApps\`. Detection and installation
-/// for this channel are routed through Windows.Services.Store instead of the
-/// GitHub release updater.
-pub fn installed_via_msix() -> bool {
-    install_channel() == UpdateChannel::Store
+/// Public capability snapshot for settings and update-modal IPC. Consumers
+/// use the action contract, not channel-name conditionals.
+pub fn policy_view(app: &AppHandle) -> UpdatePolicyView {
+    app.state::<UpdateState>().policy.view()
 }
 
 /// Spawn the background check loop: one check on startup, then every 24h.
@@ -305,27 +290,8 @@ fn schedule_rerun(app: &AppHandle, completion: CheckCompletion) {
 }
 
 async fn fetch_available(app: &AppHandle) -> anyhow::Result<Option<AvailableUpdate>> {
-    if installed_via_msix() {
-        Ok(store_update::check(app)
-            .await?
-            .map(|update| AvailableUpdate {
-                version: update.version,
-                notes: if update.mandatory {
-                    "Microsoft Store marked this update as required. gitwink will download and install it without leaving the app."
-                        .to_string()
-                } else {
-                    "This update is ready from Microsoft Store. gitwink can download and install it without leaving the app."
-                        .to_string()
-                },
-                mandatory: update.mandatory,
-            }))
-    } else {
-        Ok(app.updater()?.check().await?.map(|update| AvailableUpdate {
-            version: update.version,
-            notes: update.body.unwrap_or_default(),
-            mandatory: false,
-        }))
-    }
+    let backend = app.state::<UpdateState>().policy.check_backend();
+    provider::check(app, backend).await
 }
 
 /// Finish and publish under one coordinator lock. `clear_cached_available`
@@ -383,6 +349,17 @@ fn normalize_progress(progress: f64) -> f64 {
     } else {
         0.0
     }
+}
+
+/// Execute the install action selected by the immutable runtime policy, then
+/// relaunch. External package-manager policies return their exact command and
+/// can never fall through to an in-app installer, even via direct IPC.
+pub async fn install(app: &AppHandle) -> anyhow::Result<()> {
+    let backend = app.state::<UpdateState>().policy.install_backend();
+    let _install_guard = InstallGuard::acquire(app).map_err(anyhow::Error::msg)?;
+    provider::install(app, backend).await?;
+    emit_progress(app, "restarting", 1.0);
+    app.restart();
 }
 
 /// Recompute the tray dot + menu item from current state + settings.
@@ -451,28 +428,7 @@ pub fn snooze(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        can_suppress, classify_install_path, normalize_progress, AvailableUpdate, CheckCoordinator,
-        UpdateChannel,
-    };
-
-    #[test]
-    fn install_channel_is_classified_case_and_separator_insensitively() {
-        assert_eq!(
-            classify_install_path(
-                r"C:\Program Files\WindowsApps\var-gg.gitwink_0.11.0.0_x64\gitwink.exe"
-            ),
-            UpdateChannel::Store
-        );
-        assert_eq!(
-            classify_install_path("C:/Users/me/SCOOP/apps/gitwink/current/gitwink.exe"),
-            UpdateChannel::Scoop
-        );
-        assert_eq!(
-            classify_install_path(r"C:\Program Files\gitwink\gitwink.exe"),
-            UpdateChannel::Direct
-        );
-    }
+    use super::{can_suppress, normalize_progress, AvailableUpdate, CheckCoordinator};
 
     #[test]
     fn overlapping_checks_coalesce_without_losing_manual_feedback() {

@@ -27,6 +27,10 @@ Or via [WinGet](https://github.com/microsoft/winget-cli):
 winget install gitwink
 ```
 
+WinGet installs the same standalone NSIS artifact as a direct download. It
+therefore checks verified GitHub Releases and can update in-app; it is not the
+Microsoft Store package.
+
 The Store build is signed by Microsoft during certification, so no
 SmartScreen prompt appears. Microsoft Store remains the source of truth for
 updates; when a certified package is available to this device, gitwink can
@@ -144,8 +148,8 @@ and a singleton that remembers position, size, and maximised state.
 
 Tauri 2 · Rust · React + TypeScript · `git2` · SQLite · custom SVG DAG
 drawer · read-only (never merges, pushes, or rewrites) · no telemetry or
-analytics — network use is limited: an app-update check (GitHub for direct /
-Scoop installs, Microsoft Store for Store installs) and an `origin` fetch of
+analytics — network use is limited: an app-update check (GitHub for standalone
+and Scoop installs, Microsoft Store for Store installs) and an `origin` fetch of
 the repo you're viewing — automatic on panel open (on by default, switchable
 off) or explicit via the ↻ button.
 

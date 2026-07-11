@@ -1,6 +1,6 @@
 # gitwink architecture
 
-> Snapshot for v0.1. Lives next to the code; update when it drifts.
+> High-level map. Domain-specific contracts live in focused documents beside it.
 
 ## Layers
 
@@ -39,7 +39,7 @@
   history.
 - **No telemetry, no analytics, no auto-uploads**, and no repo data ever
   leaves the machine to us. The only outbound network is the self-updater
-  (GitHub Releases for direct/Scoop installs, the device's Microsoft Store
+  (GitHub Releases for standalone/Scoop installs, the device's Microsoft Store
   catalog for Store installs) and the panel-open auto-fetch (your repo's own
   `origin`, via your own Git credentials).
 - **Cold start ≤300ms / idle RAM ≤100MB.** Architecture preserves this:
@@ -53,6 +53,11 @@
 - SQLite cache: `%APPDATA%\gitwink\cache.db` (Windows) /
   `~/Library/Application Support/gitwink/cache.db` (macOS)
 - Settings JSON: same directory, `settings.json`
+
+## Focused contracts
+
+- [Update delivery](update-delivery.md) — distribution matrix, capability
+  boundary and provider safety invariants.
 
 ## v0.1 → v0.2 sketch
 

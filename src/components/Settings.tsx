@@ -6,6 +6,10 @@ import {
   useSettingsSnapshot,
   type UpdateCheckMode,
 } from "../lib/settings";
+import {
+  automaticCheckDescription,
+  updateSettingsSummary,
+} from "../lib/updatePolicy";
 import { ExcludedReposSection } from "./settings/ExcludedReposSection";
 
 /** UI-scale slider bounds — mirror UI_SCALE_MIN/MAX in commands.rs. 100%
@@ -321,24 +325,19 @@ export function Settings() {
 
       <ExcludedReposSection />
 
-      {settings.updaterAvailable && (
-        <section className="settings-section">
-          <h2 className="settings-section-title">Updates</h2>
-          <p className="settings-hint">
-            {settings.updateChannel === "store"
-              ? "Delivered and installed securely by Microsoft Store."
-              : "Delivered from verified gitwink releases."}
-          </p>
+      <section className="settings-section">
+        <h2 className="settings-section-title">Updates</h2>
+        <p className="settings-hint">
+          {updateSettingsSummary(settings.updatePolicy)}
+        </p>
+        {settings.updatePolicy.supportsBackgroundChecks ? (
           <div className="settings-radio-group" role="radiogroup">
             {(
               [
                 {
                   value: "enabled",
                   label: "Automatic checks",
-                  hint:
-                    settings.updateChannel === "store"
-                      ? "Ask Microsoft Store on startup + every 24h, then install in-app when ready."
-                      : "Check on startup + every 24h. Tray dot when one's ready.",
+                  hint: automaticCheckDescription(settings.updatePolicy),
                 },
                 {
                   value: "manual",
@@ -365,8 +364,12 @@ export function Settings() {
               </label>
             ))}
           </div>
-        </section>
-      )}
+        ) : (
+          <p className="settings-hint">
+            This installation does not support checks inside gitwink.
+          </p>
+        )}
+      </section>
 
       <section className="settings-section">
         <h2 className="settings-section-title">Auto-fetch</h2>

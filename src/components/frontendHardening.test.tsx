@@ -79,9 +79,12 @@ describe("overlay keyboard ownership", () => {
 
   it("describes update phases without exposing backend state names", () => {
     expect(updateProgressLabel(null)).toBe("Preparing…");
-    expect(updateProgressLabel({ phase: "waiting", progress: 0 })).toBe(
-      "Waiting for Microsoft Store…",
-    );
+    expect(
+      updateProgressLabel(
+        { phase: "waiting", progress: 0 },
+        "Microsoft Store",
+      ),
+    ).toBe("Waiting for Microsoft Store…");
     expect(updateProgressLabel({ phase: "downloading", progress: 0.42 })).toBe(
       "Downloading…",
     );

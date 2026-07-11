@@ -203,9 +203,9 @@ pub fn run() {
             }
             window::apply_panel_pinned(app.handle(), saved_pinned);
 
-            // Channel-aware updates: GitHub-backed for Direct/Scoop and
-            // StoreContext-backed for Microsoft Store MSIX. One check on
-            // startup, then every 24h; no channel auto-opens UI.
+            // Resolve update ownership once: standalone/Scoop use GitHub for
+            // discovery, while packaged builds stay StoreContext-backed.
+            // One check on startup, then every 24h; no policy auto-opens UI.
             app.manage(update::UpdateState::default());
             update::start(app.handle().clone());
 

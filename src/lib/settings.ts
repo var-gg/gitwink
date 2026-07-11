@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { useSyncExternalStore } from "react";
 
-import type { UpdateChannel } from "../types";
+import type { UpdatePolicy } from "../types";
 
 /** Self-update behaviour. Mirrors Rust `UpdateCheckMode` (serialized
  *  lowercase) — "enabled" auto-checks every 24h, "manual" only on tray
@@ -23,9 +23,9 @@ export interface AppSettings {
    *  Default false ⇒ show it once (also the upgrade-time disclosure). */
   autoFetchNoticeSeen: boolean;
   updateCheck: UpdateCheckMode;
-  updateChannel: UpdateChannel;
-  /** False only for Scoop, whose package manager owns the install action. */
-  updaterAvailable: boolean;
+  /** Backend-computed capabilities; broadcast back for snapshot consistency
+   * but ignored as an authority by every update command. */
+  updatePolicy: UpdatePolicy;
 }
 
 /** Built-in diff/code monospace stack — the fallback when no font is
@@ -41,8 +41,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoFetchOnShow: true,
   autoFetchNoticeSeen: false,
   updateCheck: "enabled",
-  updateChannel: "direct",
-  updaterAvailable: true,
+  updatePolicy: {
+    channel: "standalone",
+    checkProviderLabel: "verified gitwink releases on GitHub",
+    supportsBackgroundChecks: true,
+    installAction: { kind: "inApp", providerLabel: "gitwink" },
+  },
 };
 
 /** Timeline row height in px at scale 1.0 — the value the fixed-row

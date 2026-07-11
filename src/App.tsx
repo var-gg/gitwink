@@ -79,6 +79,7 @@ import {
 } from "./lib/viewHistory";
 import { timelineSnapshotFilterKey } from "./lib/useTimelineWindow";
 import { isSearchResultCurrent } from "./lib/searchResolution";
+import { shouldPresentUpdate } from "./lib/updatePolicy";
 import { useUpdateCheckNotice } from "./lib/useUpdateCheckNotice";
 import {
   filterRollingWindow,
@@ -105,7 +106,7 @@ import "./styles.css";
 function visibleUpdateModalState(
   state: UpdateStatePayload,
 ): UpdateStatePayload | null {
-  return state.channel === "scoop" || state.available != null ? state : null;
+  return shouldPresentUpdate(state) ? state : null;
 }
 
 function startDrag(e: React.PointerEvent<HTMLElement>) {
