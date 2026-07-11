@@ -24,6 +24,10 @@ interface Props {
   onToggleSearch: () => void;
   pinned: boolean;
   onTogglePinned: () => void;
+  maximized: boolean;
+  maximizeBusy: boolean;
+  chromeDoubleClickMaximize: boolean;
+  onToggleMaximized: () => void;
   onDismiss: () => void;
 }
 
@@ -47,6 +51,10 @@ export function PanelChromeRow({
   onToggleSearch,
   pinned,
   onTogglePinned,
+  maximized,
+  maximizeBusy,
+  chromeDoubleClickMaximize,
+  onToggleMaximized,
   onDismiss,
 }: Props) {
   const { i18n } = useLingui();
@@ -111,7 +119,18 @@ export function PanelChromeRow({
         </span>
       )}
 
-      <div className="panel-drag-handle" />
+      <div
+        className="panel-drag-handle"
+        onDoubleClick={
+          chromeDoubleClickMaximize
+            ? (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onToggleMaximized();
+              }
+            : undefined
+        }
+      />
 
       <div
         className={
@@ -161,6 +180,17 @@ export function PanelChromeRow({
         aria-pressed={pinned}
       >
         📌
+      </button>
+      <button
+        type="button"
+        className={"panel-maximize" + (maximized ? " maximized" : "")}
+        onClick={onToggleMaximized}
+        disabled={maximizeBusy}
+        title={maximized ? i18n._(m.restoreTitle) : i18n._(m.maximizeTitle)}
+        aria-label={maximized ? i18n._(m.restorePanel) : i18n._(m.maximizePanel)}
+        aria-pressed={maximized}
+      >
+        <span className="panel-maximize-glyph" aria-hidden="true" />
       </button>
       <button
         type="button"

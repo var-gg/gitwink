@@ -516,6 +516,11 @@ msgid "common.contextMenu"
 msgstr "コンテキストメニュー"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.sizeHint"
+msgstr "情報スペースとは独立して読みやすさを調整します。通常のパネルは選択した作業領域のサイズを保ちながら、このスケールに従います。"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "timeline.copy.copied"
 msgstr "コピーしました ✓"
@@ -1058,6 +1063,16 @@ msgstr "手動のみ"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
+msgid "panel.chrome.maximizeTitle"
+msgstr "詳しく確認するために最大化"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.maximizePanel"
+msgstr "パネルを最大化"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
 msgid "timeline.marker.merge"
 msgstr "マージコミット"
 
@@ -1277,6 +1292,11 @@ msgid "settings.shortcut.panelHotkey"
 msgstr "パネルのショートカット"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelSize"
+msgstr "パネルサイズ"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "panel.fileHistory.partial"
 msgstr "一部の履歴"
@@ -1407,6 +1427,16 @@ msgid "settings.shortcut.help"
 msgstr "必須: 修飾キー（Ctrl / Alt / Shift）を1つ以上と、通常のキーを組み合わせてください。OS が予約している組み合わせ（Alt+Tab、Win+L など）は取得できません。"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelReset"
+msgstr "レイアウトをリセット"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelSizeHint"
+msgstr "正確なサイズはウィンドウの各辺をドラッグして調整し、ファイルパスを広く見るには「ワイド」を選択します。リセットするとサイズと位置が初期値に戻ります。最大化は一時的な確認モードです。"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
 msgid "diff.columns.resize"
 msgstr "変更前/変更後の列幅を変更"
@@ -1427,6 +1457,16 @@ msgid "settings.repositories.restoreAria"
 msgstr "{repo} を復元"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.restorePanel"
+msgstr "パネルを元に戻す"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.restoreTitle"
+msgstr "以前のパネルサイズに戻す"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/repositories.ts
 msgid "settings.repositories.restoring"
 msgstr "復元中…"
@@ -1440,11 +1480,6 @@ msgstr "再試行"
 #: src/i18n/messages/repositories.ts
 msgid "settings.repositories.replacementWarning"
 msgstr "確認したリポジトリ: {repo}。この確認は、同じリポジトリと除外ライフサイクルが変わっていない間だけ有効です。このパスに対する gitwink の古いキャッシュ、ピン、ブランチ設定を削除し、フォルダーに現在ある Git リポジトリを登録します。フォルダー自体は変更しません。"
-
-#. js-lingui-explicit-id
-#: src/i18n/messages/settings.ts
-msgid "settings.appearance.sizeHint"
-msgstr "パネル全体（ヘッダー、フィルター、タイムライン、展開内容）を拡大し、パネルウィンドウも比例してサイズ変更します。100% が最もコンパクトです。"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -1643,11 +1678,6 @@ msgid "panel.single.coverageLimited"
 msgstr "この範囲の最近のコミット {limit}件を表示しています。古いコミットは読み込んでいません。"
 
 #. js-lingui-explicit-id
-#: src/i18n/messages/settings.ts
-msgid "settings.appearance.size"
-msgstr "サイズ"
-
-#. js-lingui-explicit-id
 #: src/i18n/messages/updates.ts
 msgid "update.skip"
 msgstr "v{version} をスキップ"
@@ -1721,6 +1751,11 @@ msgstr "シャロークローンです。ローカル境界より前の履歴は
 #: src/i18n/messages/panel.ts
 msgid "panel.search.typeToSearch"
 msgstr "入力して {scope} を検索"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.size"
+msgstr "UI スケール"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
@@ -1836,3 +1871,8 @@ msgstr "1つのリポジトリを表示しているとき、パネルを開く�
 #: src/i18n/messages/diff.ts
 msgid "diff.context.fullTitle"
 msgstr "変更箇所を強調してファイル全体を表示"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelWide"
+msgstr "ワイド"

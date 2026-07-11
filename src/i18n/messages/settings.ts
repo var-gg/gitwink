@@ -17,11 +17,28 @@ export const settingsMessages = {
       "Applies immediately to every gitwink window and the tray. Unsupported system languages use English.",
   }),
   appearanceTitle: msg({ id: "settings.appearance.title", message: "Appearance" }),
-  sizeLabel: msg({ id: "settings.appearance.size", message: "Size" }),
+  sizeLabel: msg({ id: "settings.appearance.size", message: "UI scale" }),
   sizeHint: msg({
     id: "settings.appearance.sizeHint",
     message:
-      "Scales the whole panel (header, chips, timeline, expansion) and resizes the panel window proportionally. 100% is the most compact size.",
+      "Controls readability independently from information space. The normal panel follows this scale while preserving your chosen workspace size.",
+  }),
+  panelSizeLabel: msg({
+    id: "settings.appearance.panelSize",
+    message: "Panel size",
+  }),
+  panelWide: msg({
+    id: "settings.appearance.panelWide",
+    message: "Wide",
+  }),
+  panelReset: msg({
+    id: "settings.appearance.panelReset",
+    message: "Reset layout",
+  }),
+  panelSizeHint: msg({
+    id: "settings.appearance.panelSizeHint",
+    message:
+      "Resize any edge for an exact size, choose Wide for file paths, or reset size and placement. Maximizing remains a temporary review mode.",
   }),
   fontLabel: msg({ id: "settings.appearance.font", message: "Font" }),
   fontPlaceholder: msg({

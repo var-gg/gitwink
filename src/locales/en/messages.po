@@ -516,6 +516,11 @@ msgid "common.contextMenu"
 msgstr "Context menu"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.sizeHint"
+msgstr "Controls readability independently from information space. The normal panel follows this scale while preserving your chosen workspace size."
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "timeline.copy.copied"
 msgstr "Copied ✓"
@@ -1058,6 +1063,16 @@ msgstr "Manual only"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
+msgid "panel.chrome.maximizeTitle"
+msgstr "Maximize for deep review"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.maximizePanel"
+msgstr "Maximize panel"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
 msgid "timeline.marker.merge"
 msgstr "Merge commit"
 
@@ -1277,6 +1292,11 @@ msgid "settings.shortcut.panelHotkey"
 msgstr "Panel hotkey"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelSize"
+msgstr "Panel size"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "panel.fileHistory.partial"
 msgstr "partial history"
@@ -1407,6 +1427,16 @@ msgid "settings.shortcut.help"
 msgstr "Required: at least one modifier (Ctrl / Alt / Shift) + a key. OS-reserved combos (Alt+Tab, Win+L, etc.) cannot be captured and won't react."
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelReset"
+msgstr "Reset layout"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelSizeHint"
+msgstr "Resize any edge for an exact size, choose Wide for file paths, or reset size and placement. Maximizing remains a temporary review mode."
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
 msgid "diff.columns.resize"
 msgstr "Resize old/new columns"
@@ -1427,6 +1457,16 @@ msgid "settings.repositories.restoreAria"
 msgstr "Restore {repo}"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.restorePanel"
+msgstr "Restore panel"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.restoreTitle"
+msgstr "Restore previous panel size"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/repositories.ts
 msgid "settings.repositories.restoring"
 msgstr "Restoring…"
@@ -1440,11 +1480,6 @@ msgstr "Retry"
 #: src/i18n/messages/repositories.ts
 msgid "settings.repositories.replacementWarning"
 msgstr "Reviewed: {repo}. Confirmation remains valid only while this exact repository and exclusion lifecycle are unchanged. This forgets gitwink's old cache, pin, and branch choices for this path, then registers the Git repository currently in the folder. The folder itself is never changed."
-
-#. js-lingui-explicit-id
-#: src/i18n/messages/settings.ts
-msgid "settings.appearance.sizeHint"
-msgstr "Scales the whole panel (header, chips, timeline, expansion) and resizes the panel window proportionally. 100% is the most compact size."
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -1643,11 +1678,6 @@ msgid "panel.single.coverageLimited"
 msgstr "Showing the latest {limit} commits in this scope. Older commits haven't been loaded."
 
 #. js-lingui-explicit-id
-#: src/i18n/messages/settings.ts
-msgid "settings.appearance.size"
-msgstr "Size"
-
-#. js-lingui-explicit-id
 #: src/i18n/messages/updates.ts
 msgid "update.skip"
 msgstr "Skip v{version}"
@@ -1721,6 +1751,11 @@ msgstr "This is a shallow clone. History before its local boundary isn't availab
 #: src/i18n/messages/panel.ts
 msgid "panel.search.typeToSearch"
 msgstr "Type to search {scope}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.size"
+msgstr "UI scale"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
@@ -1836,3 +1871,8 @@ msgstr "When viewing one repository, gitwink quietly runs git fetch origin as th
 #: src/i18n/messages/diff.ts
 msgid "diff.context.fullTitle"
 msgstr "Whole file, with changes highlighted"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelWide"
+msgstr "Wide"

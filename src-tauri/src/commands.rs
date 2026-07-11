@@ -8,8 +8,8 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{
     cache, discovery, discovery_orchestrator, file_history_jobs, git, history_fts, history_git,
-    history_indexer, history_query, history_store, repo_exclusions, settings, update, watcher,
-    window,
+    history_indexer, history_query, history_store, panel_window_state, repo_exclusions, settings,
+    update, watcher, window,
 };
 
 /// Per-repo walk cap for the windowed refill. Sized to swallow a whole
@@ -1214,6 +1214,26 @@ pub fn dismiss_panel(app: AppHandle) {
     }
 }
 
+#[tauri::command]
+pub fn get_panel_window_state(app: AppHandle) -> panel_window_state::PanelWindowStatePayload {
+    panel_window_state::get_panel_window_state(&app)
+}
+
+#[tauri::command]
+pub fn toggle_panel_maximized(
+    app: AppHandle,
+) -> Result<panel_window_state::PanelWindowStatePayload, String> {
+    panel_window_state::toggle_panel_maximized(&app)
+}
+
+#[tauri::command]
+pub fn set_panel_size_preset(
+    app: AppHandle,
+    preset: panel_window_state::PanelSizePreset,
+) -> Result<panel_window_state::PanelWindowStatePayload, String> {
+    panel_window_state::apply_panel_size_preset(&app, preset)
+}
+
 /// Whether the panel should resist blur-dismiss. The frontend sets this
 /// true while the empty-state add-repo screen is showing or a native
 /// folder picker is open — both legitimately move focus off the panel
@@ -1341,13 +1361,23 @@ pub async fn open_diff(
     // never blocks because we send exactly once.
     let (tx, mut rx) = tauri::async_runtime::channel::<Result<(), String>>(1);
     let app2 = app.clone();
-    app.run_on_main_thread(move || {
+    if let Err(error) = app.run_on_main_thread(move || {
         let _ = tx.try_send(window::open_or_focus_diff(&app2, payload));
-    })
-    .map_err(|e| e.to_string())?;
-    rx.recv()
-        .await
-        .ok_or_else(|| "diff dispatch dropped".to_string())?
+    }) {
+        window::assert_panel_always_on_top(&app);
+        return Err(error.to_string());
+    }
+    let Some(result) = rx.recv().await else {
+        window::assert_panel_always_on_top(&app);
+        return Err("diff dispatch dropped".to_string());
+    };
+    if result.is_err() {
+        // If the child never became visible, restore glance stacking. If it
+        // did become visible and only a later payload emit failed, the shared
+        // invariant correctly keeps the panel lowered.
+        window::assert_panel_always_on_top(&app);
+    }
+    result
 }
 
 /// Commits that changed `file_path` in `repo_path`, newest first. Live, capped
@@ -1616,8 +1646,8 @@ pub struct AppSettings {
     pub diff_font_family: Option<String>,
     /// Effective global hotkey spec — the resolved default if unset.
     pub panel_hotkey: String,
-    /// When true, the panel is "pinned" — no blur auto-hide, shows in
-    /// the taskbar, not always-on-top. False = tray-glance default.
+    /// When true, the panel is "pinned" — no blur auto-hide and normal
+    /// stacking. The tray/accessory panel remains absent from the taskbar.
     pub panel_pinned: bool,
     /// One-shot `git fetch` of the viewed repo on panel summon (single-repo
     /// mode only). Default ON. See `maybe_fetch_repo` / `fetch.rs`.
@@ -1688,7 +1718,9 @@ pub fn set_live_settings(next: AppSettings, live: tauri::State<'_, LiveSettings>
     });
 }
 
-/// Persist the UI scale and resize the panel window proportionally.
+/// Persist the UI scale and re-derive the normal panel allocation from its
+/// independent 100%-scale size preference. A maximized panel keeps its work-
+/// area geometry and only the web content scales until restore.
 /// Clamped to [UI_SCALE_MIN, UI_SCALE_MAX] — the slider enforces the
 /// same bounds; this is the hand-edit backstop. The resize lags slider
 /// drags by Settings.tsx's persist debounce (a knob, easy to remove).
@@ -1699,7 +1731,7 @@ pub fn set_ui_scale(app: AppHandle, scale: f32) {
     if let Some(live) = app.try_state::<LiveSettings>() {
         live.with_mut(|s| s.ui_scale = Some(clamped));
     }
-    window::resize_panel_for_scale(&app, clamped);
+    panel_window_state::apply_ui_scale(&app, clamped as f64);
 }
 
 /// Persist the diff font family. An empty/whitespace value clears it,
@@ -1772,17 +1804,13 @@ pub fn set_panel_pinned(app: AppHandle, pinned: bool) -> Result<(), String> {
     if let Some(state) = app.try_state::<PanelPinned>() {
         state.0.store(pinned, std::sync::atomic::Ordering::SeqCst);
     }
-    // Runtime toggle: ONLY flip always_on_top (safe Win32 toggle). We
+    // Runtime toggle: ONLY recompute always_on_top (safe Win32 toggle). We
     // deliberately do NOT touch set_skip_taskbar here — that mutates
     // WS_EX_TOOLWINDOW / WS_EX_APPWINDOW at runtime, which on Windows
     // is a known WebView2 destabiliser (subsequent window builds can
     // come up blank). The blur-dismiss behaviour change is live
     // regardless — it's just an atomic check.
-    if let Some(panel) = app.get_webview_window("panel") {
-        if let Err(e) = panel.set_always_on_top(!pinned) {
-            eprintln!("gitwink: set_panel_pinned set_always_on_top failed: {e}");
-        }
-    }
+    window::apply_panel_pinned(&app, pinned);
     Ok(())
 }
 

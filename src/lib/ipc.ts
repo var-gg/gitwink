@@ -365,6 +365,37 @@ export async function dismissPanel(): Promise<void> {
   await invoke("dismiss_panel");
 }
 
+export interface PanelWindowState {
+  maximized: boolean;
+  /** Windows follows the standard empty-titlebar double-click convention.
+   * macOS leaves that gesture to the user's system preference. */
+  chromeDoubleClickMaximize: boolean;
+}
+
+export type PanelSizePreset = "default" | "wide";
+
+export async function getPanelWindowState(): Promise<PanelWindowState> {
+  return invoke<PanelWindowState>("get_panel_window_state");
+}
+
+export async function togglePanelMaximized(): Promise<PanelWindowState> {
+  return invoke<PanelWindowState>("toggle_panel_maximized");
+}
+
+export async function setPanelSizePreset(
+  preset: PanelSizePreset,
+): Promise<PanelWindowState> {
+  return invoke<PanelWindowState>("set_panel_size_preset", { preset });
+}
+
+export async function onPanelWindowState(
+  cb: (state: PanelWindowState) => void,
+): Promise<UnlistenFn> {
+  return listen<PanelWindowState>("panel://window-state", (event) =>
+    cb(event.payload),
+  );
+}
+
 /** Tell the backend whether the panel should resist blur-dismiss. Set
  * true while the empty-state add-repo screen is showing or a native
  * folder picker is open — focus legitimately leaves the panel in both

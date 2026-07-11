@@ -10,6 +10,7 @@ import { activateLocale } from "./i18n/runtime";
 import { getCurrentSettings, initSettings } from "./lib/settings";
 import "./styles.css";
 import "./styles/platform-controls.css";
+import "./styles/panel-window.css";
 
 const label = getCurrentWindow().label;
 const Root =

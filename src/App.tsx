@@ -23,6 +23,7 @@ import {
   PanelNotices,
   type ControlNotice,
 } from "./components/panel/PanelNotices";
+import { PanelResizeHandles } from "./components/panel/PanelResizeHandles";
 import { SingleRepoView } from "./components/panel/SingleRepoView";
 import { SEARCH_RESULTS_LIST_ID } from "./components/searchAccessibility";
 import {
@@ -81,6 +82,8 @@ import {
 import { timelineSnapshotFilterKey } from "./lib/useTimelineWindow";
 import { isSearchResultCurrent } from "./lib/searchResolution";
 import { useContextualFacets } from "./hooks/useContextualFacets";
+import { usePanelViewportClass } from "./hooks/usePanelViewportClass";
+import { usePanelWindowState } from "./hooks/usePanelWindowState";
 import { useRepositoryIntake } from "./hooks/useRepositoryIntake";
 import { mergeAnchoredCommit } from "./lib/controlHandoff";
 import { useControlDelivery } from "./lib/useControlDelivery";
@@ -117,6 +120,9 @@ function visibleUpdateModalState(
 
 function startDrag(e: React.PointerEvent<HTMLElement>) {
   if (e.button !== 0) return;
+  // Leave the second press available to the Windows title-bar double-click
+  // convention instead of starting another native drag operation.
+  if (e.detail > 1) return;
   const target = e.target as HTMLElement | null;
   // Don't start a drag if the press landed on a clickable control or
   // inside an open chip dropdown (incl. its scrollbars / inputs / pin
@@ -422,6 +428,8 @@ function App() {
   // Reactive panel pin state — drives the header pin button glyph + title
   // and re-renders this component whenever the pin flag flips.
   const pinned = usePanelPinned();
+  const panelWindow = usePanelWindowState();
+  const panelViewport = usePanelViewportClass();
 
   // Self-update modal — populated when the backend asks the panel to
   // surface it (tray "Update available" item / a manual check). null =
@@ -1753,7 +1761,15 @@ function App() {
   }, []);
 
   return (
-    <main className={"panel" + (singleMode ? " single-mode" : "")}>
+    <main
+      className={
+        "panel panel-viewport-" +
+        panelViewport +
+        (singleMode ? " single-mode" : "")
+      }
+      data-panel-viewport={panelViewport}
+    >
+      <PanelResizeHandles maximized={panelWindow.maximized} />
       <header
         className="panel-header"
         onPointerDown={startDrag}
@@ -1794,6 +1810,12 @@ function App() {
           onToggleSearch={() => (searchOpen ? closeSearch() : openSearch())}
           pinned={pinned}
           onTogglePinned={() => void togglePanelPinned()}
+          maximized={panelWindow.maximized}
+          maximizeBusy={panelWindow.busy}
+          chromeDoubleClickMaximize={
+            panelWindow.chromeDoubleClickMaximize
+          }
+          onToggleMaximized={() => void panelWindow.toggleMaximized()}
           onDismiss={() => void dismissPanel()}
         />
 

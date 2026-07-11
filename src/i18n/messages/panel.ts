@@ -388,6 +388,22 @@ export const panelMessages = {
   }),
   pinPanel: msg({ id: "panel.chrome.pinPanel", message: "Pin panel" }),
   unpinPanel: msg({ id: "panel.chrome.unpinPanel", message: "Unpin panel" }),
+  maximizeTitle: msg({
+    id: "panel.chrome.maximizeTitle",
+    message: "Maximize for deep review",
+  }),
+  restoreTitle: msg({
+    id: "panel.chrome.restoreTitle",
+    message: "Restore previous panel size",
+  }),
+  maximizePanel: msg({
+    id: "panel.chrome.maximizePanel",
+    message: "Maximize panel",
+  }),
+  restorePanel: msg({
+    id: "panel.chrome.restorePanel",
+    message: "Restore panel",
+  }),
   closeTitle: msg({
     id: "panel.chrome.closeTitle",
     message: "Close (Esc)—closes the diff window too",

@@ -516,6 +516,11 @@ msgid "common.contextMenu"
 msgstr "컨텍스트 메뉴"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.sizeHint"
+msgstr "정보 공간과 별개로 가독성을 조절합니다. 일반 패널은 선택한 작업 영역 크기를 유지하면서 이 배율을 따릅니다."
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "timeline.copy.copied"
 msgstr "복사됨 ✓"
@@ -1058,6 +1063,16 @@ msgstr "수동 확인만"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
+msgid "panel.chrome.maximizeTitle"
+msgstr "깊이 살펴보기 위해 최대화"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.maximizePanel"
+msgstr "패널 최대화"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
 msgid "timeline.marker.merge"
 msgstr "병합 커밋"
 
@@ -1277,6 +1292,11 @@ msgid "settings.shortcut.panelHotkey"
 msgstr "패널 단축키"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelSize"
+msgstr "패널 크기"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "panel.fileHistory.partial"
 msgstr "일부 히스토리"
@@ -1407,6 +1427,16 @@ msgid "settings.shortcut.help"
 msgstr "필수: 보조 키(Ctrl / Alt / Shift) 하나 이상과 일반 키를 함께 눌러야 합니다. 운영체제가 예약한 조합(Alt+Tab, Win+L 등)은 감지할 수 없습니다."
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelReset"
+msgstr "레이아웃 초기화"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelSizeHint"
+msgstr "정확한 크기는 창의 어느 가장자리든 끌어 조절하고, 파일 경로를 넓게 보려면 ‘넓게’를 선택하세요. 초기화하면 크기와 위치가 기본값으로 돌아갑니다. 최대화는 임시 검토 모드로 유지됩니다."
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
 msgid "diff.columns.resize"
 msgstr "이전/새 파일 열 크기 조절"
@@ -1427,6 +1457,16 @@ msgid "settings.repositories.restoreAria"
 msgstr "{repo} 복원"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.restorePanel"
+msgstr "패널 복원"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.restoreTitle"
+msgstr "이전 패널 크기로 복원"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/repositories.ts
 msgid "settings.repositories.restoring"
 msgstr "복원 중…"
@@ -1440,11 +1480,6 @@ msgstr "다시 시도"
 #: src/i18n/messages/repositories.ts
 msgid "settings.repositories.replacementWarning"
 msgstr "검토한 저장소: {repo}. 이 확인은 동일한 저장소와 제외 수명 주기가 바뀌지 않은 동안에만 유효합니다. 이 경로에 대한 gitwink의 기존 캐시, 고정 상태, 브랜치 설정을 지운 뒤 현재 폴더에 있는 Git 저장소를 등록합니다. 폴더 자체는 절대 변경하지 않습니다."
-
-#. js-lingui-explicit-id
-#: src/i18n/messages/settings.ts
-msgid "settings.appearance.sizeHint"
-msgstr "패널 전체(헤더, 필터, 타임라인, 펼친 내용)를 확대하고 패널 창 크기도 비례해 조절합니다. 100%가 가장 작고 조밀한 크기입니다."
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -1643,11 +1678,6 @@ msgid "panel.single.coverageLimited"
 msgstr "이 범위에서 최근 커밋 {limit}개를 표시합니다. 더 오래된 커밋은 불러오지 않았습니다."
 
 #. js-lingui-explicit-id
-#: src/i18n/messages/settings.ts
-msgid "settings.appearance.size"
-msgstr "크기"
-
-#. js-lingui-explicit-id
 #: src/i18n/messages/updates.ts
 msgid "update.skip"
 msgstr "v{version} 건너뛰기"
@@ -1721,6 +1751,11 @@ msgstr "얕은 클론입니다. 로컬 경계 이전의 히스토리는 사용�
 #: src/i18n/messages/panel.ts
 msgid "panel.search.typeToSearch"
 msgstr "입력해서 {scope} 검색"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.size"
+msgstr "UI 배율"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
@@ -1836,3 +1871,8 @@ msgstr "저장소 하나를 볼 때 패널이 열리면 gitwink가 조용히 git
 #: src/i18n/messages/diff.ts
 msgid "diff.context.fullTitle"
 msgstr "변경 사항을 강조하여 전체 파일 표시"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelWide"
+msgstr "넓게"

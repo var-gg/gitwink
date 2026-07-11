@@ -24,6 +24,8 @@ mod history_query;
 mod history_schema;
 mod history_store;
 mod locale;
+mod panel_geometry;
+mod panel_window_state;
 mod repo_exclusions;
 mod settings;
 mod store_update;
@@ -75,6 +77,12 @@ pub fn run() {
             app.manage(control::PendingControl::default());
             app.manage(commands::PanelSticky::default());
             app.manage(commands::PanelPinned::default());
+            let saved_panel_maximized = settings::load(app.handle())
+                .panel_maximized
+                .unwrap_or(false);
+            app.manage(Arc::new(panel_window_state::PanelWindowRuntime::new(
+                saved_panel_maximized,
+            )));
             // Seed the in-memory settings cache from disk BEFORE any
             // window mounts and calls get_settings — see D1 in the
             // GPT Pro review (newly-opened windows could otherwise read
@@ -188,14 +196,13 @@ pub fn run() {
 
             tray::setup(app)?;
 
-            // Apply the saved UI scale to the panel window size before
-            // the first show — so a saved scale survives across launches
-            // without a 520×600 flash of the base panel.
+            // Restore normalized normal geometry and, independently, the
+            // maximized/zoomed state before the first show.
             let saved_scale = settings::load(app.handle())
                 .ui_scale
                 .unwrap_or(1.0)
                 .clamp(commands::UI_SCALE_MIN, commands::UI_SCALE_MAX);
-            window::resize_panel_for_scale(app.handle(), saved_scale);
+            panel_window_state::restore_panel_window(app.handle(), saved_scale as f64);
 
             // Apply the saved panel pin state to the runtime atomic +
             // the panel's always_on_top flag before the first show — so
@@ -359,9 +366,9 @@ pub fn run() {
             });
 
             if let Some(panel) = app.get_webview_window("panel") {
+                panel_window_state::install_panel_window_events(app.handle(), &panel);
                 let handle = app.handle().clone();
                 let focus_generation = Arc::new(AtomicU64::new(0));
-                let move_generation = Arc::new(AtomicU64::new(0));
 
                 panel.on_window_event(move |event| match event {
                     WindowEvent::Focused(false) => {
@@ -387,24 +394,6 @@ pub fn run() {
                     WindowEvent::Focused(true) => {
                         // Cancel any pending hide.
                         focus_generation.fetch_add(1, Ordering::SeqCst);
-                    }
-                    WindowEvent::Moved(pos) => {
-                        // Debounce: during a drag this fires ~60 Hz. Only
-                        // persist the *settled* position to avoid
-                        // hammering settings.json.
-                        let stamp = move_generation
-                            .fetch_add(1, Ordering::SeqCst)
-                            .wrapping_add(1);
-                        let gen_clone = Arc::clone(&move_generation);
-                        let handle_clone = handle.clone();
-                        let x = pos.x;
-                        let y = pos.y;
-                        std::thread::spawn(move || {
-                            std::thread::sleep(Duration::from_millis(200));
-                            if gen_clone.load(Ordering::SeqCst) == stamp {
-                                settings::save_panel_position(&handle_clone, x, y);
-                            }
-                        });
                     }
                     _ => {}
                 });
@@ -449,6 +438,9 @@ pub fn run() {
             commands::take_pending_diff_open,
             control::ingress::take_pending_control_deliveries,
             commands::dismiss_panel,
+            commands::get_panel_window_state,
+            commands::toggle_panel_maximized,
+            commands::set_panel_size_preset,
             commands::set_panel_sticky,
             commands::get_scan_state,
             commands::get_pinned_repos,

@@ -11,6 +11,10 @@ import type { AppLocale, LocalePreference } from "../i18n/runtime";
 import { settingsMessages as m } from "../i18n/messages/settings";
 import { updateProviderLabel } from "../i18n/messages/updates";
 import { translate } from "../i18n/translate";
+import {
+  setPanelSizePreset,
+  type PanelSizePreset,
+} from "../lib/ipc";
 import { ExcludedReposSection } from "./settings/ExcludedReposSection";
 
 /** UI-scale slider bounds — mirror UI_SCALE_MIN/MAX in commands.rs. 100%
@@ -95,6 +99,9 @@ export function Settings() {
   const [bindingHotkey, setBindingHotkey] = useState(false);
   const [languageBusy, setLanguageBusy] = useState(false);
   const [languageError, setLanguageError] = useState<string | null>(null);
+  const [panelLayoutBusy, setPanelLayoutBusy] = useState(false);
+  const [panelLayoutError, setPanelLayoutError] = useState<string | null>(null);
+  const panelLayoutInFlight = useRef(false);
   const hotkeyBinding = useRef(false);
   // Mirror settings into a ref so the recording effect doesn't have to
   // re-subscribe to keydown whenever an unrelated setting changes.
@@ -157,6 +164,21 @@ export function Settings() {
     void invoke("set_auto_fetch_on_show", { enabled });
   }
 
+  async function applyPanelLayout(preset: PanelSizePreset) {
+    if (panelLayoutInFlight.current) return;
+    panelLayoutInFlight.current = true;
+    setPanelLayoutBusy(true);
+    setPanelLayoutError(null);
+    try {
+      await setPanelSizePreset(preset);
+    } catch (error) {
+      setPanelLayoutError(String(error));
+    } finally {
+      panelLayoutInFlight.current = false;
+      setPanelLayoutBusy(false);
+    }
+  }
+
   function openSettingsFile() {
     void invoke("open_settings_file").catch((err) => {
       // Surface in console for triage; the user already gets OS-level
@@ -193,6 +215,7 @@ export function Settings() {
         setRecording(false);
         setHotkeyError(null);
         setLanguageError(null);
+        setPanelLayoutError(null);
       }
     }
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -337,6 +360,34 @@ export function Settings() {
         <p className="settings-hint">
           {i18n._(m.sizeHint)}
         </p>
+
+        <div className="settings-row settings-panel-layout-row">
+          <span className="settings-label">{i18n._(m.panelSizeLabel)}</span>
+          <div className="settings-button-group" role="group">
+            <button
+              type="button"
+              className="settings-compact-button"
+              disabled={panelLayoutBusy}
+              onClick={() => void applyPanelLayout("wide")}
+            >
+              {i18n._(m.panelWide)}
+            </button>
+            <button
+              type="button"
+              className="settings-compact-button"
+              disabled={panelLayoutBusy}
+              onClick={() => void applyPanelLayout("default")}
+            >
+              {i18n._(m.panelReset)}
+            </button>
+          </div>
+        </div>
+        {panelLayoutError && (
+          <p className="settings-error" role="alert">
+            {panelLayoutError}
+          </p>
+        )}
+        <p className="settings-hint">{i18n._(m.panelSizeHint)}</p>
 
         <div className="settings-row">
           <label className="settings-label" htmlFor="diff-font">
