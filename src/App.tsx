@@ -62,6 +62,7 @@ import {
   setPinnedRepos as savePinnedRepos,
   updateGetState,
   updateRefreshIndicator,
+  type ControlDelivery,
 } from "./lib/ipc";
 import {
   broadcastSettings,
@@ -79,6 +80,8 @@ import {
 } from "./lib/viewHistory";
 import { timelineSnapshotFilterKey } from "./lib/useTimelineWindow";
 import { isSearchResultCurrent } from "./lib/searchResolution";
+import { mergeAnchoredCommit } from "./lib/controlHandoff";
+import { useControlDelivery } from "./lib/useControlDelivery";
 import { shouldPresentUpdate } from "./lib/updatePolicy";
 import { useUpdateCheckNotice } from "./lib/useUpdateCheckNotice";
 import {
@@ -168,6 +171,12 @@ function windowCovering(current: WindowDays, commitTs: number): WindowDays {
  *  in practice, bounded so a long session can't grow it without limit. */
 const VIEW_HISTORY_MAX = 50;
 const EMPTY_REPO_COUNTS = new Map<number, number>();
+
+interface ControlNotice {
+  tone: "ready" | "error";
+  source: string;
+  detail: string;
+}
 
 /** Set-equality for the RepoChip's multi-selection ("all" or a path list). */
 function sameRepoSelection(
@@ -282,6 +291,13 @@ function App() {
   const [fileHistoryError, setFileHistoryError] = useState(false);
   const fileHistoryOperationRef = useRef(0);
 
+  // The exact target stays injected until the user navigates away, even when
+  // it sits outside the normal bounded single-repo snapshot.
+  const [anchoredCommit, setAnchoredCommit] =
+    useState<CommitSummary | null>(null);
+  const [controlNotice, setControlNotice] =
+    useState<ControlNotice | null>(null);
+
   // One-time disclosure: gitwink now fetches the open repo's remote on view.
   // Show it once while auto-fetch is on and unacknowledged — this is also the
   // upgrade-time heads-up for anyone who installed under the old no-network
@@ -349,6 +365,7 @@ function App() {
   const [warpAnchor, setWarpAnchor] = useState<{
     hash: string;
     nonce: number;
+    expand?: boolean;
   } | null>(null);
   const warpNonceRef = useRef(0);
   const searchControlRef = useRef<SearchControl | null>(null);
@@ -372,6 +389,8 @@ function App() {
     fileHistory: null,
     searchOpen: false,
     searchInput: "",
+    anchoredCommit: null,
+    anchorExpand: false,
   });
   viewRef.current = {
     repoPath: selectedRepoPath,
@@ -382,6 +401,8 @@ function App() {
     fileHistory,
     searchOpen,
     searchInput,
+    anchoredCommit,
+    anchorExpand: warpAnchor?.expand ?? false,
   };
   // One-shot branch selection for the NEXT repo change, consumed by the
   // branch-selection effect INSTEAD of the repo's disk-saved selection.
@@ -733,6 +754,7 @@ function App() {
       // sees `fileHistory` and fetches the file's history instead.
       unFileHistory = await onFileHistoryOpen((p) => {
         if (!mounted) return;
+        setControlNotice(null);
         // Re-clicking 🕘 for the file already on screen is a refresh, not a
         // navigation — no dead history entry. refsNonce is what the
         // file-history effect keys on (refreshNonce deliberately isn't).
@@ -749,6 +771,8 @@ function App() {
         // opening a second file's history from within file-history mode).
         pushView();
         setSearchOpen(false);
+        setWarpAnchor(null);
+        setAnchoredCommit(null);
         setSelectedRepoPath(p.repoPath);
         setFileHistoryCoverage(null);
         setFileHistoryError(false);
@@ -991,6 +1015,9 @@ function App() {
       // A filter tweak refines the current view (no new history entry) but
       // diverges from any forward history — drop it.
       setViewFwd([]);
+      setWarpAnchor(null);
+      setAnchoredCommit(null);
+      setControlNotice(null);
       // A manual choice wins over an in-flight saved-selection hydrate.
       branchHydrationEpochRef.current += 1;
       setSelectedBranches(sel);
@@ -1022,7 +1049,18 @@ function App() {
     if (v.repoPath != null && v.repoPath !== selectedRepoPathRef.current) {
       pendingBranchesRef.current = v.branches;
     }
-    setWarpAnchor(null);
+    setAnchoredCommit(v.anchoredCommit);
+    if (v.anchoredCommit) {
+      warpNonceRef.current += 1;
+      setWarpAnchor({
+        hash: v.anchoredCommit.hash,
+        nonce: warpNonceRef.current,
+        expand: v.anchorExpand,
+      });
+    } else {
+      setWarpAnchor(null);
+    }
+    setControlNotice(null);
     setSelectedRepoPath(v.repoPath);
     setSelectedRepoPaths(v.repoPaths);
     setSelectedBranches(v.branches);
@@ -1079,11 +1117,92 @@ function App() {
       setWindowDays((cur) => windowCovering(cur, c.timestamp));
       setSearchOpen(false);
       setSearchCount(null);
+      setAnchoredCommit(c);
+      setControlNotice(null);
       warpNonceRef.current += 1;
-      setWarpAnchor({ hash: c.hash, nonce: warpNonceRef.current });
+      setWarpAnchor({
+        hash: c.hash,
+        nonce: warpNonceRef.current,
+        expand: false,
+      });
     },
     [pushView],
   );
+
+  const applyControlDelivery = useCallback((delivery: ControlDelivery) => {
+    const source = delivery.source.name || "an external tool";
+    if (delivery.status === "error") {
+      setControlNotice({
+        tone: "error",
+        source,
+        detail: delivery.error.message,
+      });
+      return;
+    }
+
+    if (delivery.target.kind === "commit") {
+      const { commit, presentation } = delivery.target;
+      const current = viewRef.current;
+      const alreadyLanded =
+        current.fileHistory == null &&
+        current.anchoredCommit?.hash === commit.hash &&
+        current.repoPath != null &&
+        sameCanonicalPath(current.repoPath, commit.repoPath);
+      if (!alreadyLanded) pushView();
+      setFileHistory(null);
+      if (!sameCanonicalPath(commit.repoPath, selectedRepoPathRef.current ?? "")) {
+        pendingBranchesRef.current = "all";
+      }
+      branchHydrationEpochRef.current += 1;
+      setSelectedRepoPath(commit.repoPath);
+      setSelectedBranches("all");
+      setSelectedAuthors("all");
+      setWindowDays((current) => windowCovering(current, commit.timestamp));
+      setSearchOpen(false);
+      setSearchCount(null);
+      setAnchoredCommit(commit);
+      setControlNotice({
+        tone: "ready",
+        source,
+        detail: `commit ${commit.shortHash}`,
+      });
+      warpNonceRef.current += 1;
+      setWarpAnchor({
+        hash: commit.hash,
+        nonce: warpNonceRef.current,
+        expand: presentation.expand,
+      });
+      return;
+    }
+
+    const { repoPath, filePath } = delivery.target;
+    const current = viewRef.current;
+    const alreadyOpen =
+      current.fileHistory != null &&
+      sameCanonicalPath(current.fileHistory.repoPath, repoPath) &&
+      current.fileHistory.filePath === filePath;
+    if (alreadyOpen) {
+      setRefsNonce((nonce) => nonce + 1);
+    } else {
+      pushView();
+      setSearchOpen(false);
+      setSearchCount(null);
+      setWarpAnchor(null);
+      setAnchoredCommit(null);
+      setSelectedRepoPath(repoPath);
+      setFileHistoryCoverage(null);
+      setFileHistoryError(false);
+      setFileHistory({ repoPath, filePath });
+      setRefreshNonce((nonce) => nonce + 1);
+    }
+    setControlNotice({
+      tone: "ready",
+      source,
+      detail: `history for ${filePath}`,
+    });
+  }, [pushView]);
+
+  useControlDelivery(applyControlDelivery);
 
   // Explicit fetch: await the backend one-shot, then bump refsNonce so the
   // upstream badge re-pulls (fetch-age → fresh, ↑↓ recomputed). The result
@@ -1580,6 +1699,8 @@ function App() {
       // (and retire any warp anchor so a later revisit can't replay it).
       if (singleMode) {
         setWarpAnchor(null);
+        setAnchoredCommit(null);
+        setControlNotice(null);
         setSelectedRepoPath(null);
         e.preventDefault();
         return;
@@ -1602,6 +1723,17 @@ function App() {
     goForward,
   ]);
 
+  const singleRepoCommitsWithAnchor = useMemo(
+    () =>
+      mergeAnchoredCommit(
+        commits,
+        anchoredCommit,
+        selectedRepoPath,
+        fileHistory != null,
+      ),
+    [commits, anchoredCommit, selectedRepoPath, fileHistory],
+  );
+
   // A ref-stable re-summon deliberately skips the expensive Git walk, but a
   // rolling window still moves. Prune the already-loaded rows locally at the
   // exact next expiry second; refs cannot add rows while their fingerprint is
@@ -1611,13 +1743,17 @@ function App() {
       !singleMode ||
       fileHistory != null ||
       windowDays === "all" ||
-      commits == null
+      singleRepoCommitsWithAnchor == null
     ) {
       return;
     }
     const now = Math.floor(Date.now() / 1000);
     setSingleRepoWindowNow(now);
-    const nextExpiry = nextRollingWindowExpiry(commits, windowDays, now);
+    const nextExpiry = nextRollingWindowExpiry(
+      singleRepoCommitsWithAnchor,
+      windowDays,
+      now,
+    );
     if (nextExpiry == null) return;
     const delay = Math.max(
       100,
@@ -1632,15 +1768,26 @@ function App() {
     singleMode,
     fileHistory,
     windowDays,
-    commits,
+    singleRepoCommitsWithAnchor,
     refreshNonce,
     singleRepoWindowNow,
   ]);
 
   const timeScopedSingleRepoCommits = useMemo(() => {
-    if (!commits || fileHistory != null) return commits;
-    return filterRollingWindow(commits, windowDays, singleRepoWindowNow);
-  }, [commits, fileHistory, windowDays, singleRepoWindowNow]);
+    if (!singleRepoCommitsWithAnchor || fileHistory != null) {
+      return singleRepoCommitsWithAnchor;
+    }
+    return filterRollingWindow(
+      singleRepoCommitsWithAnchor,
+      windowDays,
+      singleRepoWindowNow,
+    );
+  }, [
+    singleRepoCommitsWithAnchor,
+    fileHistory,
+    windowDays,
+    singleRepoWindowNow,
+  ]);
 
   // Single-repo mode tallies authors from its (bounded) visible commits;
   // all-repos mode uses the backend facet (`authorsAll`).
@@ -1720,6 +1867,9 @@ function App() {
   const widenSearchScope = useCallback(() => {
     pushView();
     setFileHistory(null);
+    setWarpAnchor(null);
+    setAnchoredCommit(null);
+    setControlNotice(null);
     setSelectedRepoPath(null);
     setSelectedRepoPaths("all");
   }, [pushView]);
@@ -1728,10 +1878,16 @@ function App() {
   // entry, but they diverge from any forward history, so drop it.
   const changeWindowDays = useCallback((v: WindowDays) => {
     setViewFwd([]);
+    setWarpAnchor(null);
+    setAnchoredCommit(null);
+    setControlNotice(null);
     setWindowDays(v);
   }, []);
   const changeAuthors = useCallback((v: string[] | "all") => {
     setViewFwd([]);
+    setWarpAnchor(null);
+    setAnchoredCommit(null);
+    setControlNotice(null);
     setSelectedAuthors(v);
   }, []);
   // Picking a repo IS a navigation — record the view we're leaving (and leave
@@ -1751,6 +1907,8 @@ function App() {
       pushView();
       setFileHistory(null);
       setWarpAnchor(null);
+      setAnchoredCommit(null);
+      setControlNotice(null);
       setSelectedRepoPath(p);
     },
     [pushView],
@@ -1766,6 +1924,8 @@ function App() {
       pushView();
       setFileHistory(null);
       setWarpAnchor(null);
+      setAnchoredCommit(null);
+      setControlNotice(null);
       setSelectedRepoPaths(ps);
     },
     [pushView],
@@ -1782,6 +1942,8 @@ function App() {
     pushView();
     setFileHistory(null);
     setWarpAnchor(null);
+    setAnchoredCommit(null);
+    setControlNotice(null);
     setSelectedRepoPath(null);
     setSelectedRepoPaths("all");
   }, [pushView]);
@@ -1809,6 +1971,8 @@ function App() {
     const current = viewRef.current;
     if (current.repoPath === path) {
       setWarpAnchor(null);
+      setAnchoredCommit(null);
+      setControlNotice(null);
       setSelectedRepoPath(null);
     }
     if (current.fileHistory?.repoPath === path) {
@@ -2089,6 +2253,34 @@ function App() {
           </span>
         </div>
       )}
+      {controlNotice && (
+        <div
+          className={`control-handoff ${controlNotice.tone}`}
+          role={controlNotice.tone === "error" ? "alert" : "status"}
+          aria-live={controlNotice.tone === "error" ? "assertive" : "polite"}
+        >
+          <span
+            className="control-handoff-text"
+            title={`${controlNotice.source}: ${controlNotice.detail}`}
+          >
+            <strong>
+              {controlNotice.tone === "ready"
+                ? `Opened by ${controlNotice.source}`
+                : `Request from ${controlNotice.source} failed`}
+            </strong>
+            <span aria-hidden="true"> · </span>
+            {controlNotice.detail}
+          </span>
+          <button
+            type="button"
+            className="control-handoff-dismiss"
+            aria-label="Dismiss external request status"
+            onClick={() => setControlNotice(null)}
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <section className="panel-body">
         {!firstRunTipSeen && !searching && !fileHistory && allRepos.length > 0 && (
           <div className="firstrun-tip">
@@ -2329,7 +2521,7 @@ function App() {
               <Timeline
                 key={`single:${selectedRepoPath}`}
                 commits={filteredCommits}
-                allCommits={commits ?? undefined}
+                allCommits={singleRepoCommitsWithAnchor ?? undefined}
                 branches={branches}
                 resetKey={`${fileHistory ? `file:${fileHistory.filePath}` : ""}${JSON.stringify(selectedBranches)}|${windowDays}|${JSON.stringify(selectedAuthors)}`}
                 anchor={warpAnchor}

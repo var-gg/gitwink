@@ -129,6 +129,10 @@ commit 없음. push 없음. merge 없음. git 수술이 필요하면
 - Copy as AI context — `c` 키 또는 버튼 — 커밋, 파일 리스트,
   (충분히 작으면) 전체 diff를 마크다운 블록으로 출력. Claude /
   Codex / Cursor에 바로 붙여넣기.
+- 에이전트 제어 표면 — `gitwinkctl capabilities --json`, 정확한 커밋
+  착지, 단일 파일 히스토리 착지를 제공. 읽기 전용이며 MCP나 특정
+  에이전트 스킬을 강제하지 않는다. 자세한 계약은
+  [Agent control](docs/agent-control.md) 참고.
 
 ## Diff 윈도우
 

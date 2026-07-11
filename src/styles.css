@@ -421,6 +421,71 @@ body,
   }
 }
 
+/* ----- explicit agent / CLI handoff status ----- */
+
+.control-handoff {
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--ui-scale, 1));
+  min-height: calc(28px * var(--ui-scale, 1));
+  padding: calc(5px * var(--ui-scale, 1)) calc(10px * var(--ui-scale, 1));
+  border-bottom: 1px solid rgba(84, 76, 215, 0.18);
+  background: rgba(94, 83, 230, 0.08);
+  color: rgba(47, 42, 135, 0.92);
+  font-size: calc(10.5px * var(--ui-scale, 1));
+  line-height: 1.35;
+}
+
+.control-handoff.error {
+  border-bottom-color: rgba(190, 55, 45, 0.20);
+  background: rgba(210, 65, 50, 0.08);
+  color: rgba(145, 35, 28, 0.94);
+}
+
+.control-handoff-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control-handoff-dismiss {
+  flex: none;
+  width: calc(20px * var(--ui-scale, 1));
+  height: calc(20px * var(--ui-scale, 1));
+  border: none;
+  border-radius: 5px;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.62;
+}
+
+.control-handoff-dismiss:hover {
+  background: rgba(84, 76, 215, 0.10);
+  opacity: 1;
+}
+
+@media (prefers-color-scheme: dark) {
+  .control-handoff {
+    border-bottom-color: rgba(155, 148, 255, 0.18);
+    background: rgba(120, 108, 255, 0.10);
+    color: rgba(210, 207, 255, 0.94);
+  }
+
+  .control-handoff.error {
+    border-bottom-color: rgba(255, 125, 110, 0.20);
+    background: rgba(235, 75, 60, 0.10);
+    color: rgba(255, 178, 166, 0.96);
+  }
+
+  .control-handoff-dismiss:hover {
+    background: rgba(255, 255, 255, 0.10);
+  }
+}
+
 /* Contextual facet failures are uncommon, but must be visible: silently
    replacing the active scope with zero badges makes a correct timeline look
    internally inconsistent. Keep this one-line and directly recoverable. */

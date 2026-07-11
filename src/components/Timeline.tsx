@@ -28,6 +28,10 @@ import {
   buildCommitMenuItems,
   copyCommitAiContext,
 } from "../lib/commitClipboard";
+import {
+  shouldApplyAnchoredRow,
+  shouldRestoreAnchorExpansion,
+} from "../lib/controlHandoff";
 import { computeLanes, type LaneEdge } from "../lib/lanes";
 import { openDiff, prefetchCommit } from "../lib/ipc";
 import { timeAgo } from "../lib/relativeTime";
@@ -65,7 +69,7 @@ interface Props {
   /** Warp landing (search → jump). When `nonce` changes, the row for
    *  `hash` is selected, centred in the viewport and pulsed — retried as
    *  `commits` refreshes until the hash is actually loaded. */
-  anchor?: { hash: string; nonce: number } | null;
+  anchor?: { hash: string; nonce: number; expand?: boolean } | null;
   /** File-history "thread" mode: the rows are a sparse subset of history
    *  (the commits that touched one file), so their real parents aren't in
    *  the list and the DAG would shatter into disconnected lanes. Instead we
@@ -280,9 +284,33 @@ export function Timeline({
   const [pulseHash, setPulseHash] = useState<string | null>(null);
   const [anchorMiss, setAnchorMiss] = useState<string | null>(null);
   const anchorAppliedRef = useRef(0);
+  const anchorAppliedIndexRef = useRef(-1);
+  const anchorTrackingNonceRef = useRef(0);
+  const anchorResetKeyRef = useRef<string | undefined>(undefined);
+  const anchorExpansionHashRef = useRef<string | null>(null);
+  const anchorExpansionHeightRef = useRef(-1);
+  const pulseTimerRef = useRef<number | null>(null);
+  const retireAnchorTracking = useCallback(() => {
+    anchorTrackingNonceRef.current = 0;
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (pulseTimerRef.current != null) {
+        window.clearTimeout(pulseTimerRef.current);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
-    if (!anchor || anchor.nonce === anchorAppliedRef.current) {
+    if (!anchor) {
       setAnchorMiss(null);
+      anchorAppliedIndexRef.current = -1;
+      anchorTrackingNonceRef.current = 0;
+      anchorResetKeyRef.current = undefined;
+      anchorExpansionHashRef.current = null;
+      anchorExpansionHeightRef.current = -1;
       return;
     }
     const idx = commits.findIndex((c) => c.hash === anchor.hash);
@@ -293,9 +321,60 @@ export function Timeline({
       if (commits.length > 0) setAnchorMiss(anchor.hash.slice(0, 7));
       return;
     }
+    const rowNeedsLanding = shouldApplyAnchoredRow(
+        anchor.nonce,
+        anchorAppliedRef.current,
+        anchorTrackingNonceRef.current,
+        idx,
+        anchorAppliedIndexRef.current,
+      );
+    const expansionLayoutChanged =
+      anchorTrackingNonceRef.current === anchor.nonce &&
+      anchor.expand === true &&
+      expandedHash === anchor.hash &&
+      (anchorExpansionHashRef.current !== expandedHash ||
+        anchorExpansionHeightRef.current !== expansionH);
+    const viewResetWhileTracking =
+      anchorTrackingNonceRef.current === anchor.nonce &&
+      anchorResetKeyRef.current !== resetKey;
+    const expansionPresentationDrift = shouldRestoreAnchorExpansion(
+      anchor.nonce,
+      anchorTrackingNonceRef.current,
+      anchor.hash,
+      anchor.expand === true,
+      expandedHash,
+    );
+    if (
+      !rowNeedsLanding &&
+      !expansionLayoutChanged &&
+      !viewResetWhileTracking &&
+      !expansionPresentationDrift
+    ) {
+      setAnchorMiss(null);
+      return;
+    }
+    const isNewLanding = anchor.nonce !== anchorAppliedRef.current;
+    const rowMoved = idx !== anchorAppliedIndexRef.current;
     setAnchorMiss(null);
     anchorAppliedRef.current = anchor.nonce;
+    anchorAppliedIndexRef.current = idx;
+    anchorTrackingNonceRef.current = anchor.nonce;
+    anchorResetKeyRef.current = resetKey;
+    if (expandedHash === anchor.hash) {
+      anchorExpansionHashRef.current = expandedHash;
+      anchorExpansionHeightRef.current = expansionH;
+    } else {
+      anchorExpansionHashRef.current = null;
+      anchorExpansionHeightRef.current = -1;
+    }
     setSelected(idx);
+    if (
+      isNewLanding ||
+      viewResetWhileTracking ||
+      expansionPresentationDrift
+    ) {
+      setExpandedHash(anchor.expand ? anchor.hash : null);
+    }
     const el = scrollRef.current;
     if (el) {
       const top =
@@ -304,10 +383,17 @@ export function Timeline({
       el.scrollTop = Math.max(0, top);
       setScrollTop(el.scrollTop);
     }
-    setPulseHash(anchor.hash);
-    const timer = window.setTimeout(() => setPulseHash(null), 2600);
-    return () => window.clearTimeout(timer);
-  }, [anchor, commits, ROW_H]);
+    if (isNewLanding || rowMoved || viewResetWhileTracking) {
+      setPulseHash(anchor.hash);
+      if (pulseTimerRef.current != null) {
+        window.clearTimeout(pulseTimerRef.current);
+      }
+      pulseTimerRef.current = window.setTimeout(() => {
+        setPulseHash(null);
+        pulseTimerRef.current = null;
+      }, 2600);
+    }
+  }, [anchor, commits, expandedHash, expansionH, resetKey, ROW_H]);
 
   // Keep `selected` in range as the commit list changes.
   useEffect(() => {
@@ -365,8 +451,9 @@ export function Timeline({
   }, []);
 
   const toggleExpand = useCallback((hash: string) => {
+    retireAnchorTracking();
     setExpandedHash((cur) => (cur === hash ? null : hash));
-  }, []);
+  }, [retireAnchorTracking]);
 
   // Hand App's Esc cascade the collapse control (see ExpansionControl in
   // TimelineWindowed). Reads through the live ref — never re-registers.
@@ -375,6 +462,7 @@ export function Timeline({
     expansionControlRef.current = {
       collapse: () => {
         if (expandedHashRef.current == null) return false;
+        retireAnchorTracking();
         setExpandedHash(null);
         return true;
       },
@@ -382,7 +470,7 @@ export function Timeline({
     return () => {
       expansionControlRef.current = null;
     };
-  }, [expansionControlRef]);
+  }, [expansionControlRef, retireAnchorTracking]);
 
   // `ref` for the open expansion's <li>: measure its height (it grows as
   // ChangedFiles loads in) and keep `expansionH` current. Called with null
@@ -425,9 +513,11 @@ export function Timeline({
         return;
       }
       if (e.key === "j" || e.key === "ArrowDown") {
+        retireAnchorTracking();
         setSelected((s) => Math.min(s + 1, Math.max(0, total - 1)));
         e.preventDefault();
       } else if (e.key === "k" || e.key === "ArrowUp") {
+        retireAnchorTracking();
         setSelected((s) => Math.max(s - 1, 0));
         e.preventDefault();
       } else if (e.key === "Enter") {
@@ -455,7 +545,14 @@ export function Timeline({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [commits, selected, total, toggleExpand, copyAiContext]);
+  }, [
+    commits,
+    selected,
+    total,
+    toggleExpand,
+    copyAiContext,
+    retireAnchorTracking,
+  ]);
 
   // Bring the selected row into view. Uses the live row geometry so a
   // selection below the open expansion still lands right.
@@ -502,6 +599,7 @@ export function Timeline({
   function onTimelineContextMenu(e: React.MouseEvent) {
     const target = e.target as HTMLElement;
     if (target.closest('input, textarea, [contenteditable="true"]')) return;
+    retireAnchorTracking();
     e.preventDefault();
 
     // Direct hit on a timeline row wins; otherwise inherit from the
@@ -531,6 +629,8 @@ export function Timeline({
       className="timeline-scroll"
       ref={scrollRef}
       onScroll={onScroll}
+      onWheel={retireAnchorTracking}
+      onPointerDown={retireAnchorTracking}
       onContextMenu={onTimelineContextMenu}
     >
       {contextMenu && (
@@ -605,6 +705,7 @@ export function Timeline({
                     (pulseHash === c.hash ? " warp-pulse" : "")
                   }
                   onClick={() => {
+                    retireAnchorTracking();
                     setSelected(idx);
                     toggleExpand(c.hash);
                   }}

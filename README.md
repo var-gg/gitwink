@@ -134,6 +134,9 @@ agent commits  →  tray click  →  inline expand  →  "Copy as AI context"
 - Copy as AI context — `c` key or button — produces a markdown block
   with the commit, file list, and (if small enough) full diff, ready
   to paste into Claude / Codex / Cursor.
+- Agent control surface — `gitwinkctl capabilities --json`, exact commit
+  landing, and single-file history landing. It is read-only and works without
+  MCP or a vendor-specific skill. See [Agent control](docs/agent-control.md).
 
 ## Diff window
 

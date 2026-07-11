@@ -31,6 +31,58 @@ import type {
   WindowDirection,
 } from "../types";
 
+export interface ControlSource {
+  kind: string;
+  name: string;
+}
+
+export interface ControlPresentation {
+  focus: boolean;
+  expand: boolean;
+}
+
+export type ControlDelivery =
+  | {
+      status: "ready";
+      requestId: string;
+      source: ControlSource;
+      target:
+        | {
+            kind: "commit";
+            repoPath: string;
+            commit: CommitSummary;
+            presentation: ControlPresentation;
+          }
+        | {
+            kind: "fileHistory";
+            repoPath: string;
+            filePath: string;
+            presentation: ControlPresentation;
+          };
+    }
+  | {
+      status: "error";
+      requestId: string;
+      source: ControlSource;
+      error: {
+        code: string;
+        message: string;
+      };
+    };
+
+/** Drain durable native control handoffs. The event below is only a wake
+ * signal: keeping the payload backend-side closes both cold-start and
+ * listener-registration races. */
+export async function takePendingControlDeliveries(): Promise<ControlDelivery[]> {
+  return invoke<ControlDelivery[]>("take_pending_control_deliveries");
+}
+
+export async function onControlPending(
+  cb: () => void,
+): Promise<UnlistenFn> {
+  return listen("control://pending", () => cb());
+}
+
 export async function ping(): Promise<string> {
   return invoke<string>("ping");
 }

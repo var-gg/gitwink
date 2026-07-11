@@ -133,6 +133,10 @@ git ツールは *何であるべきか* — はエッセイ
 - Copy as AI context — `c` キーまたはボタン — コミット、ファイル
   一覧、（十分小さければ）diff 全体を Markdown ブロックとして出力。
   Claude / Codex / Cursor にそのまま貼り付け可能。
+- エージェント制御サーフェス — `gitwinkctl capabilities --json`、正確な
+  コミットへの着地、単一ファイル履歴への着地を提供。読み取り専用で、
+  MCP や特定ベンダーのスキルを必須にしない。詳細は
+  [Agent control](docs/agent-control.md) を参照。
 
 ## Diff ウィンドウ
 

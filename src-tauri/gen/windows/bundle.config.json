@@ -12,7 +12,12 @@
   "extensions": {
     "shareTarget": false,
     "fileAssociations": [],
-    "protocolHandlers": []
+    "protocolHandlers": [],
+    "appExecutionAliases": [
+      {
+        "alias": "gitwink"
+      }
+    ]
   },
   "signing": {
     "pfx": null,

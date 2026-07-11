@@ -7,6 +7,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 mod cache;
 mod commands;
+pub mod control;
 mod discovery;
 mod discovery_orchestrator;
 mod discovery_sources;
@@ -39,8 +40,13 @@ pub fn run() {
         // LOOKING for the window — summon the existing panel instead of
         // spawning a duplicate instance (second tray icon, silently-dead
         // global hotkey, doubled watchers/fetches, settings.json races).
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            window::show_panel(app);
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            // A normal second launch still means "summon gitwink". A control
+            // launch carries a typed show request; its resolver owns focus and
+            // queues the exact target for the persistent panel webview.
+            if !control::accept_app_argv(app, args, cwd) {
+                window::show_panel(app);
+            }
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(
@@ -65,6 +71,7 @@ pub fn run() {
             }
 
             app.manage(commands::PendingDiff::default());
+            app.manage(control::PendingControl::default());
             app.manage(commands::PanelSticky::default());
             app.manage(commands::PanelPinned::default());
             // Seed the in-memory settings cache from disk BEFORE any
@@ -202,6 +209,19 @@ pub fn run() {
                     .store(saved_pinned, std::sync::atomic::Ordering::SeqCst);
             }
             window::apply_panel_pinned(app.handle(), saved_pinned);
+
+            // First-process control activation. Single-instance only invokes
+            // its callback for later processes, so cold launches must feed
+            // their own argv through the same ingress after panel geometry and
+            // pin state are restored (avoids a base-size/always-on-top flash).
+            let initial_args = std::env::args_os()
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+            let initial_cwd = std::env::current_dir()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
+            let _ = control::accept_app_argv(app.handle(), initial_args, initial_cwd);
 
             // Resolve update ownership once: standalone/Scoop use GitHub for
             // discovery, while packaged builds stay StoreContext-backed.
@@ -426,6 +446,7 @@ pub fn run() {
             commands::open_file_history,
             commands::open_diff,
             commands::take_pending_diff_open,
+            control::ingress::take_pending_control_deliveries,
             commands::dismiss_panel,
             commands::set_panel_sticky,
             commands::get_scan_state,

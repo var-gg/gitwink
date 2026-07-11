@@ -1,5 +1,6 @@
 [package]
 name = "gitwink"
+default-run = "gitwink"
 version = "0.11.0"
 description = "Tray-resident, read-only git glance for the AI-agent era."
 authors = ["var-gg"]

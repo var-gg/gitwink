@@ -72,6 +72,57 @@ pub struct CommitSummary {
     pub remote_tip_extra_count: usize,
 }
 
+/// The one materializer for commit rows that cross the Rust → frontend
+/// boundary. Walkers own reachability/coverage; this helper owns bounded text,
+/// author/parent fields and decorations so direct intent resolution cannot
+/// drift from timeline or file-history rows.
+fn materialize_commit_summary(
+    repo_path: &str,
+    repo_name: &str,
+    oid: Oid,
+    commit: &git2::Commit<'_>,
+    branch_label: Option<String>,
+    is_tagged: bool,
+    remote_tip_label: Option<String>,
+    remote_tip_extra_count: usize,
+) -> CommitSummary {
+    let hash = oid.to_string();
+    let short_hash: String = hash.chars().take(7).collect();
+    let summary = bounded_text(
+        commit.summary().unwrap_or(""),
+        MAX_DIRECT_SUMMARY_BYTES,
+        "…",
+    );
+    let author = commit.author();
+    let parents = commit
+        .parent_ids()
+        .map(|parent| parent.to_string())
+        .collect();
+    let message = bounded_text(
+        commit.message().unwrap_or(""),
+        MAX_DIRECT_MESSAGE_BYTES,
+        "\n… [message truncated]",
+    );
+
+    CommitSummary {
+        repo_path: repo_path.to_string(),
+        repo_name: repo_name.to_string(),
+        hash,
+        short_hash,
+        summary,
+        author: author.name().unwrap_or("").to_string(),
+        email: author.email().unwrap_or("").to_string(),
+        timestamp: commit.time().seconds(),
+        branch_label,
+        is_merge: commit.parent_count() > 1,
+        is_tagged,
+        parents,
+        message,
+        remote_tip_label,
+        remote_tip_extra_count,
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangedFile {
@@ -1449,50 +1500,83 @@ pub fn repo_commits(
 
     let mut out: Vec<CommitSummary> = Vec::with_capacity(raw.len());
     for (oid, commit) in raw {
-        let hash = oid.to_string();
-        let short_hash: String = hash.chars().take(7).collect();
-        let summary = bounded_text(
-            commit.summary().unwrap_or(""),
-            MAX_DIRECT_SUMMARY_BYTES,
-            "…",
-        );
-        let author = commit.author();
-        let parents: Vec<String> = commit.parent_ids().map(|p| p.to_string()).collect();
-        let message = bounded_text(
-            commit.message().unwrap_or(""),
-            MAX_DIRECT_MESSAGE_BYTES,
-            "\n… [message truncated]",
-        );
-        let ts = commit.time().seconds();
         let branch_label = labels.get(&oid).cloned().flatten();
         let (remote_tip_label, remote_tip_extra_count) = match remote_badges.get(&oid) {
             Some(b) => (Some(b.primary.clone()), b.extra_count),
             None => (None, 0),
         };
-
-        out.push(CommitSummary {
-            repo_path: repo_path_str.clone(),
-            repo_name: repo_name.clone(),
-            hash,
-            short_hash,
-            summary,
-            author: author.name().unwrap_or("").to_string(),
-            email: author.email().unwrap_or("").to_string(),
-            timestamp: ts,
+        out.push(materialize_commit_summary(
+            &repo_path_str,
+            &repo_name,
+            oid,
+            &commit,
             branch_label,
-            is_merge: commit.parent_count() > 1,
-            is_tagged: tagged_oids.contains(&oid),
-            parents,
-            message,
+            tagged_oids.contains(&oid),
             remote_tip_label,
             remote_tip_extra_count,
-        });
+        ));
     }
 
     Ok(RepoCommitsScan {
         rows: out,
         incomplete: had_errors,
     })
+}
+
+/// Resolve one revision exactly, independent of every timeline row/time cap.
+/// Accepts full or unique abbreviated OIDs, refs and Git revision expressions
+/// understood by libgit2, then materializes the same bounded/decorated row the
+/// normal walkers return. This is the foundation for external control intents:
+/// an old commit must still open even when it is outside the latest-N view.
+pub fn resolve_commit_summary(repo_path: &Path, revision: &str) -> Result<CommitSummary> {
+    let repo = Repository::open(repo_path)
+        .with_context(|| format!("open repo {}", repo_path.display()))?;
+    let object = repo
+        .revparse_single(revision)
+        .with_context(|| format!("resolve revision {revision:?}"))?;
+    let commit = object
+        .peel_to_commit()
+        .with_context(|| format!("revision {revision:?} is not a commit"))?;
+    let oid = commit.id();
+
+    let repo_path_str = repo_path.to_string_lossy().into_owned();
+    let repo_name = repo_path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let detached = repo.head_detached().unwrap_or(true);
+    let head_branch_name = if detached {
+        None
+    } else {
+        repo.head()
+            .ok()
+            .and_then(|head| head.shorthand().map(str::to_string))
+    };
+    let targets = HashSet::from([oid]);
+    let labels = compute_branch_labels(
+        &repo,
+        head_branch_name.as_deref(),
+        &targets,
+        commit.time().seconds(),
+    );
+    let (tagged_oids, _) = collect_tagged_oids_with_status(&repo);
+    let (remote_tips, _) = collect_remote_tips_with_status(&repo);
+    let remote_badges = build_remote_badge_map(&remote_tips);
+    let (remote_tip_label, remote_tip_extra_count) = match remote_badges.get(&oid) {
+        Some(badge) => (Some(badge.primary.clone()), badge.extra_count),
+        None => (None, 0),
+    };
+
+    Ok(materialize_commit_summary(
+        &repo_path_str,
+        &repo_name,
+        oid,
+        &commit,
+        labels.get(&oid).cloned().flatten(),
+        tagged_oids.contains(&oid),
+        remote_tip_label,
+        remote_tip_extra_count,
+    ))
 }
 
 /// Caps for `file_history`: stop at this many MATCHES (a file rarely changes
@@ -1849,41 +1933,19 @@ pub fn file_history_cancellable(
         if cancellation.is_cancelled() {
             return Ok(None);
         }
-        let hash = oid.to_string();
-        let short_hash: String = hash.chars().take(7).collect();
-        let summary = bounded_text(
-            commit.summary().unwrap_or(""),
-            MAX_DIRECT_SUMMARY_BYTES,
-            "…",
-        );
-        let author = commit.author();
-        let parents: Vec<String> = commit.parent_ids().map(|p| p.to_string()).collect();
-        let message = bounded_text(
-            commit.message().unwrap_or(""),
-            MAX_DIRECT_MESSAGE_BYTES,
-            "\n… [message truncated]",
-        );
-        let ts = commit.time().seconds();
         let branch_label = labels.get(&oid).cloned().flatten();
-        out.push(CommitSummary {
-            repo_path: repo_path_str.clone(),
-            repo_name: repo_name.clone(),
-            hash,
-            short_hash,
-            summary,
-            author: author.name().unwrap_or("").to_string(),
-            email: author.email().unwrap_or("").to_string(),
-            timestamp: ts,
+        out.push(materialize_commit_summary(
+            &repo_path_str,
+            &repo_name,
+            oid,
+            &commit,
             branch_label,
-            is_merge: commit.parent_count() > 1,
-            is_tagged: tagged_oids.contains(&oid),
-            parents,
-            message,
+            tagged_oids.contains(&oid),
             // Remote-tip badges are about "is this the tip of origin/X" — not
             // meaningful for a file-history list, so we skip the extra work.
-            remote_tip_label: None,
-            remote_tip_extra_count: 0,
-        });
+            None,
+            0,
+        ));
     }
     // The final root proof comes after branch labels and row materialization,
     // not merely after revwalk EOF. This closes the window where refs moved
@@ -2096,44 +2158,21 @@ pub fn recent_commits_scan(
 
     let mut out: Vec<CommitSummary> = Vec::with_capacity(raw.len());
     for (oid, commit) in raw {
-        let hash = oid.to_string();
-        let short_hash: String = hash.chars().take(7).collect();
-        let summary = bounded_text(
-            commit.summary().unwrap_or(""),
-            MAX_DIRECT_SUMMARY_BYTES,
-            "…",
-        );
-        let author = commit.author();
-        let parents: Vec<String> = commit.parent_ids().map(|p| p.to_string()).collect();
-        let message = bounded_text(
-            commit.message().unwrap_or(""),
-            MAX_DIRECT_MESSAGE_BYTES,
-            "\n… [message truncated]",
-        );
-        let ts = commit.time().seconds();
         let branch_label = labels.get(&oid).cloned().flatten();
         let (remote_tip_label, remote_tip_extra_count) = match remote_badges.get(&oid) {
             Some(b) => (Some(b.primary.clone()), b.extra_count),
             None => (None, 0),
         };
-
-        out.push(CommitSummary {
-            repo_path: repo_path_str.clone(),
-            repo_name: repo_name.clone(),
-            hash,
-            short_hash,
-            summary,
-            author: author.name().unwrap_or("").to_string(),
-            email: author.email().unwrap_or("").to_string(),
-            timestamp: ts,
+        out.push(materialize_commit_summary(
+            &repo_path_str,
+            &repo_name,
+            oid,
+            &commit,
             branch_label,
-            is_merge: commit.parent_count() > 1,
-            is_tagged: tagged_oids.contains(&oid),
-            parents,
-            message,
+            tagged_oids.contains(&oid),
             remote_tip_label,
             remote_tip_extra_count,
-        });
+        ));
     }
 
     Ok(RecentCommitsScan {
@@ -2246,6 +2285,24 @@ mod tests {
         let tree = repo.find_tree(builder.write().unwrap()).unwrap();
         repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &[parent])
             .unwrap()
+    }
+
+    #[test]
+    fn exact_commit_resolution_is_not_coupled_to_timeline_limits() {
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let first = commit_file(&repo, "a.txt", "v1", "first", 1_000, &[]);
+        let first_commit = repo.find_commit(first).unwrap();
+        let _latest = commit_file(&repo, "a.txt", "v2", "latest", 2_000, &[&first_commit]);
+
+        let direct = resolve_commit_summary(dir.path(), &first.to_string()).unwrap();
+        assert_eq!(direct.hash, first.to_string());
+        assert_eq!(direct.summary, "first");
+        assert_eq!(direct.repo_path, dir.path().to_string_lossy());
+
+        let by_ref = resolve_commit_summary(dir.path(), "HEAD").unwrap();
+        assert_eq!(by_ref.summary, "latest");
+        assert!(resolve_commit_summary(dir.path(), "does-not-exist").is_err());
     }
 
     #[test]

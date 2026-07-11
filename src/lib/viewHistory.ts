@@ -1,4 +1,4 @@
-import type { WindowDays } from "../types";
+import type { CommitSummary, WindowDays } from "../types";
 
 /** A complete snapshot of the panel state that decides what the timeline
  * shows. Kept outside App so repo lifecycle changes can prune history with a
@@ -12,6 +12,10 @@ export interface ViewSnapshot {
   fileHistory: { repoPath: string; filePath: string } | null;
   searchOpen: boolean;
   searchInput: string;
+  /** Exact row carried by a search/control warp when it may sit outside the
+   * normal bounded repo snapshot. Back/Forward must preserve that landing. */
+  anchoredCommit: CommitSummary | null;
+  anchorExpand: boolean;
 }
 
 /** Remove references to an excluded canonical repo path without introducing
@@ -24,7 +28,8 @@ export function pruneRepoFromViewHistory(
     .filter(
       (view) =>
         view.repoPath !== canonicalPath &&
-        view.fileHistory?.repoPath !== canonicalPath,
+        view.fileHistory?.repoPath !== canonicalPath &&
+        view.anchoredCommit?.repoPath !== canonicalPath,
     )
     .map((view) => {
       if (!Array.isArray(view.repoPaths)) return view;
