@@ -8,6 +8,8 @@ import { Settings } from "./components/Settings";
 import { LocaleBoundary } from "./i18n/LocaleBoundary";
 import { activateLocale } from "./i18n/runtime";
 import { getCurrentSettings, initSettings } from "./lib/settings";
+import "./styles.css";
+import "./styles/platform-controls.css";
 
 const label = getCurrentWindow().label;
 const Root =

@@ -108,7 +108,6 @@ import type {
   UpstreamStatus,
   WindowDays,
 } from "./types";
-import "./styles.css";
 
 function visibleUpdateModalState(
   state: UpdateStatePayload,

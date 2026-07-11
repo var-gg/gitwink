@@ -1,0 +1,40 @@
+/* Native form-control theming is an application/platform concern, not a
+ * panel-component concern. In particular, WebView2 renders the expanded
+ * <select> popup outside the normal CSS box. Advertise one definite scheme
+ * and also paint option surfaces so Windows cannot combine light popup
+ * backgrounds with inherited dark-mode text. */
+:root {
+  color-scheme: light;
+  --native-control-surface: #ffffff;
+  --native-control-text: #1a1a1a;
+}
+
+select.settings-input {
+  color-scheme: inherit;
+  background-color: var(--native-control-surface);
+  color: var(--native-control-text);
+}
+
+select.settings-input option,
+select.settings-input optgroup,
+datalist option {
+  background-color: var(--native-control-surface);
+  color: var(--native-control-text);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --native-control-surface: #1a1a1a;
+    --native-control-text: #ededed;
+  }
+}
+
+/* Let Windows High Contrast own the final palette while keeping the same
+ * readable foreground/background contract. */
+@media (forced-colors: active) {
+  :root {
+    --native-control-surface: Canvas;
+    --native-control-text: CanvasText;
+  }
+}
