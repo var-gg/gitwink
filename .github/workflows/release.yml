@@ -49,37 +49,6 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
-      # Tauri's virtual universal target combines the primary app binary, but
-      # additional Cargo binaries must already exist at the universal target
-      # path before bundling. Build both real architectures and merge the
-      # read-only control CLI explicitly so every macOS app ships a genuine
-      # universal gitwinkctl instead of omitting it or copying one architecture.
-      - name: Build universal gitwinkctl companion binary
-        if: matrix.os == 'macos-latest'
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cargo build \
-            --manifest-path src-tauri/Cargo.toml \
-            --release \
-            --bin gitwinkctl \
-            --target aarch64-apple-darwin
-          cargo build \
-            --manifest-path src-tauri/Cargo.toml \
-            --release \
-            --bin gitwinkctl \
-            --target x86_64-apple-darwin
-
-          output_dir="src-tauri/target/universal-apple-darwin/release"
-          mkdir -p "$output_dir"
-          lipo -create \
-            src-tauri/target/aarch64-apple-darwin/release/gitwinkctl \
-            src-tauri/target/x86_64-apple-darwin/release/gitwinkctl \
-            -output "$output_dir/gitwinkctl"
-          chmod +x "$output_dir/gitwinkctl"
-          lipo -verify_arch arm64 x86_64 "$output_dir/gitwinkctl"
-
       # Pull the CHANGELOG.md section for this tag. It becomes both the
       # GitHub Release body and the `notes` field of `latest.json` — i.e.
       # the changelog the in-app updater modal shows.
