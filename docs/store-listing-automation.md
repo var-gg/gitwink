@@ -85,6 +85,11 @@ POST, PUT, and DELETE remain single-attempt operations: automatically repeating
 a mutation after a lost response could create a second draft or hide an
 indeterminate commit.
 
+Every submission API request declares the application/json media type, including
+bodyless create and commit POSTs. Those endpoints still receive no synthetic
+request body; the explicit media type satisfies the Store API contract without
+changing the documented mutation payload.
+
 Do not edit an API-created draft in Partner Center while the workflow is
 running. Conversely, the workflow never modifies or deletes a draft that
 already existed when it started. The workflow concurrency key also prevents two
@@ -113,4 +118,5 @@ fallback if the API path fails.
 
 - [Manage app submissions](https://learn.microsoft.com/en-us/windows/uwp/monetize/manage-app-submissions)
 - [Create an app submission](https://learn.microsoft.com/en-us/windows/uwp/monetize/create-an-app-submission)
+- [Microsoft Store submission API](https://learn.microsoft.com/en-us/windows/apps/publish/store-submission-api)
 - [MSIX screenshot requirements](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/screenshots-and-images)

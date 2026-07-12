@@ -201,10 +201,12 @@ function Invoke-DevCenterJson(
         SkipHttpErrorCheck      = $true
         StatusCodeVariable      = 'statusCode'
         ResponseHeadersVariable = 'responseHeaders'
+        # Partner Center requires JSON media type even on its bodyless create
+        # and commit POSTs. Keep the endpoint's documented empty body intact.
+        ContentType             = 'application/json'
     }
     if ($PSBoundParameters.ContainsKey('Body')) {
         $parameters.Body = $Body
-        $parameters.ContentType = 'application/json'
     }
 
     # Reads are safe to repeat after a gateway timeout or connection failure.
