@@ -27,6 +27,9 @@ interface Props {
   /** True while counts for a new cross-filter scope are being computed. The
    * previous scope's badges and checkbox mutations must not look current. */
   loading?: boolean;
+  /** Search can expose cross-repository counts while drilled into one repo.
+   * Normal single-repo browsing passes an empty count map and leaves this off. */
+  countsInSingleMode?: boolean;
   pinned: string[];
   selectedPath: string | null;
   selectedPaths: string[] | "all";
@@ -47,6 +50,7 @@ export function RepoChip({
   repos,
   repoCounts,
   loading = false,
+  countsInSingleMode = false,
   pinned,
   selectedPath,
   selectedPaths,
@@ -139,7 +143,7 @@ export function RepoChip({
   // Single-repo mode: App ignores the multi-select filter, so the row
   // checkboxes render read-only instead of silently doing nothing.
   const singleRepoMode = selectedPath != null;
-  const countsLoading = loading && !singleRepoMode;
+  const countsLoading = loading && (!singleRepoMode || countsInSingleMode);
 
   const selectedSnapSet = useMemo(
     () => (Array.isArray(selectedSnapshot) ? new Set(selectedSnapshot) : null),

@@ -94,8 +94,8 @@ pub fn run() {
             app.manage(Arc::new(file_history_jobs::FileHistoryJobs::default()));
 
             // Full history is strictly demand-driven: the worker exists at
-            // startup but performs no DB or Git work until Search / All time
-            // requests a concrete repository scope.
+            // startup but performs no DB or Git work until an all-time search
+            // or All time view requests a concrete repository scope.
             let history_app = app.handle().clone();
             let history_events = app.handle().clone();
             let history_indexer = Arc::new(history_indexer::HistoryIndexer::start(

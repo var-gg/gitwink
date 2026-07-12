@@ -2578,6 +2578,73 @@ mod tests {
     }
 
     #[test]
+    fn search_facets_intersect_query_with_other_dimensions() {
+        let conn = test_db();
+        for (repo, author, count, prefix) in [
+            (1, "alice", 2, "r1a"),
+            (1, "bob", 1, "r1b"),
+            (2, "alice", 3, "r2a"),
+            (2, "bob", 2, "r2b"),
+        ] {
+            for i in 0..count {
+                insert_text(
+                    &conn,
+                    repo,
+                    &format!("{prefix}{i}"),
+                    5_000 + repo * 100 + i,
+                    author,
+                    "needle change",
+                    "needle change",
+                );
+            }
+        }
+        insert_text(&conn, 1, "noise", 9_000, "bob", "unrelated", "unrelated");
+
+        let facets = list_filter_facets(
+            &conn,
+            &TimelineFilters {
+                repo_ids: Some(vec![1]),
+                authors: Some(vec!["alice".to_string()]),
+                query: Some("needle".to_string()),
+                ..Default::default()
+            },
+            true,
+            true,
+        )
+        .unwrap();
+
+        // The author facet drops only its own dimension: query + repo 1 stay.
+        assert_eq!(
+            facets
+                .authors
+                .iter()
+                .find(|a| a.name == "alice")
+                .unwrap()
+                .count,
+            2
+        );
+        assert_eq!(
+            facets
+                .authors
+                .iter()
+                .find(|a| a.name == "bob")
+                .unwrap()
+                .count,
+            1
+        );
+
+        // The repo facet drops only repo scope: query + alice stay.
+        assert_eq!(
+            facets.repos.iter().find(|r| r.repo_id == 1).unwrap().count,
+            2
+        );
+        assert_eq!(
+            facets.repos.iter().find(|r| r.repo_id == 2).unwrap().count,
+            3
+        );
+    }
+
+    #[test]
     fn reconcile_deletes_ghosts_inside_the_window() {
         let mut conn = upsert_test_db();
         // Cache: old1/old2 (pre-rewrite) + keep1, all inside the window.

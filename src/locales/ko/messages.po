@@ -183,7 +183,7 @@ msgstr "{repo}, {path}에서 저장소를 찾을 수 없음"
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "panel.search.scope"
-msgstr "{scope} · {history} · 모든 작성자{branches}"
+msgstr "{scope} · {history} · {authors}{branches}"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -331,6 +331,11 @@ msgid "panel.single.coverageAuthorLimited"
 msgstr "작성자 결과는 최근에 불러온 커밋 {limit}개로 제한됩니다. 그보다 오래된 작성자 일치는 확인하지 않았습니다."
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeAuthors"
+msgstr "작성자"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/settings.ts
 msgid "settings.autoFetch.title"
 msgstr "자동 가져오기"
@@ -364,6 +369,11 @@ msgstr "모든 저장소로 돌아가기"
 #: src/i18n/messages/panel.ts
 msgid "panel.single.backToAllRepos"
 msgstr "모든 저장소로 돌아가기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeBack"
+msgstr "검색 범위로 돌아가기"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
@@ -1367,6 +1377,16 @@ msgid "timeline.search.allReposTitle"
 msgstr "모든 저장소에서 이 검색 다시 실행"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allAuthorsTitle"
+msgstr "작성자 필터 없이 다시 검색"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allHistoryTitle"
+msgstr "기간 필터 없이 다시 검색"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
 msgid "filters.branches.reachableCommits"
 msgstr "전체 기간의 도달 가능한 커밋 (기간 필터와 무관)"
@@ -1410,6 +1430,11 @@ msgstr "이름 변경 추적은 아직 지원하지 않습니다."
 #: src/i18n/messages/repositories.ts
 msgid "settings.repositories.replacing"
 msgstr "교체 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeRepositories"
+msgstr "저장소"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/repositories.ts
@@ -1512,6 +1537,16 @@ msgid "update.provider.scoop"
 msgstr "Scoop"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeButton"
+msgstr "범위"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeButtonCount"
+msgstr "범위 · {count}"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
 msgid "diff.sync.off"
 msgstr "스크롤 동기화 꺼짐—양쪽을 독립적으로 스크롤합니다. 선택하면 함께 움직입니다."
@@ -1525,6 +1560,16 @@ msgstr "스크롤 동기화 켜짐—변경 전후가 함께 움직입니다. �
 #: src/i18n/messages/panel.ts
 msgid "panel.firstRun.tip"
 msgstr "검색 · 커밋을 클릭해 펼치기 · 파일의 히스토리 버튼으로 변경 내역 열기 · 오른쪽 클릭으로 AI용 복사"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allAuthors"
+msgstr "모든 작성자에서 검색"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allHistory"
+msgstr "전체 히스토리에서 검색"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -1573,6 +1618,11 @@ msgstr "커밋 검색—메시지, 작성자, SHA 접두사…"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
+msgid "filters.search.allBranchesNote"
+msgstr "이 저장소의 모든 브랜치를 포함해 검색합니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
 msgid "filters.repos.searchAria"
 msgstr "저장소 검색"
 
@@ -1580,6 +1630,11 @@ msgstr "저장소 검색"
 #: src/i18n/messages/filters.ts
 msgid "filters.repos.searchPlaceholder"
 msgstr "저장소 검색…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeTitle"
+msgstr "검색 범위"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
@@ -1746,6 +1801,11 @@ msgstr "이 설치는 {provider}에서 관리하며 최종 업데이트 단계�
 #: src/i18n/messages/panel.ts
 msgid "panel.single.coverageShallow"
 msgstr "얕은 클론입니다. 로컬 경계 이전의 히스토리는 사용할 수 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeTime"
+msgstr "기간"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts

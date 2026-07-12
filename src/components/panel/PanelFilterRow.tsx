@@ -7,23 +7,27 @@ import type {
   AuthorTally,
   BranchInfo,
   FileHistoryResult,
-  HistoryIndexStatus,
   Repo,
   WindowDays,
 } from "../../types";
 import { AuthorsChip } from "../AuthorsChip";
 import { BranchChip } from "../BranchChip";
 import { RepoChip } from "../RepoChip";
-import { SearchBar } from "../SearchBar";
-import { SEARCH_RESULTS_LIST_ID } from "../searchAccessibility";
 import { TimeRangeChip } from "../TimeRangeChip";
 import type { SearchControl } from "../TimelineWindowed";
+import { PanelSearchFilterRow } from "./PanelSearchFilterRow";
 
 const EMPTY_REPO_COUNTS = new Map<number, number>();
 
-export type OpenPanelChip = "repo" | "time" | "authors" | "branch" | null;
+export type OpenPanelChip =
+  | "repo"
+  | "time"
+  | "authors"
+  | "branch"
+  | "searchScope"
+  | null;
 
-interface PanelFilterRowProps {
+export interface PanelFilterRowProps {
   searchOpen: boolean;
   searchInput: string;
   searching: boolean;
@@ -31,10 +35,8 @@ interface PanelFilterRowProps {
   searchCount: number | null;
   searchFocusNonce: number;
   searchActiveDescendant: string | null;
-  searchScopeLabel: string | null;
-  historyDemanded: boolean;
-  historyIndexError: boolean;
-  historyIndexStatus: HistoryIndexStatus | null;
+  searchScopeLabel: string;
+  compactSearchScope: boolean;
   searchControlRef: MutableRefObject<SearchControl | null>;
   onSearchChange: (value: string) => void;
   onCloseSearch: () => void;
@@ -74,7 +76,6 @@ interface PanelFilterRowProps {
  * command surface. Keeping it separate from PanelChromeRow is the deliberate
  * two-row layout contract; adding a new lens cannot crowd window controls. */
 export function PanelFilterRow(props: PanelFilterRowProps) {
-  const { i18n } = useLingui();
   const setChip = (chip: Exclude<OpenPanelChip, null>) =>
     props.onOpenChip(props.openChip === chip ? null : chip);
 
@@ -86,31 +87,7 @@ export function PanelFilterRow(props: PanelFilterRowProps) {
       data-no-drag
     >
       {props.searchOpen ? (
-        <SearchBar
-          value={props.searchInput}
-          count={props.searching && props.searchResolved ? props.searchCount : null}
-          focusNonce={props.searchFocusNonce}
-          resultsListId={SEARCH_RESULTS_LIST_ID}
-          resultsAvailable={
-            props.searching &&
-            props.searchResolved &&
-            props.searchCount != null &&
-            props.searchCount > 0
-          }
-          resultsBusy={props.searching && !props.searchResolved}
-          activeDescendant={
-            props.searchResolved ? props.searchActiveDescendant : null
-          }
-          scopeLabel={searchInputScope(i18n, props)}
-          onChange={props.onSearchChange}
-          onClose={props.onCloseSearch}
-          onMove={(direction) => {
-            if (props.searchResolved) {
-              props.searchControlRef.current?.moveSelection(direction);
-            }
-          }}
-          onActivate={props.onActivateSearch}
-        />
+        <PanelSearchFilterRow {...props} />
       ) : (
         <div className="header-chips">
           <RepoChip
@@ -178,41 +155,6 @@ export function PanelFilterRow(props: PanelFilterRowProps) {
 }
 
 type Lingui = ReturnType<typeof useLingui>["i18n"];
-
-function searchInputScope(i18n: Lingui, props: PanelFilterRowProps): string {
-  const scope = props.searchScopeLabel ?? i18n._(m.allReposScope);
-  if (props.searchInput.trim() === "") {
-    return translate(i18n, m.typeToSearch, { scope });
-  }
-  return translate(i18n, m.searchScope, {
-    scope,
-    history: completeHistoryScope(i18n, props),
-    branches: props.singleMode ? i18n._(m.allBranchesSuffix) : "",
-  });
-}
-
-function completeHistoryScope(
-  i18n: Lingui,
-  props: Pick<
-    PanelFilterRowProps,
-    "historyDemanded" | "historyIndexError" | "historyIndexStatus"
-  >,
-): string {
-  if (!props.historyDemanded) return i18n._(m.historyAll);
-  if (props.historyIndexError) return i18n._(m.historyIndexed);
-  if (!props.historyIndexStatus) return i18n._(m.historyPreparingShort);
-  if (props.historyIndexStatus.allComplete) return i18n._(m.historyAll);
-  return translate(
-    i18n,
-    props.historyIndexStatus.settled
-      ? m.historyIndexedCount
-      : m.historyIndexingCount,
-    {
-      published: props.historyIndexStatus.publishedRepos,
-      total: props.historyIndexStatus.totalRepos,
-    },
-  );
-}
 
 function FileHistoryChip(props: PanelFilterRowProps) {
   const { i18n } = useLingui();

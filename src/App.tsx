@@ -100,7 +100,16 @@ import {
 import { UpdateModal } from "./components/UpdateModal";
 import { dismissContextMenus } from "./components/overlayLifecycle";
 import { panelMessages } from "./i18n/messages/panel";
-import { translate } from "./i18n/translate";
+import {
+  combinedSearchScopeLabel,
+  historySearchScopeLabel,
+  repositorySearchScopeLabel,
+  authorSearchScopeLabel,
+} from "./components/panel/searchScopePresentation";
+import {
+  resolveSearchScope,
+  searchNeedsCompleteHistory,
+} from "./lib/searchScope";
 import type {
   AuthorTally,
   BranchInfo,
@@ -297,11 +306,10 @@ function App() {
 
   // ----- commit search (the `/` summon) + warp -----
   // `searchInput` is the live keystrokes; `searchQuery` is its debounced
-  // mirror that actually drives the windowed query. While a non-empty
-  // query is active the timeline body becomes the result list and the
-  // time/author/branch chips are bypassed (they are view lenses — hiding
-  // the commit you're hunting behind "30d" is the frustration search
-  // exists to kill). The repo scope IS respected.
+  // mirror that actually drives the windowed query. Search is one more
+  // filter dimension: repository, author and time stay inherited/editable.
+  // Branch reachability is not in the shared cache, so single-repo search
+  // truthfully remains all-branches until that model exists.
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -412,7 +420,7 @@ function App() {
   const searching = searchOpen && searchInput.trim().length > 0;
 
   const [openChip, setOpenChip] = useState<
-    "repo" | "time" | "authors" | "branch" | null
+    "repo" | "time" | "authors" | "branch" | "searchScope" | null
   >(null);
 
   // Right-click on the panel header (empty space / drag handle / icon /
@@ -430,6 +438,11 @@ function App() {
   const pinned = usePanelPinned();
   const panelWindow = usePanelWindowState();
   const panelViewport = usePanelViewportClass();
+
+  // A resize can swap the individual search chips for the compact scope
+  // editor (or vice versa). Retire an overlay anchored to the old layout so
+  // no invisible disclosure remains keyboard-open after that DOM is removed.
+  useEffect(() => setOpenChip(null), [panelViewport]);
 
   // Self-update modal — populated when the backend asks the panel to
   // surface it (tray "Update available" item / a manual check). null =
@@ -484,7 +497,7 @@ function App() {
     retry: retryFacets,
     acceptSnapshot: acceptBrowseSnapshot,
   } = useContextualFacets({
-    singleMode,
+    enabled: !singleMode,
     repoIds,
     selectedAuthors,
     windowDays,
@@ -497,12 +510,34 @@ function App() {
     const id = allRepos.find((r) => r.path === selectedRepoPath)?.id;
     return id != null && id > 0 ? [id] : [];
   }, [singleMode, repoIds, allRepos, selectedRepoPath]);
+  const resolvedSearchScope = useMemo(
+    () => resolveSearchScope(searchRepoIds, selectedAuthors, windowDays),
+    [searchRepoIds, selectedAuthors, windowDays],
+  );
+  const {
+    authors: searchAuthors,
+    repoCounts: searchRepoCounts,
+    authorsLoading: searchAuthorsLoading,
+    repoCountsLoading: searchRepoCountsLoading,
+    error: searchFacetsError,
+    retry: retrySearchFacets,
+    acceptSnapshot: acceptSearchSnapshot,
+  } = useContextualFacets({
+    enabled: searchOpen && searchQuery.trim().length > 0,
+    repoIds: resolvedSearchScope.repoIds,
+    selectedAuthors,
+    windowDays,
+    query: searchQuery || null,
+  });
   // Opening an empty search box must be free. Once a debounced query exists,
   // paint the rolling-cache result first and start progressive expansion a
   // beat later so the background writer cannot convoy the user's first COUNT
   // + page reads on SQLite.
-  const searchHistoryDemanded =
-    searchOpen && searchQuery.trim().length > 0;
+  const searchHistoryDemanded = searchNeedsCompleteHistory(
+    searchOpen,
+    searchQuery,
+    resolvedSearchScope.windowDays,
+  );
   const historyDemanded =
     searchHistoryDemanded || (!singleMode && windowDays === "all");
   const historyRepoIds = searchOpen ? searchRepoIds : repoIds;
@@ -607,7 +642,12 @@ function App() {
     historyIndexRetryNonce,
     searchHistoryDemanded,
   ]);
-  const searchFilterKey = timelineSnapshotFilterKey(searchRepoIds, null, null);
+  const searchFilterKey = timelineSnapshotFilterKey(
+    resolvedSearchScope.repoIds,
+    resolvedSearchScope.authors,
+    resolvedSearchScope.windowDays,
+    searchQuery || null,
+  );
   const searchResolutionEpoch = refreshNonce + historyRefreshNonce;
   const searchResolved =
     resolvedSearchEpoch === searchResolutionEpoch &&
@@ -1578,6 +1618,17 @@ function App() {
       .sort((a, b) => b.lastActivity - a.lastActivity);
   }, [timeScopedSingleRepoCommits]);
   const authors = singleMode ? authorsSingle : authorsAll;
+  const searchFacetsActive = searchOpen && searchQuery.trim().length > 0;
+  const filterRowAuthors = searchFacetsActive ? searchAuthors : authors;
+  const filterRowAuthorsLoading = searchFacetsActive
+    ? searchAuthorsLoading
+    : authorsLoading;
+  const filterRowRepoCounts = searchFacetsActive
+    ? searchRepoCounts
+    : repoCounts;
+  const filterRowRepoCountsLoading = searchFacetsActive
+    ? searchRepoCountsLoading
+    : repoCountsLoading;
   const branchCatalogIsCurrent =
     branchesRepoPathRef.current === selectedRepoPath;
   const visibleBranches = branchCatalogIsCurrent ? branches : [];
@@ -1606,27 +1657,42 @@ function App() {
     [allRepos],
   );
 
-  // A human label for the search's repo scope, derived from the SAME resolved
-  // id set the search actually uses (searchRepoIds) — never the raw chip
-  // selection — so a zero-result miss names exactly what was searched and the
-  // count can't drift from reality. null means the explicit all-repos state;
-  // an unresolved narrow scope gets its own loading label instead.
-  const searchScopeLabel = useMemo<string | null>(() => {
-    if (searchRepoIds == null) return null;
-    if (searchRepoIds.length === 0) {
-      return i18n._(panelMessages.selectedRepoScopeLoading);
-    }
-    if (searchRepoIds.length === 1) {
-      const id = searchRepoIds[0];
-      return (
-        allRepos.find((r) => r.id === id)?.name ??
-        translate(i18n, panelMessages.repoCount, { count: 1 })
-      );
-    }
-    return translate(i18n, panelMessages.repoCount, {
-      count: searchRepoIds.length,
-    });
-  }, [searchRepoIds, allRepos, i18n, i18n.locale]);
+  // The visible label is assembled from the exact values passed to the cache
+  // query. It is also the empty-state scope, so no hidden author/time widening
+  // can be mistaken for a result in the user's current view.
+  const searchScopeLabel = useMemo(() => {
+    const repositories = repositorySearchScopeLabel(
+      i18n,
+      resolvedSearchScope.repoIds,
+      allRepos,
+    );
+    const authors = authorSearchScopeLabel(i18n, selectedAuthors);
+    const history = historySearchScopeLabel(
+      i18n,
+      windowDays,
+      searchHistoryDemanded,
+      historyIndexError,
+      historyIndexStatus,
+    );
+    return combinedSearchScopeLabel(
+      i18n,
+      repositories,
+      history,
+      authors,
+      singleMode,
+    );
+  }, [
+    i18n,
+    i18n.locale,
+    resolvedSearchScope.repoIds,
+    allRepos,
+    selectedAuthors,
+    windowDays,
+    searchHistoryDemanded,
+    historyIndexError,
+    historyIndexStatus,
+    singleMode,
+  ]);
 
   // Only offer "Search all repos" when widening would genuinely broaden the
   // scope — i.e. more usable repos exist than the search currently covers.
@@ -1664,6 +1730,48 @@ function App() {
     setControlNotice(null);
     setSelectedAuthors(v);
   }, []);
+  const searchWidenActions = useMemo(() => {
+    const actions: {
+      id: string;
+      label: string;
+      title: string;
+      onActivate: () => void;
+    }[] = [];
+    if (windowDays !== "all") {
+      actions.push({
+        id: "history",
+        label: i18n._(panelMessages.searchAllHistory),
+        title: i18n._(panelMessages.searchAllHistoryTitle),
+        onActivate: () => changeWindowDays("all"),
+      });
+    }
+    if (selectedAuthors !== "all") {
+      actions.push({
+        id: "authors",
+        label: i18n._(panelMessages.searchAllAuthors),
+        title: i18n._(panelMessages.searchAllAuthorsTitle),
+        onActivate: () => changeAuthors("all"),
+      });
+    }
+    if (canWidenSearch) {
+      actions.push({
+        id: "repositories",
+        label: i18n._(panelMessages.searchAllRepos),
+        title: i18n._(panelMessages.searchAllReposTitle),
+        onActivate: widenSearchScope,
+      });
+    }
+    return actions;
+  }, [
+    windowDays,
+    selectedAuthors,
+    canWidenSearch,
+    i18n,
+    i18n.locale,
+    changeWindowDays,
+    changeAuthors,
+    widenSearchScope,
+  ]);
   // Picking a repo IS a navigation — record the view we're leaving (and leave
   // any file-history scope). A manual pick also retires the warp anchor:
   // without this, revisiting the warped repo later would scroll-jump and
@@ -1828,9 +1936,9 @@ function App() {
           searchFocusNonce={searchFocusNonce}
           searchActiveDescendant={searchActiveDescendant}
           searchScopeLabel={searchScopeLabel}
-          historyDemanded={historyDemanded}
-          historyIndexError={historyIndexError}
-          historyIndexStatus={historyIndexStatus}
+          compactSearchScope={
+            panelViewport === "compact" || panelViewport === "regular"
+          }
           searchControlRef={searchControlRef}
           onSearchChange={changeSearchInput}
           onCloseSearch={closeSearch}
@@ -1838,8 +1946,8 @@ function App() {
           openChip={openChip}
           onOpenChip={setOpenChip}
           repos={allRepos}
-          repoCounts={repoCounts}
-          repoCountsLoading={repoCountsLoading}
+          repoCounts={filterRowRepoCounts}
+          repoCountsLoading={filterRowRepoCountsLoading}
           pinnedRepos={pinnedRepos}
           selectedRepoPath={selectedRepoPath}
           selectedRepoPaths={selectedRepoPaths}
@@ -1860,15 +1968,21 @@ function App() {
           onBranchesChange={handleBranchChange}
           windowDays={windowDays}
           onWindowDaysChange={changeWindowDays}
-          authors={authors}
-          authorsLoading={authorsLoading}
+          authors={filterRowAuthors}
+          authorsLoading={filterRowAuthorsLoading}
           selectedAuthors={selectedAuthors}
           onAuthorsChange={changeAuthors}
         />
       </header>
       <PanelNotices
-        showFacetError={!singleMode && !searchOpen && facetsError}
-        onRetryFacets={retryFacets}
+        showFacetError={
+          searchFacetsActive
+            ? searchFacetsError
+            : !singleMode && facetsError
+        }
+        onRetryFacets={
+          searchFacetsActive ? retrySearchFacets : retryFacets
+        }
         historyDemanded={historyDemanded}
         historyIndexError={historyIndexError}
         historyIndexStatus={historyIndexStatus}
@@ -1896,7 +2010,7 @@ function App() {
             {searching && (
               // Active search: the timeline body IS the result list — the
               // same windowed machinery with the query as one more filter
-              // (time/author bypassed, repo scope respected). Enter / ↗
+              // intersected with repository, author and time. Enter / ↗
               // warps into the commit's single-repo history.
               <div
                 className={
@@ -1908,9 +2022,9 @@ function App() {
                 {searchQuery.trim().length > 0 && (
                   <TimelineWindowed
                     key="search-results"
-                    repoIds={searchRepoIds}
-                    authors={null}
-                    windowDays={null}
+                    repoIds={resolvedSearchScope.repoIds}
+                    authors={resolvedSearchScope.authors}
+                    windowDays={resolvedSearchScope.windowDays}
                     refreshNonce={refreshNonce + historyRefreshNonce}
                     query={searchQuery}
                     skipRefill
@@ -1920,11 +2034,12 @@ function App() {
                     onResultCount={setSearchCount}
                     resultsListId={SEARCH_RESULTS_LIST_ID}
                     onActiveDescendant={setSearchActiveDescendant}
+                    onSnapshotGeneration={acceptSearchSnapshot}
                     onResolvedQuery={acceptResolvedSearchSnapshot}
                     onResolutionPending={clearResolvedSearchSnapshot}
                     onSelectRepo={changeRepoPath}
                     searchScopeLabel={searchScopeLabel}
-                    onWidenSearch={canWidenSearch ? widenSearchScope : undefined}
+                    searchWidenActions={searchWidenActions}
                     expansionControlRef={expansionControlRef}
                     inactive={!searchResolved}
                   />

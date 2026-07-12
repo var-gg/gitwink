@@ -288,6 +288,18 @@
   max-width: calc(360px * var(--ui-scale, 1));
 }
 
+.panel-viewport-expansive .search-scope-chips {
+  flex-basis: 52%;
+}
+
+.panel-viewport-expansive .search-scope-chips .chip-wrap[data-chip="repo"] {
+  max-width: calc(260px * var(--ui-scale, 1));
+}
+
+.panel-viewport-expansive .search-scope-chips .chip-wrap[data-chip="authors"] {
+  max-width: calc(220px * var(--ui-scale, 1));
+}
+
 .panel-viewport-expansive .filehist-chip {
   max-width: calc(520px * var(--ui-scale, 1));
 }

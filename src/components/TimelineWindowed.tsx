@@ -57,6 +57,13 @@ export interface SearchControl {
   activateSelected: () => void;
 }
 
+export interface SearchWidenAction {
+  id: string;
+  label: string;
+  title: string;
+  onActivate: () => void;
+}
+
 /** Imperative expansion control for App's Esc cascade: collapse() closes the
  * open commit expansion and reports whether it did. Owning this in App's
  * single cascade (instead of a competing window listener here) makes the Esc
@@ -151,8 +158,9 @@ interface Props {
    *  zero-result search names the scope and offers a one-click widen — so a
    *  scoped miss can't be mistaken for "this commit doesn't exist". */
   searchScopeLabel?: string | null;
-  /** Widen a scoped search to all repos and re-run the same query. */
-  onWidenSearch?: () => void;
+  /** Explicit dimension resets offered only on a miss. They avoid hidden
+   * auto-widening while keeping recovery one click away. */
+  searchWidenActions?: SearchWidenAction[];
   /** Filled with the collapse control App's Esc cascade drives. */
   expansionControlRef?: React.MutableRefObject<ExpansionControl | null>;
   /** Mounted but hidden (the search view or single-repo mode is on top):
@@ -230,7 +238,7 @@ export function TimelineWindowed({
   onResolvedQuery,
   onResolutionPending,
   searchScopeLabel,
-  onWidenSearch,
+  searchWidenActions,
   expansionControlRef,
   inactive,
   suspended,
@@ -1025,16 +1033,19 @@ export function TimelineWindowed({
                 })
               : i18n._(panelMessages.noMatchesScanned)}
           </p>
-          {searchScopeLabel && onWidenSearch && (
+          {searchWidenActions && searchWidenActions.length > 0 && (
             <p className="panel-empty-actions">
-              <button
-                type="button"
-                className="panel-empty-action"
-                onClick={onWidenSearch}
-                title={i18n._(panelMessages.searchAllReposTitle)}
-              >
-                {i18n._(panelMessages.searchAllRepos)}
-              </button>
+              {searchWidenActions.map((action) => (
+                <button
+                  key={action.id}
+                  type="button"
+                  className="panel-empty-action"
+                  onClick={action.onActivate}
+                  title={action.title}
+                >
+                  {action.label}
+                </button>
+              ))}
             </p>
           )}
         </div>

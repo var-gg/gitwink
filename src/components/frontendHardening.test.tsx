@@ -130,6 +130,8 @@ describe("commit-search accessibility contract", () => {
     expect(markup).toContain(`aria-controls="${SEARCH_RESULTS_LIST_ID}"`);
     expect(markup).toContain('aria-expanded="true"');
     expect(markup).toContain('aria-busy="false"');
+    expect(markup).toContain('aria-describedby="commit-search-scope"');
+    expect(markup).toContain('id="commit-search-scope"');
     expect(markup).toContain(
       `aria-activedescendant="${searchResultOptionId(0)}"`,
     );

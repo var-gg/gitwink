@@ -849,8 +849,8 @@ fn history_index_status(
     })
 }
 
-/// Demand-driven full-history expansion. Opening Search or choosing All time
-/// requests exactly the current repository scope; normal 7/30-day startup
+/// Demand-driven full-history expansion. An all-time search or All time view
+/// requests exactly the current repository scope; bounded 7/30-day search
 /// remains independent of repository history size.
 #[tauri::command]
 pub async fn request_history_index(

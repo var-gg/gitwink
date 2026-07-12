@@ -20,9 +20,12 @@ interface Props {
   count: number | null;
   /** bumped to re-focus the input (pressing `/` while the bar is open) */
   focusNonce: number;
-  /** Explicit query scope. Search intentionally ignores time/author/branch
-   * lenses, so this label prevents the hidden-mode semantic mismatch. */
+  /** Explicit query scope, including every inherited filter dimension. */
   scopeLabel: string;
+  /** Full filter chips already expose the scope visually on wide panels; in
+   * that layout this text remains associated with the input for assistive
+   * technology without consuming a second copy of the same information. */
+  scopeVisible?: boolean;
   /** Stable id of the timeline listbox controlled by this combobox. */
   resultsListId: string;
   /** True only while that listbox is mounted for the debounced query. */
@@ -44,6 +47,7 @@ export function SearchBar({
   count,
   focusNonce,
   scopeLabel,
+  scopeVisible = true,
   resultsListId,
   resultsAvailable,
   resultsBusy,
@@ -75,6 +79,7 @@ export function SearchBar({
         placeholder={i18n._(filterMessages.searchCommitsPlaceholder)}
         spellCheck={false}
         aria-label={i18n._(filterMessages.searchCommitsAria)}
+        aria-describedby="commit-search-scope"
         role="combobox"
         aria-autocomplete="list"
         aria-haspopup="listbox"
@@ -139,7 +144,10 @@ export function SearchBar({
         </span>
       )}
       <span
-        className="search-bar-scope"
+        id="commit-search-scope"
+        className={
+          "search-bar-scope" + (scopeVisible ? "" : " search-bar-scope-assistive")
+        }
         title={translate(i18n, filterMessages.searchScope, {
           scope: scopeLabel,
         })}

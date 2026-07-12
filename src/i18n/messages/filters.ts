@@ -253,6 +253,38 @@ export const filterMessages = {
     id: "filters.search.scope",
     message: "Search scope: {scope}",
   }),
+  searchScopeButton: msg({
+    id: "filters.search.scopeButton",
+    message: "Scope",
+  }),
+  searchScopeButtonCount: msg({
+    id: "filters.search.scopeButtonCount",
+    message: "Scope · {count}",
+  }),
+  searchScopeTitle: msg({
+    id: "filters.search.scopeTitle",
+    message: "Search scope",
+  }),
+  searchScopeBack: msg({
+    id: "filters.search.scopeBack",
+    message: "Back to search scope",
+  }),
+  searchScopeRepositories: msg({
+    id: "filters.search.scopeRepositories",
+    message: "Repositories",
+  }),
+  searchScopeAuthors: msg({
+    id: "filters.search.scopeAuthors",
+    message: "Authors",
+  }),
+  searchScopeTime: msg({
+    id: "filters.search.scopeTime",
+    message: "Time range",
+  }),
+  searchAllBranchesNote: msg({
+    id: "filters.search.allBranchesNote",
+    message: "Search includes all branches in this repository.",
+  }),
   searchKeyboardHint: msg({
     id: "filters.search.keyboardHint",
     message:

@@ -62,8 +62,9 @@ export function timelineSnapshotFilterKey(
   repoIds: number[] | null,
   authors: string[] | null,
   windowDays: number | null,
+  query: string | null = null,
 ): string {
-  return JSON.stringify([repoIds, authors, windowDays]);
+  return JSON.stringify([repoIds, authors, windowDays, query]);
 }
 
 /** A commit's keyset cursor, reconstructed from the row itself — the cursor
@@ -508,7 +509,12 @@ export function useTimelineWindow(
         setGeneration(generation);
         setSnapshotSince(since);
         setSnapshotFilterKey(
-          timelineSnapshotFilterKey(p.repoIds, p.authors, p.windowDays),
+          timelineSnapshotFilterKey(
+            p.repoIds,
+            p.authors,
+            p.windowDays,
+            p.query ?? null,
+          ),
         );
         setSnapshotQuery(p.query ?? null);
         setStatus("ready");

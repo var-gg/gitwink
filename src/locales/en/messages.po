@@ -331,6 +331,11 @@ msgid "panel.single.coverageAuthorLimited"
 msgstr "Author results are limited to the latest {limit} loaded commits. Older author matches haven't been checked."
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeAuthors"
+msgstr "Authors"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/settings.ts
 msgid "settings.autoFetch.title"
 msgstr "Auto-fetch"
@@ -364,6 +369,11 @@ msgstr "Back to all repositories"
 #: src/i18n/messages/panel.ts
 msgid "panel.single.backToAllRepos"
 msgstr "Back to all repositories"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeBack"
+msgstr "Back to search scope"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
@@ -1367,6 +1377,16 @@ msgid "timeline.search.allReposTitle"
 msgstr "Re-run this search across every repository"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allAuthorsTitle"
+msgstr "Re-run this search without the author filter"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allHistoryTitle"
+msgstr "Re-run this search without the time filter"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
 msgid "filters.branches.reachableCommits"
 msgstr "Reachable commits across all time (independent of the time filter)"
@@ -1410,6 +1430,11 @@ msgstr "Renames aren't followed yet."
 #: src/i18n/messages/repositories.ts
 msgid "settings.repositories.replacing"
 msgstr "Replacing…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeRepositories"
+msgstr "Repositories"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/repositories.ts
@@ -1512,6 +1537,16 @@ msgid "update.provider.scoop"
 msgstr "Scoop"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeButton"
+msgstr "Scope"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeButtonCount"
+msgstr "Scope · {count}"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
 msgid "diff.sync.off"
 msgstr "Scroll sync off—sides scroll independently. Select to lock them together."
@@ -1525,6 +1560,16 @@ msgstr "Scroll sync on—old and new move together. Select to unlock independent
 #: src/i18n/messages/panel.ts
 msgid "panel.firstRun.tip"
 msgstr "search · click a commit to expand · the history button on a file opens its history · right-click to copy for AI"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allAuthors"
+msgstr "Search all authors"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allHistory"
+msgstr "Search all history"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -1573,6 +1618,11 @@ msgstr "Search commits—message, author, SHA prefix…"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
+msgid "filters.search.allBranchesNote"
+msgstr "Search includes all branches in this repository."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
 msgid "filters.repos.searchAria"
 msgstr "Search repositories"
 
@@ -1580,6 +1630,11 @@ msgstr "Search repositories"
 #: src/i18n/messages/filters.ts
 msgid "filters.repos.searchPlaceholder"
 msgstr "Search repositories…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeTitle"
+msgstr "Search scope"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
@@ -1746,6 +1801,11 @@ msgstr "This installation is managed by {provider}, which owns the final update 
 #: src/i18n/messages/panel.ts
 msgid "panel.single.coverageShallow"
 msgstr "This is a shallow clone. History before its local boundary isn't available."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeTime"
+msgstr "Time range"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts

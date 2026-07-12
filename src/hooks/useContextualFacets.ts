@@ -5,21 +5,24 @@ import { timelineSnapshotFilterKey } from "../lib/useTimelineWindow";
 import type { AuthorTally, WindowDays } from "../types";
 
 interface ContextualFacetsOptions {
-  singleMode: boolean;
+  enabled: boolean;
   repoIds: number[] | null;
   selectedAuthors: string[] | "all";
   windowDays: WindowDays;
+  query?: string | null;
 }
 
-/** Contextual author and repository-count facets for the fleet timeline.
+/** Contextual author and repository-count facets for a windowed timeline.
  * Each facet excludes its own dimension, so changing authors does not freeze
- * the author picker and changing repository scope does not stale repo counts.
- * The visible timeline generation is the publication fence. */
+ * the author picker and changing repository scope does not stale repo counts;
+ * an optional query remains part of both facets. The visible timeline
+ * generation is the publication fence. */
 export function useContextualFacets({
-  singleMode,
+  enabled,
   repoIds,
   selectedAuthors,
   windowDays,
+  query = null,
 }: ContextualFacetsOptions) {
   const [authors, setAuthors] = useState<AuthorTally[]>([]);
   const [repoCounts, setRepoCounts] = useState<Map<number, number>>(
@@ -44,16 +47,17 @@ export function useContextualFacets({
         repoIds,
         selectedAuthors === "all" ? null : selectedAuthors,
         window,
+        query,
       ),
-    [repoIds, selectedAuthors, window],
+    [repoIds, selectedAuthors, window, query],
   );
   const authorsScopeKey = useMemo(
-    () => JSON.stringify([repoIds, window]),
-    [repoIds, window],
+    () => JSON.stringify([repoIds, window, query]),
+    [repoIds, window, query],
   );
   const repoScopeKey = useMemo(
-    () => JSON.stringify([selectedAuthors, window]),
-    [selectedAuthors, window],
+    () => JSON.stringify([selectedAuthors, window, query]),
+    [selectedAuthors, window, query],
   );
 
   const acceptSnapshot = useCallback(
@@ -65,7 +69,8 @@ export function useContextualFacets({
   const retry = useCallback(() => setRetryNonce((nonce) => nonce + 1), []);
 
   useEffect(() => {
-    if (singleMode) {
+    if (!enabled) {
+      setSnapshot(null);
       setAuthorsLoading(false);
       setRepoCountsLoading(false);
       setError(false);
@@ -101,6 +106,7 @@ export function useContextualFacets({
             repoIds,
             authors: selectedAuthors === "all" ? null : selectedAuthors,
             viewGeneration: snapshot.generation,
+            query,
           },
           authorsStale,
           reposStale,
@@ -131,7 +137,7 @@ export function useContextualFacets({
       cancelled = true;
     };
   }, [
-    singleMode,
+    enabled,
     filterKey,
     snapshot,
     repoIds,
@@ -139,6 +145,7 @@ export function useContextualFacets({
     retryNonce,
     authorsScopeKey,
     repoScopeKey,
+    query,
   ]);
 
   return {

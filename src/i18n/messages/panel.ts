@@ -96,6 +96,22 @@ export const panelMessages = {
     id: "timeline.search.allReposTitle",
     message: "Re-run this search across every repository",
   }),
+  searchAllAuthors: msg({
+    id: "timeline.search.allAuthors",
+    message: "Search all authors",
+  }),
+  searchAllAuthorsTitle: msg({
+    id: "timeline.search.allAuthorsTitle",
+    message: "Re-run this search without the author filter",
+  }),
+  searchAllHistory: msg({
+    id: "timeline.search.allHistory",
+    message: "Search all history",
+  }),
+  searchAllHistoryTitle: msg({
+    id: "timeline.search.allHistoryTitle",
+    message: "Re-run this search without the time filter",
+  }),
   commitSearchResults: msg({
     id: "timeline.search.results",
     message: "Commit search results",
@@ -309,7 +325,7 @@ export const panelMessages = {
   }),
   searchScope: msg({
     id: "panel.search.scope",
-    message: "{scope} · {history} · all authors{branches}",
+    message: "{scope} · {history} · {authors}{branches}",
   }),
   allBranchesSuffix: msg({
     id: "panel.search.allBranchesSuffix",
