@@ -44,6 +44,11 @@ jobs:
       - name: Frontend type-check
         run: pnpm tsc --noEmit
 
+      - name: Store publishing policy tests
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: ./tools/publish-store.test.ps1
+
       - name: Cargo unit tests
         working-directory: src-tauri
         run: cargo test --lib

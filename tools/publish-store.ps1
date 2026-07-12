@@ -90,6 +90,41 @@ function Get-HeaderValue([object]$Headers, [string[]]$Names) {
     return $null
 }
 
+function Get-DevCenterRetryDelaySeconds(
+    [object]$Headers,
+    [ValidateRange(1, 10)]
+    [int]$Attempt
+) {
+    $retryAfter = Get-HeaderValue $Headers @('Retry-After')
+    if ($retryAfter -match '^\d+$') {
+        return [Math]::Min(60, [Math]::Max(1, [int]$retryAfter))
+    }
+    if (-not [string]::IsNullOrWhiteSpace($retryAfter)) {
+        $retryAt = [DateTimeOffset]::MinValue
+        $parsed = [DateTimeOffset]::TryParse(
+            $retryAfter,
+            [Globalization.CultureInfo]::InvariantCulture,
+            [Globalization.DateTimeStyles]::AssumeUniversal,
+            [ref]$retryAt
+        )
+        if ($parsed) {
+            $seconds = [Math]::Ceiling(
+                ($retryAt.ToUniversalTime() - [DateTimeOffset]::UtcNow).TotalSeconds
+            )
+            if ($seconds -gt 0) {
+                return [Math]::Min(60, [int]$seconds)
+            }
+        }
+    }
+    return [Math]::Min(30, [int][Math]::Pow(2, $Attempt))
+}
+
+function Test-DevCenterReadRetryStatus([int]$StatusCode) {
+    return $StatusCode -eq 408 -or
+        $StatusCode -eq 429 -or
+        ($StatusCode -ge 500 -and $StatusCode -lt 600)
+}
+
 function Get-SafeApiError([object]$Response) {
     if ($null -eq $Response) { return $null }
     $candidates = @()
@@ -110,9 +145,13 @@ function Get-SafeApiError([object]$Response) {
             Join-String -Separator ': '
     }
     if ($Response -is [string]) {
-        $safe = $Response -replace 'https://[^\s"'']+\?[^\s"'']+', '<redacted-sas-url>'
+        $safe = $Response.Trim()
+        if ($safe -match '^<(!DOCTYPE|html)') {
+            return 'non-JSON gateway response'
+        }
+        $safe = $safe -replace 'https://[^\s"'']+\?[^\s"'']+', '<redacted-sas-url>'
         if ($safe.Length -gt 1000) { $safe = $safe.Substring(0, 1000) }
-        return $safe.Trim()
+        return $safe
     }
     return $null
 }
@@ -152,8 +191,6 @@ function Invoke-DevCenterJson(
     [string]$TenantId,
     [string]$Body
 ) {
-    $statusCode = 0
-    $responseHeaders = $null
     $parameters = @{
         Method                  = $Method
         Uri                     = "$DevCenterBaseUrl$Path"
@@ -169,8 +206,46 @@ function Invoke-DevCenterJson(
         $parameters.Body = $Body
         $parameters.ContentType = 'application/json'
     }
-    $response = Invoke-RestMethod @parameters
-    if ($statusCode -lt 200 -or $statusCode -ge 300) {
+
+    # Reads are safe to repeat after a gateway timeout or connection failure.
+    # Mutations are deliberately single-attempt: a lost POST response could
+    # otherwise create a second draft or commit an already-accepted submission.
+    $maxAttempts = if ($Method -eq 'GET') { 4 } else { 1 }
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        $statusCode = 0
+        $responseHeaders = $null
+        try {
+            $response = Invoke-RestMethod @parameters
+        } catch {
+            if ($Method -eq 'GET' -and $attempt -lt $maxAttempts) {
+                $delay = Get-DevCenterRetryDelaySeconds $null $attempt
+                Write-Warning (
+                    "Dev Center API GET $Path ended before an HTTP response; " +
+                    "retrying safe read in $delay second(s) " +
+                    "($attempt/$maxAttempts)."
+                )
+                Start-Sleep -Seconds $delay
+                continue
+            }
+            throw "Dev Center API $Method $Path ended before an HTTP response."
+        }
+
+        if ($statusCode -ge 200 -and $statusCode -lt 300) {
+            return $response
+        }
+        if ($Method -eq 'GET' -and
+            (Test-DevCenterReadRetryStatus $statusCode) -and
+            $attempt -lt $maxAttempts) {
+            $delay = Get-DevCenterRetryDelaySeconds $responseHeaders $attempt
+            Write-Warning (
+                "Dev Center API GET $Path returned HTTP $statusCode; " +
+                "retrying safe read in $delay second(s) " +
+                "($attempt/$maxAttempts)."
+            )
+            Start-Sleep -Seconds $delay
+            continue
+        }
+
         $correlationId = Get-HeaderValue $responseHeaders @(
             'x-correlation-id',
             'ms-correlationid',
@@ -182,7 +257,7 @@ function Invoke-DevCenterJson(
         if ($detail) { $message += ": $detail" }
         throw $message
     }
-    return $response
+    throw "Dev Center API $Method $Path exhausted its retry policy."
 }
 
 function Send-StoreUploadZip([string]$UploadUrl, [string]$ZipPath) {

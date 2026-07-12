@@ -78,6 +78,13 @@ indeterminate server-side operation would be unsafe. Logs include the submission
 ID and available correlation ID, but never the access token, client secret, or
 SAS upload URL.
 
+Transient read failures are retried without rebuilding the submission. GET
+requests retry transport failures plus HTTP 408, 429, and 5xx responses up to
+four total attempts, honoring Retry-After before bounded exponential backoff.
+POST, PUT, and DELETE remain single-attempt operations: automatically repeating
+a mutation after a lost response could create a second draft or hide an
+indeterminate commit.
+
 Do not edit an API-created draft in Partner Center while the workflow is
 running. Conversely, the workflow never modifies or deletes a draft that
 already existed when it started. The workflow concurrency key also prevents two
