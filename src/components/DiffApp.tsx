@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLingui } from "@lingui/react/macro";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -19,6 +20,9 @@ import type { ChangedFile } from "../types";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ImageDiff } from "./ImageDiff";
 import { SideBySideDiff } from "./SideBySideDiff";
+import { diffMessages } from "../i18n/messages/diff";
+import { translate } from "../i18n/translate";
+import { commitMenuLabels } from "../i18n/clipboard";
 
 const IMAGE_EXT = new Set([
   "png",
@@ -51,16 +55,6 @@ const FULL_MAX_BYTES = 1_500_000;
 /** Header context-toggle steps. "Full" expands git's context past any real
  * file length, so the same side-by-side view renders the whole file with
  * changes still tinted — no separate read-only editor. */
-const CONTEXT_OPTIONS: { value: number; label: string; title: string }[] = [
-  { value: 3, label: "±3", title: "Default — 3 lines of context around each change" },
-  { value: 25, label: "±25", title: "Expanded — 25 lines of context" },
-  {
-    value: WHOLE_FILE_CONTEXT,
-    label: "Full",
-    title: "Whole file, with changes highlighted",
-  },
-];
-
 /** Vertical scroll lock for the side-by-side view. Locked (default) scrolls
  * both columns as one; unlocked lets the old/new sides roam independently.
  * Persisted so the choice sticks across files and sessions. */
@@ -82,6 +76,25 @@ function loadContext(): number {
 }
 
 export function DiffApp() {
+  const { i18n } = useLingui();
+  const menuLabels = commitMenuLabels(i18n);
+  const contextOptions: { value: number; label: string; title: string }[] = [
+    {
+      value: 3,
+      label: "±3",
+      title: i18n._(diffMessages.contextDefault),
+    },
+    {
+      value: 25,
+      label: "±25",
+      title: i18n._(diffMessages.contextExpanded),
+    },
+    {
+      value: WHOLE_FILE_CONTEXT,
+      label: i18n._(diffMessages.contextFull),
+      title: i18n._(diffMessages.contextFullTitle),
+    },
+  ];
   const [ctx, setCtx] = useState<DiffOpenPayload | null>(null);
   const [files, setFiles] = useState<ChangedFile[]>([]);
   // True total changed-file count — the shipped list is capped backend-side
@@ -327,11 +340,14 @@ export function DiffApp() {
     const selection = inMain ? window.getSelection()?.toString() ?? "" : "";
     if (selection) {
       const range = getDiffSelectionRange();
-      items.push({ label: "Copy", onClick: () => void writeText(selection) });
+      items.push({
+        label: i18n._(diffMessages.copy),
+        onClick: () => void writeText(selection),
+      });
       if (fileForMenu) {
         const file = fileForMenu;
         items.push({
-          label: "Copy with reference",
+          label: i18n._(diffMessages.copyWithReference),
           onClick: () => {
             const ref = refLineWithFile(
               ctx.repoName,
@@ -348,7 +364,11 @@ export function DiffApp() {
     }
 
     // File section — history + path for the file under the cursor.
-    const fileItems = fileMenuItems(ctx.repoPath, fileForMenu ?? null);
+    const fileItems = fileMenuItems(
+      ctx.repoPath,
+      fileForMenu ?? null,
+      menuLabels,
+    );
     if (fileItems.length) {
       items.push(...fileItems);
       // Copy the patch the user is reading — diff window only, and only for
@@ -372,7 +392,7 @@ export function DiffApp() {
           null,
         );
         items.push({
-          label: "Copy file diff",
+          label: i18n._(diffMessages.copyFileDiff),
           onClick: () => void writeText(`${header}\n${patch}`),
         });
       }
@@ -381,11 +401,11 @@ export function DiffApp() {
 
     // Commit section.
     items.push({
-      label: "Copy short hash",
+      label: i18n._(diffMessages.copyShortHash),
       onClick: () => void writeText(ctx.shortHash),
     });
     items.push({
-      label: "Copy full hash",
+      label: i18n._(diffMessages.copyFullHash),
       onClick: () => void writeText(ctx.hash),
     });
 
@@ -394,7 +414,9 @@ export function DiffApp() {
   }
 
   if (!ctx) {
-    return <div className="diff-loading">Waiting for a file…</div>;
+    return (
+      <div className="diff-loading">{i18n._(diffMessages.waitingForFile)}</div>
+    );
   }
 
   return (
@@ -414,9 +436,9 @@ export function DiffApp() {
             <div
               className="diff-context-toggle"
               role="group"
-              aria-label="Diff context"
+              aria-label={i18n._(diffMessages.context)}
             >
-              {CONTEXT_OPTIONS.map((o) => {
+              {contextOptions.map((o) => {
                 const disabled =
                   o.value === WHOLE_FILE_CONTEXT && isFullTooBig;
                 return (
@@ -430,7 +452,7 @@ export function DiffApp() {
                     disabled={disabled}
                     onClick={() => chooseContext(o.value)}
                     title={
-                      disabled ? "File too large for full context" : o.title
+                      disabled ? i18n._(diffMessages.contextTooLarge) : o.title
                     }
                   >
                     {o.label}
@@ -445,11 +467,11 @@ export function DiffApp() {
               aria-pressed={scrollLocked}
               title={
                 scrollLocked
-                  ? "Scroll sync on — old & new move together. Click to unlock for independent scroll."
-                  : "Scroll sync off — sides scroll independently. Click to lock."
+                  ? i18n._(diffMessages.syncOn)
+                  : i18n._(diffMessages.syncOff)
               }
             >
-              ⇅ Sync
+              ⇅ {i18n._(diffMessages.sync)}
             </button>
           </div>
         )}
@@ -457,13 +479,17 @@ export function DiffApp() {
       <div className="diff-body">
         <aside className="diff-sidebar">
           {filesCtx !== `${ctx.repoPath}:${ctx.hash}` ? (
-            <div className="diff-sidebar-empty">Loading files…</div>
+            <div className="diff-sidebar-empty">
+              {i18n._(diffMessages.loadingFiles)}
+            </div>
           ) : filesError ? (
             <div className="diff-sidebar-empty">
-              Couldn't load this commit's files.
+              {i18n._(diffMessages.filesLoadFailed)}
             </div>
           ) : files.length === 0 ? (
-            <div className="diff-sidebar-empty">No changed files.</div>
+            <div className="diff-sidebar-empty">
+              {i18n._(diffMessages.noFileChanges)}
+            </div>
           ) : (
             files.map((f) => {
               const isSel = f.path === selectedFile;
@@ -481,7 +507,13 @@ export function DiffApp() {
                   <button
                     className={"diff-file" + (isSel ? " active" : "")}
                     onClick={() => setSelectedFile(f.path)}
-                    title={f.oldPath ? `Renamed from ${f.oldPath}` : f.path}
+                    title={
+                      f.oldPath
+                        ? translate(i18n, diffMessages.renamedFrom, {
+                            path: f.oldPath,
+                          })
+                        : f.path
+                    }
                   >
                     <div className="diff-file-line">
                       <span className={"changed-file-badge " + badge.cls}>
@@ -489,7 +521,10 @@ export function DiffApp() {
                       </span>
                       <span className="diff-file-name">{name}</span>
                       {f.isBinary && (
-                        <span className="changed-file-bin" title="Binary file">
+                        <span
+                          className="changed-file-bin"
+                          title={i18n._(diffMessages.binaryFile)}
+                        >
                           bin
                         </span>
                       )}
@@ -523,8 +558,10 @@ export function DiffApp() {
                   </button>
                   <button
                     className="diff-file-history"
-                    title="Show this file's history in the panel"
-                    aria-label={`Show history of ${name}`}
+                    title={i18n._(diffMessages.showHistoryInPanel)}
+                    aria-label={translate(i18n, diffMessages.showHistory, {
+                      file: name,
+                    })}
                     onClick={() => void openFileHistory(ctx.repoPath, f.path)}
                   >
                     🕘
@@ -535,14 +572,16 @@ export function DiffApp() {
           )}
           {filesTotal > files.length && (
             <div className="diff-sidebar-more">
-              Showing {files.length.toLocaleString()} of{" "}
-              {filesTotal.toLocaleString()} changed files
+              {translate(i18n, diffMessages.showingChangedFiles, {
+                shown: files.length.toLocaleString(i18n.locale),
+                total: filesTotal.toLocaleString(i18n.locale),
+              })}
             </div>
           )}
         </aside>
         <main className="diff-main">
           {!selectedFile ? (
-            <div className="diff-loading">Pick a file.</div>
+            <div className="diff-loading">{i18n._(diffMessages.pickFile)}</div>
           ) : filesError ? (
             // The commit's file list failed to load, so we have no metadata for
             // this file — say so plainly instead of letting an empty diff read
@@ -550,9 +589,11 @@ export function DiffApp() {
             // sidebar's honest error.
             <div className="binary-info">
               <div className="binary-info-title">
-                Couldn't load this commit's files
+                {i18n._(diffMessages.filesLoadFailedTitle)}
               </div>
-              <div className="binary-info-hint">The diff can't be shown.</div>
+              <div className="binary-info-hint">
+                {i18n._(diffMessages.cannotShow)}
+              </div>
             </div>
           ) : isImage ? (
             <ImageDiff
@@ -565,27 +606,31 @@ export function DiffApp() {
             />
           ) : isBinary ? (
             <div className="binary-info">
-              <div className="binary-info-title">Binary file</div>
+              <div className="binary-info-title">
+                {i18n._(diffMessages.binaryFile)}
+              </div>
               <div className="binary-info-meta">
                 {formatSize(selectedFileMeta?.oldSize ?? null)} →{" "}
                 {formatSize(selectedFileMeta?.newSize ?? null)}
               </div>
               <div className="binary-info-hint">
-                gitwink doesn't render diffs for non-image binaries yet.
+                {i18n._(diffMessages.binaryUnsupported)}
               </div>
             </div>
           ) : diffError ? (
             <div className="binary-info">
-              <div className="binary-info-title">Couldn't load this diff</div>
+              <div className="binary-info-title">
+                {i18n._(diffMessages.loadFailed)}
+              </div>
               <div className="binary-info-hint">{diffError}</div>
             </div>
           ) : diffText == null ? (
-            <div className="diff-loading">Loading diff…</div>
+            <div className="diff-loading">{i18n._(diffMessages.loading)}</div>
           ) : (
             <>
               {diffLoading && (
                 <div className="diff-inline-loading" role="status">
-                  Loading…
+                  {i18n._(diffMessages.loadingShort)}
                 </div>
               )}
               <SideBySideDiff

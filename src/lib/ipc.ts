@@ -25,10 +25,63 @@ import type {
   ScanProgress,
   TimelineFilters,
   TimelineInvalidated,
+  UpdateProgress,
   UpdateStatePayload,
   UpstreamStatus,
   WindowDirection,
 } from "../types";
+
+export interface ControlSource {
+  kind: string;
+  name: string;
+}
+
+export interface ControlPresentation {
+  focus: boolean;
+  expand: boolean;
+}
+
+export type ControlDelivery =
+  | {
+      status: "ready";
+      requestId: string;
+      source: ControlSource;
+      target:
+        | {
+            kind: "commit";
+            repoPath: string;
+            commit: CommitSummary;
+            presentation: ControlPresentation;
+          }
+        | {
+            kind: "fileHistory";
+            repoPath: string;
+            filePath: string;
+            presentation: ControlPresentation;
+          };
+    }
+  | {
+      status: "error";
+      requestId: string;
+      source: ControlSource;
+      error: {
+        code: string;
+        message: string;
+      };
+    };
+
+/** Drain durable native control handoffs. The event below is only a wake
+ * signal: keeping the payload backend-side closes both cold-start and
+ * listener-registration races. */
+export async function takePendingControlDeliveries(): Promise<ControlDelivery[]> {
+  return invoke<ControlDelivery[]>("take_pending_control_deliveries");
+}
+
+export async function onControlPending(
+  cb: () => void,
+): Promise<UnlistenFn> {
+  return listen("control://pending", () => cb());
+}
 
 export async function ping(): Promise<string> {
   return invoke<string>("ping");
@@ -312,6 +365,37 @@ export async function dismissPanel(): Promise<void> {
   await invoke("dismiss_panel");
 }
 
+export interface PanelWindowState {
+  maximized: boolean;
+  /** Windows follows the standard empty-titlebar double-click convention.
+   * macOS leaves that gesture to the user's system preference. */
+  chromeDoubleClickMaximize: boolean;
+}
+
+export type PanelSizePreset = "default" | "wide";
+
+export async function getPanelWindowState(): Promise<PanelWindowState> {
+  return invoke<PanelWindowState>("get_panel_window_state");
+}
+
+export async function togglePanelMaximized(): Promise<PanelWindowState> {
+  return invoke<PanelWindowState>("toggle_panel_maximized");
+}
+
+export async function setPanelSizePreset(
+  preset: PanelSizePreset,
+): Promise<PanelWindowState> {
+  return invoke<PanelWindowState>("set_panel_size_preset", { preset });
+}
+
+export async function onPanelWindowState(
+  cb: (state: PanelWindowState) => void,
+): Promise<UnlistenFn> {
+  return listen<PanelWindowState>("panel://window-state", (event) =>
+    cb(event.payload),
+  );
+}
+
 /** Tell the backend whether the panel should resist blur-dismiss. Set
  * true while the empty-state add-repo screen is showing or a native
  * folder picker is open — focus legitimately leaves the panel in both
@@ -524,8 +608,7 @@ export async function ackAutoFetchNotice(): Promise<void> {
 
 // ----- self-update -----
 
-/** Snapshot the updater state for the modal: the pending update (if any)
- * plus whether this is a Scoop install. */
+/** Snapshot the updater state and authoritative installer channel. */
 export async function updateGetState(): Promise<UpdateStatePayload> {
   return invoke<UpdateStatePayload>("update_get_state");
 }
@@ -565,6 +648,18 @@ export async function onUpdateNone(cb: () => void): Promise<UnlistenFn> {
   return listen("update://none", () => cb());
 }
 
+/** A user-triggered update check has started. */
+export async function onUpdateChecking(cb: () => void): Promise<UnlistenFn> {
+  return listen("update://checking", () => cb());
+}
+
+/** A user-triggered update check failed with an actionable backend detail. */
+export async function onUpdateCheckError(
+  cb: (message: string) => void,
+): Promise<UnlistenFn> {
+  return listen<string>("update://check-error", (e) => cb(e.payload));
+}
+
 /** Backend pushes the current update-available version (or null when there's
  * nothing to show — skipped / snoozed / disabled / up to date) whenever the
  * indicator state changes. Drives the header-icon update badge. */
@@ -572,4 +667,12 @@ export async function onUpdateIndicator(
   cb: (version: string | null) => void,
 ): Promise<UnlistenFn> {
   return listen<string | null>("update://indicator", (e) => cb(e.payload));
+}
+
+/** Normalized download/install progress from either the Direct or Store
+ * installer. */
+export async function onUpdateProgress(
+  cb: (progress: UpdateProgress) => void,
+): Promise<UnlistenFn> {
+  return listen<UpdateProgress>("update://progress", (e) => cb(e.payload));
 }

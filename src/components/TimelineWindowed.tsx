@@ -19,6 +19,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { useLingui } from "@lingui/react/macro";
+import type { I18n } from "@lingui/core";
 
 import type { CommitSummary } from "../types";
 import { colorForRepo } from "../lib/colors";
@@ -39,6 +41,9 @@ import { ChangedFiles } from "./ChangedFiles";
 import { CommitDetail } from "./CommitDetail";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { searchResultOptionId } from "./searchAccessibility";
+import { panelMessages } from "../i18n/messages/panel";
+import { translate } from "../i18n/translate";
+import { commitMenuLabels } from "../i18n/clipboard";
 
 /** Extra rows rendered above/below the viewport for scroll smoothness. */
 const OVERSCAN = 8;
@@ -50,6 +55,13 @@ const INVALIDATE_DEBOUNCE_MS = 350;
 export interface SearchControl {
   moveSelection: (delta: number) => void;
   activateSelected: () => void;
+}
+
+export interface SearchWidenAction {
+  id: string;
+  label: string;
+  title: string;
+  onActivate: () => void;
 }
 
 /** Imperative expansion control for App's Esc cascade: collapse() closes the
@@ -68,10 +80,11 @@ export function SearchResultJumpAffordance({
 }: {
   onActivate: () => void;
 }) {
+  const { i18n } = useLingui();
   return (
     <span
       className="row-jump"
-      title="Jump to this commit in its repo's history (Enter)"
+      title={i18n._(panelMessages.jumpToCommit)}
       aria-hidden="true"
       onClick={(event) => {
         event.stopPropagation();
@@ -145,8 +158,9 @@ interface Props {
    *  zero-result search names the scope and offers a one-click widen — so a
    *  scoped miss can't be mistaken for "this commit doesn't exist". */
   searchScopeLabel?: string | null;
-  /** Widen a scoped search to all repos and re-run the same query. */
-  onWidenSearch?: () => void;
+  /** Explicit dimension resets offered only on a miss. They avoid hidden
+   * auto-widening while keeping recovery one click away. */
+  searchWidenActions?: SearchWidenAction[];
   /** Filled with the collapse control App's Esc cascade drives. */
   expansionControlRef?: React.MutableRefObject<ExpansionControl | null>;
   /** Mounted but hidden (the search view or single-repo mode is on top):
@@ -159,8 +173,8 @@ interface Props {
   suspended?: boolean;
 }
 
-function formatFullTime(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleString(undefined, {
+function formatFullTime(unixSeconds: number, locale?: string): string {
+  return new Date(unixSeconds * 1000).toLocaleString(locale, {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -171,10 +185,29 @@ function formatFullTime(unixSeconds: number): string {
   });
 }
 
-function marker(c: CommitSummary): { glyph: string; cls: string; title: string } {
-  if (c.isTagged) return { glyph: "★", cls: "marker-tag", title: "Tagged commit" };
-  if (c.isMerge) return { glyph: "◆", cls: "marker-merge", title: "Merge commit" };
-  return { glyph: "●", cls: "marker-dot", title: "Commit" };
+function marker(
+  c: CommitSummary,
+  i18n: I18n,
+): { glyph: string; cls: string; title: string } {
+  if (c.isTagged) {
+    return {
+      glyph: "★",
+      cls: "marker-tag",
+      title: i18n._(panelMessages.taggedCommit),
+    };
+  }
+  if (c.isMerge) {
+    return {
+      glyph: "◆",
+      cls: "marker-merge",
+      title: i18n._(panelMessages.mergeCommit),
+    };
+  }
+  return {
+    glyph: "●",
+    cls: "marker-dot",
+    title: i18n._(panelMessages.commit),
+  };
 }
 
 /** Stable per-row identity — `repoPath:hash`. Distinct repos can share a
@@ -205,11 +238,12 @@ export function TimelineWindowed({
   onResolvedQuery,
   onResolutionPending,
   searchScopeLabel,
-  onWidenSearch,
+  searchWidenActions,
   expansionControlRef,
   inactive,
   suspended,
 }: Props) {
+  const { i18n } = useLingui();
   const {
     rows,
     baseIndex,
@@ -782,6 +816,7 @@ export function TimelineWindowed({
       filePath,
       selection,
       onCopyAiContext: (c) => void copyAiContext(c),
+      labels: commitMenuLabels(i18n),
     });
     if (items.length === 0) return;
     setContextMenu({ x: e.clientX, y: e.clientY, items });
@@ -807,7 +842,7 @@ export function TimelineWindowed({
       );
       continue;
     }
-    const m = marker(c);
+    const m = marker(c, i18n);
     const key = rowKey(c);
     items.push(
       <Fragment key={key}>
@@ -835,16 +870,25 @@ export function TimelineWindowed({
               m.cls +
               (freshHashes.has(key) ? " fresh" : "")
             }
-            title={freshHashes.has(key) ? `${m.title} (new)` : m.title}
+            title={
+              freshHashes.has(key)
+                ? translate(i18n, panelMessages.newMarker, { marker: m.title })
+                : m.title
+            }
           >
             {m.glyph}
           </span>
-          <span className="timeline-time" title={formatFullTime(c.timestamp)}>
+          <span
+            className="timeline-time"
+            title={formatFullTime(c.timestamp, i18n.locale)}
+          >
             {timeAgo(c.timestamp)}
           </span>
           <span
             className="timeline-repo timeline-repo-clickable"
-            title={`${c.repoPath} (click to filter)`}
+            title={translate(i18n, panelMessages.repoFilterTitle, {
+              path: c.repoPath,
+            })}
             onClick={(e) => {
               e.stopPropagation();
               if (inactiveRef.current || statusRef.current !== "ready") return;
@@ -868,8 +912,10 @@ export function TimelineWindowed({
                 className="timeline-remote-tip"
                 title={
                   c.remoteTipExtraCount > 0
-                    ? `Remote tracking refs at this commit (read-only, from your last git fetch). +${c.remoteTipExtraCount} more.`
-                    : "Remote tracking ref at this commit (read-only, from your last git fetch)."
+                    ? translate(i18n, panelMessages.remoteTips, {
+                        count: c.remoteTipExtraCount,
+                      })
+                    : i18n._(panelMessages.remoteTip)
                 }
               >
                 {c.remoteTipLabel}
@@ -897,13 +943,13 @@ export function TimelineWindowed({
                 type="button"
                 className="commit-copy-btn"
                 onClick={() => void copyAiContext(c)}
-                title="Copy as AI context (c)"
+                title={i18n._(panelMessages.copyAiTitle)}
               >
                 {copyStatus === "copied"
-                  ? "Copied ✓"
+                  ? i18n._(panelMessages.copied)
                   : copyStatus === "error"
-                    ? "Copy failed"
-                    : "Copy as AI context"}
+                    ? i18n._(panelMessages.copyFailed)
+                    : i18n._(panelMessages.copyAi)}
               </button>
             </div>
             <ChangedFiles
@@ -947,9 +993,9 @@ export function TimelineWindowed({
             type="button"
             className="timeline-new-pill"
             onClick={handlePillClick}
-            title="Jump to the latest commits"
+            title={i18n._(panelMessages.jumpLatest)}
           >
-            ↑ {newCount} new commit{newCount === 1 ? "" : "s"}
+            {translate(i18n, panelMessages.newCommits, { count: newCount })}
           </button>
         </div>
       )}
@@ -964,15 +1010,15 @@ export function TimelineWindowed({
             }
           >
             {copyStatus === "copied"
-              ? "Copied as AI context ✓"
-              : "Copy failed — try again"}
+              ? i18n._(panelMessages.copiedAi)
+              : i18n._(panelMessages.copyFailedTry)}
           </span>
         )}
       </div>
       {status === "error" ? (
-        <p className="panel-empty">Couldn't load the timeline.</p>
+        <p className="panel-empty">{i18n._(panelMessages.loadFailed)}</p>
       ) : status === "loading" && count === 0 ? (
-        <p className="panel-empty">Loading commits…</p>
+        <p className="panel-empty">{i18n._(panelMessages.loadingCommits)}</p>
       ) : showEmpty && searchMode ? (
         // Search miss. If the search was scoped to a subset of repos, the
         // honest failure is "not in THIS scope" — name it and offer a
@@ -982,19 +1028,24 @@ export function TimelineWindowed({
         <div className="panel-empty">
           <p className="panel-empty-line">
             {searchScopeLabel
-              ? `No matches in ${searchScopeLabel}.`
-              : "No matches in scanned history."}
+              ? translate(i18n, panelMessages.noMatchesScope, {
+                  scope: searchScopeLabel,
+                })
+              : i18n._(panelMessages.noMatchesScanned)}
           </p>
-          {searchScopeLabel && onWidenSearch && (
+          {searchWidenActions && searchWidenActions.length > 0 && (
             <p className="panel-empty-actions">
-              <button
-                type="button"
-                className="panel-empty-action"
-                onClick={onWidenSearch}
-                title="Re-run this search across every repo"
-              >
-                Search all repos
-              </button>
+              {searchWidenActions.map((action) => (
+                <button
+                  key={action.id}
+                  type="button"
+                  className="panel-empty-action"
+                  onClick={action.onActivate}
+                  title={action.title}
+                >
+                  {action.label}
+                </button>
+              ))}
             </p>
           )}
         </div>
@@ -1003,11 +1054,15 @@ export function TimelineWindowed({
           <p className="panel-empty-line">
             {windowDays != null
               ? windowDays === 1
-                ? "No commits in the last 24 hours."
-                : `No commits in the last ${windowDays} days.`
-              : "No commits match."}
+                ? i18n._(panelMessages.noCommits24h)
+                : translate(i18n, panelMessages.noCommitsDays, {
+                    days: windowDays,
+                  })
+              : i18n._(panelMessages.noCommits)}
             {authors != null &&
-              ` Filtered to ${authors.length} author${authors.length === 1 ? "" : "s"}.`}
+              translate(i18n, panelMessages.authorsFiltered, {
+                count: authors.length,
+              })}
           </p>
           {(windowDays != null || authors != null || onOpenSearch) && (
             <p className="panel-empty-actions">
@@ -1017,7 +1072,7 @@ export function TimelineWindowed({
                   className="panel-empty-action"
                   onClick={onShowAllTime}
                 >
-                  Show all time
+                  {i18n._(panelMessages.showAllTime)}
                 </button>
               )}
               {authors != null && onClearAuthors && (
@@ -1026,7 +1081,7 @@ export function TimelineWindowed({
                   className="panel-empty-action"
                   onClick={onClearAuthors}
                 >
-                  Clear author filter
+                  {i18n._(panelMessages.clearAuthorFilter)}
                 </button>
               )}
               {onOpenSearch && (
@@ -1034,9 +1089,9 @@ export function TimelineWindowed({
                   type="button"
                   className="panel-empty-action"
                   onClick={onOpenSearch}
-                  title="Search commits — message, author, SHA (/)"
+                  title={i18n._(panelMessages.searchCommitsTitle)}
                 >
-                  Search commits
+                  {i18n._(panelMessages.searchCommits)}
                 </button>
               )}
             </p>
@@ -1046,7 +1101,9 @@ export function TimelineWindowed({
         <ul
           id={searchMode ? resultsListId : undefined}
           role={searchMode ? "listbox" : undefined}
-          aria-label={searchMode ? "Commit search results" : undefined}
+          aria-label={
+            searchMode ? i18n._(panelMessages.commitSearchResults) : undefined
+          }
           className={
             "timeline-windowed-list timeline-all" +
             (searchMode ? " timeline-search-list" : "")

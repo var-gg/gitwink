@@ -12,6 +12,7 @@ node_modules
 dist
 dist-ssr
 *.local
+src/locales/*/messages.js
 
 # Editor
 .vscode/*

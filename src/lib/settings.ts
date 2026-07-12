@@ -2,6 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { useSyncExternalStore } from "react";
 
+import type { UpdatePolicy } from "../types";
+import type { AppLocale, LocalePreference } from "../i18n/runtime";
+
 /** Self-update behaviour. Mirrors Rust `UpdateCheckMode` (serialized
  *  lowercase) — "enabled" auto-checks every 24h, "manual" only on tray
  *  click, "disabled" turns the updater off entirely (no tray dot, no
@@ -21,10 +24,12 @@ export interface AppSettings {
    *  Default false ⇒ show it once (also the upgrade-time disclosure). */
   autoFetchNoticeSeen: boolean;
   updateCheck: UpdateCheckMode;
-  /** False for Scoop / Microsoft Store installs — the Updates section
-   *  of the Settings window hides because those channels manage their
-   *  own updates. */
-  updaterAvailable: boolean;
+  /** Stored language choice and the backend-resolved active locale. */
+  localePreference: LocalePreference;
+  resolvedLocale: AppLocale;
+  /** Backend-computed capabilities; broadcast back for snapshot consistency
+   * but ignored as an authority by every update command. */
+  updatePolicy: UpdatePolicy;
 }
 
 /** Built-in diff/code monospace stack — the fallback when no font is
@@ -40,7 +45,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoFetchOnShow: true,
   autoFetchNoticeSeen: false,
   updateCheck: "enabled",
-  updaterAvailable: true,
+  localePreference: "system",
+  resolvedLocale: "en",
+  updatePolicy: {
+    channel: "standalone",
+    checkProvider: "githubReleases",
+    supportsBackgroundChecks: true,
+    installAction: { kind: "inApp", provider: "gitwink" },
+  },
 };
 
 /** Timeline row height in px at scale 1.0 — the value the fixed-row

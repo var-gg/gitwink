@@ -1,0 +1,386 @@
+/* Panel window controls and information-space responsive tiers. Kept out of
+ * styles.css so native geometry, compact fallbacks and wide-review behaviour
+ * remain one reviewable responsibility. */
+
+.panel-resize-handles {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.panel-resize-handle {
+  position: absolute;
+  display: block;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+}
+
+.panel-resize-handle[data-resize-direction="north"],
+.panel-resize-handle[data-resize-direction="south"] {
+  left: 10px;
+  right: 10px;
+  height: 3px;
+  cursor: ns-resize;
+}
+
+.panel-resize-handle[data-resize-direction="north"] {
+  top: 0;
+}
+
+.panel-resize-handle[data-resize-direction="south"] {
+  bottom: 0;
+}
+
+.panel-resize-handle[data-resize-direction="east"],
+.panel-resize-handle[data-resize-direction="west"] {
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  cursor: ew-resize;
+}
+
+.panel-resize-handle[data-resize-direction="east"] {
+  right: 0;
+}
+
+.panel-resize-handle[data-resize-direction="west"] {
+  left: 0;
+}
+
+.panel-resize-handle[data-resize-direction="northeast"],
+.panel-resize-handle[data-resize-direction="northwest"],
+.panel-resize-handle[data-resize-direction="southeast"],
+.panel-resize-handle[data-resize-direction="southwest"] {
+  width: 10px;
+  height: 10px;
+}
+
+.panel-resize-handle[data-resize-direction="northeast"],
+.panel-resize-handle[data-resize-direction="southwest"] {
+  cursor: nesw-resize;
+}
+
+.panel-resize-handle[data-resize-direction="northwest"],
+.panel-resize-handle[data-resize-direction="southeast"] {
+  cursor: nwse-resize;
+}
+
+.panel-resize-handle[data-resize-direction="northeast"],
+.panel-resize-handle[data-resize-direction="northwest"] {
+  top: 0;
+}
+
+.panel-resize-handle[data-resize-direction="southeast"],
+.panel-resize-handle[data-resize-direction="southwest"] {
+  bottom: 0;
+}
+
+.panel-resize-handle[data-resize-direction="northeast"],
+.panel-resize-handle[data-resize-direction="southeast"] {
+  right: 0;
+}
+
+.panel-resize-handle[data-resize-direction="northwest"],
+.panel-resize-handle[data-resize-direction="southwest"] {
+  left: 0;
+}
+
+.panel-maximize {
+  flex-shrink: 0;
+  width: calc(22px * var(--ui-scale, 1));
+  height: calc(22px * var(--ui-scale, 1));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.48;
+}
+
+.panel-maximize:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.08);
+  opacity: 0.9;
+}
+
+.panel-maximize:disabled {
+  cursor: wait;
+  opacity: 0.25;
+}
+
+.panel-maximize-glyph {
+  position: relative;
+  width: calc(9px * var(--ui-scale, 1));
+  height: calc(8px * var(--ui-scale, 1));
+  border: max(1px, calc(1px * var(--ui-scale, 1))) solid currentColor;
+  border-radius: calc(1px * var(--ui-scale, 1));
+}
+
+.panel-maximize.maximized .panel-maximize-glyph {
+  transform: translate(
+    calc(1px * var(--ui-scale, 1)),
+    calc(1px * var(--ui-scale, 1))
+  );
+}
+
+.panel-maximize.maximized .panel-maximize-glyph::before {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  left: calc(-4px * var(--ui-scale, 1));
+  top: calc(-4px * var(--ui-scale, 1));
+  border: max(1px, calc(1px * var(--ui-scale, 1))) solid currentColor;
+  border-radius: calc(1px * var(--ui-scale, 1));
+  background: inherit;
+}
+
+@media (prefers-color-scheme: dark) {
+  .panel-maximize:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* Compact is based on effective width (window width / UI scale), not raw OS
+ * pixels. Controls keep stable rows; optional status and decorative search
+ * glyphs yield before window actions or filter truth. */
+.panel-viewport-compact .autofetch-notice {
+  flex-direction: column;
+  gap: calc(4px * var(--ui-scale, 1));
+}
+
+.panel-viewport-compact .autofetch-notice-actions {
+  align-self: flex-end;
+}
+
+.panel-viewport-compact .panel-chrome-row,
+.panel-viewport-compact .panel-filter-row {
+  padding-right: calc(5px * var(--ui-scale, 1));
+  padding-left: calc(5px * var(--ui-scale, 1));
+}
+
+.panel-viewport-compact .panel-chrome-row {
+  gap: calc(3px * var(--ui-scale, 1));
+}
+
+.panel-viewport-compact .panel-chrome-status {
+  gap: calc(2px * var(--ui-scale, 1));
+}
+
+.panel-viewport-compact .panel-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.panel-viewport-compact .view-nav-btn {
+  padding-right: calc(4px * var(--ui-scale, 1));
+  padding-left: calc(4px * var(--ui-scale, 1));
+}
+
+.panel-viewport-compact .upstream-badge {
+  padding-right: calc(4px * var(--ui-scale, 1));
+  padding-left: calc(4px * var(--ui-scale, 1));
+}
+
+.panel-viewport-compact .header-chips {
+  gap: calc(3px * var(--ui-scale, 1));
+}
+
+.panel-viewport-compact .panel-filter-row .chip-slot-time {
+  flex: 0 1 auto;
+}
+
+.panel-viewport-compact .panel-filter-row .chip-slot-authors {
+  max-width: calc(92px * var(--ui-scale, 1));
+}
+
+.panel-viewport-compact .panel-filter-row .chip {
+  padding-right: calc(7px * var(--ui-scale, 1));
+  padding-left: calc(7px * var(--ui-scale, 1));
+}
+
+.panel-viewport-compact .search-bar-hint,
+.panel-viewport-compact .search-bar-icon {
+  display: none;
+}
+
+.panel-viewport-compact .search-bar-scope {
+  flex: 0 1 calc(96px * var(--ui-scale, 1));
+  max-width: calc(96px * var(--ui-scale, 1));
+}
+
+/* Wide review: repository identity and paths receive the new space first. */
+.panel-viewport-wide .chip,
+.panel-viewport-wide .chip-control {
+  max-width: calc(280px * var(--ui-scale, 1));
+}
+
+.panel-viewport-wide.single-mode .chip-wrap[data-chip="repo"] .chip,
+.panel-viewport-wide.single-mode .chip-wrap[data-chip="repo"] .chip-control {
+  max-width: calc(200px * var(--ui-scale, 1));
+}
+
+.panel-viewport-wide.single-mode .chip-wrap[data-chip="branch"] .chip {
+  max-width: calc(360px * var(--ui-scale, 1));
+}
+
+.panel-viewport-wide .panel-filter-row .chip-slot-authors {
+  max-width: calc(220px * var(--ui-scale, 1));
+}
+
+.panel-viewport-wide .search-bar-scope {
+  max-width: calc(240px * var(--ui-scale, 1));
+}
+
+.panel-viewport-wide .filehist-chip {
+  max-width: calc(320px * var(--ui-scale, 1));
+}
+
+.panel-viewport-wide .timeline-all .timeline-row {
+  grid-template-columns:
+    28px 42px minmax(120px, 1.25fr) minmax(260px, 3fr)
+    minmax(140px, 1.2fr);
+}
+
+.panel-viewport-wide .timeline-all.timeline-search-list .timeline-row {
+  grid-template-columns:
+    28px 42px minmax(120px, 1.25fr) minmax(260px, 3fr)
+    minmax(140px, 1.2fr) 22px;
+}
+
+.panel-viewport-wide .timeline-single .timeline-row {
+  grid-template-columns: 96px 42px minmax(300px, 4fr) minmax(150px, 1.3fr);
+}
+
+/* Expansive/maximized review keeps prose readable while letting identifiers
+ * and file rails consume substantially more horizontal information space. */
+.panel-viewport-expansive .chip,
+.panel-viewport-expansive .chip-control {
+  max-width: calc(420px * var(--ui-scale, 1));
+}
+
+.panel-viewport-expansive.single-mode .chip-wrap[data-chip="repo"] .chip,
+.panel-viewport-expansive.single-mode .chip-wrap[data-chip="repo"] .chip-control {
+  max-width: calc(280px * var(--ui-scale, 1));
+}
+
+.panel-viewport-expansive.single-mode .chip-wrap[data-chip="branch"] .chip {
+  max-width: calc(520px * var(--ui-scale, 1));
+}
+
+.panel-viewport-expansive .panel-filter-row .chip-slot-authors {
+  max-width: calc(320px * var(--ui-scale, 1));
+}
+
+.panel-viewport-expansive .search-bar-scope {
+  max-width: calc(360px * var(--ui-scale, 1));
+}
+
+.panel-viewport-expansive .search-scope-chips {
+  flex-basis: 52%;
+}
+
+.panel-viewport-expansive .search-scope-chips .chip-wrap[data-chip="repo"] {
+  max-width: calc(260px * var(--ui-scale, 1));
+}
+
+.panel-viewport-expansive .search-scope-chips .chip-wrap[data-chip="authors"] {
+  max-width: calc(220px * var(--ui-scale, 1));
+}
+
+.panel-viewport-expansive .filehist-chip {
+  max-width: calc(520px * var(--ui-scale, 1));
+}
+
+.panel-viewport-expansive .panel-filter-row .header-chips {
+  max-width: calc(1600px * var(--ui-scale, 1));
+}
+
+.panel-viewport-expansive .timeline-all .timeline-row {
+  grid-template-columns:
+    28px 46px minmax(180px, 1.4fr) minmax(420px, 4fr)
+    minmax(180px, 1.4fr);
+}
+
+.panel-viewport-expansive .timeline-all.timeline-search-list .timeline-row {
+  grid-template-columns:
+    28px 46px minmax(180px, 1.4fr) minmax(420px, 4fr)
+    minmax(180px, 1.4fr) 22px;
+}
+
+.panel-viewport-expansive .timeline-single .timeline-row {
+  grid-template-columns: 110px 46px minmax(500px, 5fr) minmax(200px, 1.5fr);
+}
+
+.panel-viewport-expansive .timeline-row {
+  width: min(100%, calc(1800px * var(--ui-scale, 1)));
+}
+
+.panel-viewport-expansive .timeline-expansion > * {
+  max-width: calc(1600px * var(--ui-scale, 1));
+}
+
+.panel-viewport-expansive .commit-detail-summary,
+.panel-viewport-expansive .commit-detail-body,
+.panel-viewport-expansive .commit-detail-meta,
+.panel-viewport-expansive .commit-actions {
+  max-width: 120ch;
+}
+
+/* Settings exposes keyboard-accessible presets without turning exact window
+ * geometry into another slider or duplicating native resize controls. */
+.settings-panel-layout-row {
+  margin-top: 14px;
+  align-items: flex-start;
+}
+
+.settings-button-group {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.settings-compact-button {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings-compact-button:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.settings-compact-button:disabled {
+  cursor: wait;
+  opacity: 0.45;
+}
+
+@media (prefers-color-scheme: dark) {
+  .settings-compact-button {
+    border-color: rgba(255, 255, 255, 0.18);
+  }
+
+  .settings-compact-button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08);
+  }
+}

@@ -1,0 +1,1958 @@
+msgid ""
+msgstr ""
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: ja\n"
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Plural-Forms: \n"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.allBranchesSuffix"
+msgstr " · すべてのブランチ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.authorsFiltered"
+msgstr " 作成者 {count}人に絞り込んでいます。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.branchesFiltered"
+msgstr " ブランチ {count}本に絞り込んでいます。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.historyOffline"
+msgstr "; {count}件はオフライン"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.historyFailed"
+msgstr "; {count}件は読み取り不可"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.deleted"
+msgstr "（削除済み）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.fileDidNotExist"
+msgstr "（以前のファイルなし）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.noSummary"
+msgstr "（概要なし）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.defaultOn"
+msgstr "（デフォルトでオン）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.upstream.divergedAria"
+msgstr "{upstream} より {ahead}件先行、{behind}件遅延"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.unavailableRemove"
+msgstr "{author} のコミットは現在の範囲にありません。選択するとこのフィルターを解除します。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.unavailableSuffix"
+msgstr "{branch} · 利用不可"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.count"
+msgstr "作成者 {count}人"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.countUnavailable"
+msgstr "作成者 {count}人 · {unavailable}人は利用不可"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.count"
+msgstr "{count} ブランチ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.countUnavailable"
+msgstr "{count} ブランチ · {unavailable}件は利用不可"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.matchCount"
+msgstr "{count} 件一致"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.count"
+msgstr "{count} リポジトリ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.repoCount"
+msgstr "{count} リポジトリ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.commitsScanned"
+msgstr "{count}件のコミットを走査"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "time.daysAgo"
+msgstr "{count}日前"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "time.hoursAgo"
+msgstr "{count}時間前"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "time.minutesAgo"
+msgstr "{count}分前"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.upstream.syncedTitle"
+msgstr "{local} は {upstream} と同期しています。\n"
+"{fetch}。最後の fetch を反映しています。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.upstream.divergedTitle"
+msgstr "{local} と {upstream} の比較: {ahead}件先行、{behind}件遅延。\n"
+"{fetch}。最後の fetch を反映しています。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.marker.new"
+msgstr "{marker}（新着）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.missingTitle"
+msgstr "{path} — ディスク上で移動または削除されています。新しいパスをパネルにドロップして再接続するか、除外を選択してください。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.repoFilterTitle"
+msgstr "{path}（選択して絞り込み）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.inAppTitle"
+msgstr "{provider} アップデート"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.unavailableRemove"
+msgstr "{ref} は存在しません。選択するとこのフィルターを解除します。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.restoredAnnouncement"
+msgstr "{repo} を復元しました。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.replacedAnnouncement"
+msgstr "{repo} のフォルダーに現在あるリポジトリへ置き換えました。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.missingAria"
+msgstr "{repo}、{path} にリポジトリがありません"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.scope"
+msgstr "{scope} · {history} · {authors}{branches}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.refs"
+msgstr "{scope}; リモート追跡 ref を {count}件含む; 名前変更はまだ追跡しません"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.new.count"
+msgstr "↑ 新着コミット {count} 件"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.keyboardHint"
+msgstr "↑↓ 選択 · Enter で履歴へ移動 · 行をクリックしてプレビュー · Esc で閉じる"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.addRepo"
+msgstr "+ リポジトリを追加…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.updateFailed"
+msgstr "⚠ アップデート確認に失敗"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.updateCurrent"
+msgstr "✓ 最新です"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.pinned"
+msgstr "📌 ピン留め"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.showFileHistoryDecorated"
+msgstr "🕘 ファイル履歴を表示"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sortName"
+msgstr "あ–ん"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.addRepo.dialogTitle"
+msgstr "Git リポジトリを追加"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.addToMulti"
+msgstr "複数リポジトリフィルターに追加"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.afterAlt"
+msgstr "変更後"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.after"
+msgstr "変更後"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.all"
+msgstr "すべての作成者"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.all"
+msgstr "すべてのブランチ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.allBranches"
+msgstr "すべてのブランチ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.allCount"
+msgstr "すべてのブランチ（{count}）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.scope.historyAll"
+msgstr "全履歴"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.scope.allRepos"
+msgstr "すべてのリポジトリ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.all"
+msgstr "すべてのリポジトリ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.allCount"
+msgstr "すべてのリポジトリ（{count}）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.time.all"
+msgstr "全期間"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sortNameTitle"
+msgstr "名前順"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.busy"
+msgstr "別の fetch を実行中"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.busyTitle"
+msgstr "別の fetch を実行中です。少し待ってから再試行してください"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.label"
+msgstr "アプリの言語"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.title"
+msgstr "外観"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.hint"
+msgstr "すべての gitwink ウィンドウとトレイにすぐ反映されます。未対応のシステム言語では英語を使用します。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.coverageAuthorLimited"
+msgstr "作成者の結果は、最近読み込んだ {limit}件のコミットに限られます。それより古い一致は確認していません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeAuthors"
+msgstr "作成者"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.autoFetch.title"
+msgstr "自動フェッチ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.automatic"
+msgstr "自動チェック"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.cloneHistory"
+msgstr "クローンで利用できる履歴"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.back"
+msgstr "戻る"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.backTitle"
+msgstr "戻る（Alt+←）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.backToAll"
+msgstr "すべてのリポジトリに戻る"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.backToAllRepos"
+msgstr "すべてのリポジトリに戻る"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeBack"
+msgstr "検索範囲に戻る"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.beforeAlt"
+msgstr "変更前"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.before"
+msgstr "変更前"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.binaryFile"
+msgstr "バイナリファイル"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.empty.browseFolder"
+msgstr "フォルダーを選択…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.fontPlaceholder"
+msgstr "内蔵の等幅フォント"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "common.cancel"
+msgstr "キャンセル"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.cancelReplaceAria"
+msgstr "{repo} の置き換えをキャンセル"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.automaticHint"
+msgstr "起動時と24時間ごとに {provider} を確認します。アップデートの準備ができるとトレイにドットが表示されます。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.updateChecking"
+msgstr "アップデートを確認中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.policyExternal"
+msgstr "アップデートの確認には {checkProvider} を使用します。インストールは {installProvider} が管理します。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.policyInApp"
+msgstr "アップデートの確認には {checkProvider} を使用します。{installProvider} を通じてアプリ内でインストールします。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.clearAuthorFilter"
+msgstr "作成者フィルターを解除"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.clear"
+msgstr "フィルターを解除"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.clear"
+msgstr "リポジトリフィルターを解除"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.clear"
+msgstr "検索をクリア"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.closeTitle"
+msgstr "閉じる（Esc）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.closeTitle"
+msgstr "閉じる（Esc）—差分ウィンドウも閉じます"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.close"
+msgstr "コミット検索を閉じる"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.close"
+msgstr "検索を閉じる"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.closePanel"
+msgstr "パネルを閉じる"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.marker.commit"
+msgstr "コミット"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.anchor.older"
+msgstr "コミット {hash} は、ここに読み込まれた {count} 件より古いコミットです。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.results"
+msgstr "コミット検索結果"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.countTitle"
+msgstr "現在のリポジトリと期間範囲のコミット"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.matchingCommitCounts"
+msgstr "現在の作成者・期間フィルターに一致するコミット"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.historyAvailable"
+msgstr "{published}/{total}件のリポジトリで全履歴を利用できます{failed}{offline}。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.historyPaused"
+msgstr "全履歴のインデックス作成を一時停止しました。結果はインデックス済みのコミットに限られます。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.confirmReplace"
+msgstr "置き換えを確定"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.confirmReplaceAria"
+msgstr "{oldRepo} を {newRepo} に置き換える"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "common.contextMenu"
+msgstr "コンテキストメニュー"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.sizeHint"
+msgstr "情報スペースとは独立して読みやすさを調整します。通常のパネルは選択した作業領域のサイズを保ちながら、このスケールに従います。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.copy.copied"
+msgstr "コピーしました ✓"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.copy.copiedAi"
+msgstr "AI コンテキストとしてコピーしました ✓"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copy"
+msgstr "コピー"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyAiContext"
+msgstr "AI コンテキストとしてコピー"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.copy.ai"
+msgstr "AI コンテキストとしてコピー"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.copy.aiTitle"
+msgstr "AI コンテキストとしてコピー（c）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyCommitMessage"
+msgstr "コミットメッセージをコピー"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.copy.failed"
+msgstr "コピーに失敗"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.copy.failedTry"
+msgstr "コピーに失敗しました—もう一度お試しください"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyFileDiff"
+msgstr "ファイルの差分をコピー"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyFilePath"
+msgstr "ファイルパスをコピー"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyFullHash"
+msgstr "完全なハッシュをコピー"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyShortHash"
+msgstr "短いハッシュをコピー"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyWithReference"
+msgstr "参照付きでコピー"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.excludeFailed"
+msgstr "リポジトリを除外できませんでした: {error}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.inspectError"
+msgstr "{repo} を確認できませんでした"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.loadError"
+msgstr "除外したリポジトリを読み込めませんでした"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.loadFailed"
+msgstr "タイムラインを読み込めませんでした。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.loadFailedTitle"
+msgstr "このコミットのファイルを読み込めませんでした"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.loadFailed"
+msgstr "このコミットのファイルを読み込めませんでした。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.loadFailed"
+msgstr "この差分を読み込めませんでした"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.repoUnavailable"
+msgstr "このリポジトリを開けませんでした。移動したか、切断されたドライブにある可能性があります。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteReadFailed"
+msgstr "クリップボードを読み取れませんでした。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileHistoryUnavailable"
+msgstr "このファイルの履歴を読み取れませんでした。リポジトリを利用できないか、ディスク上で変更中の可能性があります。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.restoreError"
+msgstr "{repo} を復元できませんでした"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.replaceError"
+msgstr "現在の {repo} リポジトリを使用できませんでした"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sortCount"
+msgstr "件数"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.countUnavailableTitle"
+msgstr "{count} 回再試行しても件数を取得できませんでした。このリストを閉じて開き直すと再試行します。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.scope.historyIndexed"
+msgstr "現在インデックス済みの履歴"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.context.default"
+msgstr "既定—各変更の前後 3 行"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.context"
+msgstr "差分コンテキスト"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.minimap.overview"
+msgstr "差分の概要—クリックまたはドラッグして変更箇所へ移動"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.fontHint"
+msgstr "差分ビューのフォントです。空欄では内蔵の等幅フォントスタックを使用します。インストール済みのフォントはすべて使えますが、ガターと行番号を揃えるには等幅フォントを推奨します。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "common.dismiss"
+msgstr "閉じる"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.control.dismiss"
+msgstr "外部リクエストの状態を閉じる"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.firstRun.dismiss"
+msgstr "ヒントを閉じる"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.downloading"
+msgstr "ダウンロード中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.columns.resizeTitle"
+msgstr "ドラッグでサイズ変更 · ダブルクリックでリセット"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.empty.dropTitle"
+msgstr "リポジトリのフォルダーをここにドロップ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.english"
+msgstr "英語"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.error"
+msgstr "エラー: {error}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.excludeAria"
+msgstr "{repo} を gitwink から除外"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.exclude"
+msgstr "gitwink から除外"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.excludeTitle"
+msgstr "gitwink から除外（設定で復元可能）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.excludedAt"
+msgstr "{when}に除外"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.intro"
+msgstr "除外したリポジトリは検出対象から外れ、パネルにも表示されませんが、フォルダー、ピン状態、ブランチ設定はそのまま保持されます。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.exitFileHistory"
+msgstr "ファイル履歴を終了"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.context.expanded"
+msgstr "拡張—コンテキスト 25 行"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.addRepo.failed"
+msgstr "リポジトリを追加できませんでした"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.failed"
+msgstr "fetch に失敗"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.failedTitle"
+msgstr "fetch に失敗しました（オフライン、origin なし、または別の fetch を実行中）。件数は最後の成功時点です"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.autoFetch.label"
+msgstr "パネルを開いたときにフェッチ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.now"
+msgstr "今すぐ origin を fetch"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.nowTitle"
+msgstr "今すぐ origin から更新します（読み取り専用、マージやプッシュはしません）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.currentTitle"
+msgstr "fetch 完了 ✓—origin の ref は最新です"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.current"
+msgstr "fetch 完了—origin の ref は最新"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.fetching"
+msgstr "origin を fetch 中"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.fetchingTitle"
+msgstr "origin を fetch 中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.context.tooLarge"
+msgstr "全体表示するにはファイルが大きすぎます"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.facetsError"
+msgstr "フィルター件数を更新できませんでした。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.filterTimelineTo"
+msgstr "タイムラインを {repo} に絞り込む"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.aria"
+msgstr "差分内を検索"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.placeholder"
+msgstr "差分内を検索…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.folderCheckedOnRestore"
+msgstr "復元時にフォルダーの状態を確認します"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.folderAvailable"
+msgstr "フォルダーを利用できます"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.folderUnavailable"
+msgstr "フォルダーを利用できません—戻るまでは見つからない状態で復元されます"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.system"
+msgstr "システム設定に従う"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.font"
+msgstr "フォント"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.forward"
+msgstr "進む"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.forwardTitle"
+msgstr "進む（Alt+→）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.context.full"
+msgstr "全体"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.lfsFile"
+msgstr "Git LFS ファイル"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.provider.gitwink"
+msgstr "gitwink"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.binaryUnsupported"
+msgstr "gitwink は画像以外のバイナリ差分をまだ表示できません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.autoFetchDisclosure"
+msgstr "リポジトリを表示すると gitwink が origin から変更を取得し、チームメンバーがプッシュしたコミットを表示するようになりました。更新するのはリモート追跡ミラーだけで、リポジトリのマージ、プッシュ、変更は行いません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.dialog"
+msgstr "gitwink アップデート"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+#: src/i18n/messages/updates.ts
+msgid "common.gotIt"
+msgstr "了解"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.title"
+msgstr "{path} の履歴: {scope}—クリックで終了（Esc）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.unavailable"
+msgstr "履歴を利用できません"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.upstream.syncedAria"
+msgstr "{upstream} と同期済み"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.scope.historyIndexedCount"
+msgstr "インデックス済み履歴（{published}/{total}件のリポジトリ）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.historyIndexing"
+msgstr "全履歴をインデックス中 · {published}/{total}件のリポジトリを利用可能 · {commits}件のコミットを走査"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.scope.historyIndexingCount"
+msgstr "履歴をインデックス中（{published}/{total}件のリポジトリ）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.inspecting"
+msgstr "確認中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.installing"
+msgstr "インストール中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.japanese"
+msgstr "日本語"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.jumpToHistory"
+msgstr "履歴へ移動"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.new.jumpLatest"
+msgstr "最新のコミットへ移動"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.jumpToCommit"
+msgstr "このコミットのリポジトリ履歴へ移動（Enter）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "time.justNow"
+msgstr "たった今"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.excludeDescription"
+msgstr "フォルダーと設定は保持されます。後で設定から復元できます。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.korean"
+msgstr "韓国語"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.title"
+msgstr "言語"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.time.lastDays"
+msgstr "過去 {count} 日間"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.time.last24Hours"
+msgstr "過去 24 時間"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.lastActivity"
+msgstr "最終アクティビティ: {date}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.upstream.lastFetch"
+msgstr "最後の fetch: {age}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.later"
+msgstr "後で"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.latestChanges"
+msgstr "最近の変更 {count}件"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.loading"
+msgstr "ブランチを読み込み中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.loadingCommits"
+msgstr "コミットを読み込み中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.loading"
+msgstr "差分を読み込み中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.loading"
+msgstr "ファイルを読み込み中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.loading"
+msgstr "画像を読み込み中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "common.loading"
+msgstr "読み込み中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.loading"
+msgstr "読み込み中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.local"
+msgstr "ローカル"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.manual"
+msgstr "手動のみ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.maximizeTitle"
+msgstr "詳しく確認するために最大化"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.maximizePanel"
+msgstr "パネルを最大化"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.marker.merge"
+msgstr "マージコミット"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.provider.microsoftStore"
+msgstr "Microsoft Store"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.missing"
+msgstr "なし"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.missing"
+msgstr "なし"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sortCountTitle"
+msgstr "コミット数の多い順"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sortRecentTitle"
+msgstr "最近のアクティビティ順"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.multiRepoOnly"
+msgstr "複数選択は全リポジトリモードで利用できます"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.shortcut.modifierError"
+msgstr "修飾キー（Ctrl / Alt / Shift）を1つ以上と、通常のキーを組み合わせてください。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.minimap.newViewport"
+msgstr "新しい側（変更後）の表示範囲"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.next"
+msgstr "次の一致"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.nextTitle"
+msgstr "次の一致（Enter）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.none"
+msgstr "作成者なし"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.noMatch"
+msgstr "一致する作成者がいません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.manualHint"
+msgstr "バックグラウンドでは確認しません。トレイの「アップデートを確認」を使用してください。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.none"
+msgstr "ブランチなし"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.noMatch"
+msgstr "一致するブランチがありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileEmptyScanLimit"
+msgstr "読み取れる履歴に {file} の変更は見つかりませんでした。さらに古いコミットは {count}件の安全上限より先に残っています。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileEmptyIncomplete"
+msgstr "読み取れる履歴に {file} の変更は見つかりませんでした。一部の Git オブジェクトを読み取れず、結果は不完全です。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.noCommitsDays"
+msgstr "過去 {days}日間にコミットはありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.noCommits24h"
+msgstr "過去24時間にコミットはありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.noCommits"
+msgstr "条件に一致するコミットはありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.empty"
+msgstr "除外したリポジトリはありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.upstream.noFetch"
+msgstr "fetch の記録はありません"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.noChanges"
+msgstr "変更されたファイルはありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileEmpty"
+msgstr "このリポジトリに {file} の履歴はありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileEmptyShallow"
+msgstr "このシャロークローンに {file} の履歴はありません。それ以前の履歴はローカルに存在しません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.noMatchesScope"
+msgstr "{scope} に一致する項目はありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.noMatchesScanned"
+msgstr "スキャン済みの履歴に一致する項目はありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.noMatchShallow"
+msgstr "このシャロークローンで利用できる履歴に一致するコミットはありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.noMatchIncomplete"
+msgstr "完全に読み取れた履歴に一致するコミットはありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.noMatchLimited"
+msgstr "この範囲で最近読み込んだ {limit}件のコミットには一致するものがありません。古いコミットは未確認です。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.noNotes"
+msgstr "このバージョンのリリースノートはありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.noMatch"
+msgstr "一致するリポジトリがありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.text.none"
+msgstr "表示できるテキスト差分はありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.off"
+msgstr "オフ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.minimap.oldViewport"
+msgstr "古い側（変更前）の表示範囲"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.only"
+msgstr "のみ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.openAria"
+msgstr "{path} の {repo} を開く"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.openFile.action"
+msgstr "settings.json を開く"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.control.opened"
+msgstr "{source} から開きました"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.openFile.hint"
+msgstr "既定のエディターで元の設定ファイルを開きます。上の項目の多くはここにも反映されます。自動管理されるウィンドウ位置やリポジトリ状態を手動で編集する必要はありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.or"
+msgstr "または"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.empty.pastePath"
+msgstr "またはファイルマネージャーでフォルダーのパスをコピーしてください"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.shortcut.panelHotkey"
+msgstr "パネルのショートカット"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelSize"
+msgstr "パネルサイズ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.partial"
+msgstr "一部の履歴"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteShort"
+msgstr "パスを貼り付け"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteTitle"
+msgstr "クリップボードからリポジトリのパスを貼り付け（{shortcut}）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteBusy"
+msgstr "貼り付け中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.pickFile"
+msgstr "ファイルを選択してください。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.pin"
+msgstr "ピン留め"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.pinAria"
+msgstr "{repo} をピン留め"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.pinPanel"
+msgstr "パネルを固定"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.pinTitle"
+msgstr "固定—ほかをクリックしても開いたままにします。常に手前には表示せず、トレイまたはショートカットから呼び出せます。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.scope.historyPreparing"
+msgstr "履歴インデックスを準備中"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.historyPreparing"
+msgstr "全履歴のインデックスを準備中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.preparing"
+msgstr "準備中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.shortcut.recording"
+msgstr "新しいショートカットを押してください…（Esc でキャンセル）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.previous"
+msgstr "前の一致"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.previousTitle"
+msgstr "前の一致（Shift+Enter）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.minimap.realign"
+msgstr "両側を再同期"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allReposTitle"
+msgstr "すべてのリポジトリでこの検索を再実行"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allAuthorsTitle"
+msgstr "作成者フィルターを外して再検索"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allHistoryTitle"
+msgstr "期間フィルターを外して再検索"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.reachableCommits"
+msgstr "全期間の到達可能なコミット（期間フィルターとは無関係）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sortRecent"
+msgstr "最近"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.remoteTracking"
+msgstr "リモート追跡"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.remoteTip"
+msgstr "このコミットのリモート追跡 ref（読み取り専用、最後の Git fetch 時点）。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.remoteTrackingTitle"
+msgstr "リモート追跡 ref はローカルから読み取ります—IDE や CLI、またはパネルを開いた際の gitwink 自動 fetch で更新されます（設定 → 自動 fetch）。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.remoteTips"
+msgstr "このコミットのリモート追跡 ref（読み取り専用、最後の Git fetch 時点）。ほか {count} 件。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.renamedFrom"
+msgstr "{path} から名前を変更"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.renamesNotFollowed"
+msgstr "名前の変更はまだ追跡しません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.replacing"
+msgstr "置き換え中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeRepositories"
+msgstr "リポジトリ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.title"
+msgstr "リポジトリ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.control.failed"
+msgstr "{source} からのリクエストに失敗"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.shortcut.help"
+msgstr "必須: 修飾キー（Ctrl / Alt / Shift）を1つ以上と、通常のキーを組み合わせてください。OS が予約している組み合わせ（Alt+Tab、Win+L など）は取得できません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelReset"
+msgstr "レイアウトをリセット"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelSizeHint"
+msgstr "正確なサイズはウィンドウの各辺をドラッグして調整し、ファイルパスを広く見るには「ワイド」を選択します。リセットするとサイズと位置が初期値に戻ります。最大化は一時的な確認モードです。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.columns.resize"
+msgstr "変更前/変更後の列幅を変更"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.restarting"
+msgstr "再起動中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.restore"
+msgstr "復元"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.restoreAria"
+msgstr "{repo} を復元"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.restorePanel"
+msgstr "パネルを元に戻す"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.restoreTitle"
+msgstr "以前のパネルサイズに戻す"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.restoring"
+msgstr "復元中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "common.retry"
+msgstr "再試行"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.replacementWarning"
+msgstr "確認したリポジトリ: {repo}。この確認は、同じリポジトリと除外ライフサイクルが変わっていない間だけ有効です。このパスに対する gitwink の古いキャッシュ、ピン、ブランチ設定を削除し、フォルダーに現在ある Git リポジトリを登録します。フォルダー自体は変更しません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileCoverageScanned"
+msgstr "{count}件のコミットを走査しました。古い履歴は安全上限の外に残っています。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.loadingFileHistory"
+msgstr "ファイル履歴を走査中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.empty.scanningRepos"
+msgstr "リポジトリを検索中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.scanning"
+msgstr "走査中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.scanning"
+msgstr "検索中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.provider.scoop"
+msgstr "Scoop"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeButton"
+msgstr "範囲"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeButtonCount"
+msgstr "範囲 · {count}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.sync.off"
+msgstr "スクロール同期はオフ—左右を別々にスクロールします。選択すると連動します。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.sync.on"
+msgstr "スクロール同期はオン—変更前後が連動します。選択すると別々にスクロールします。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.firstRun.tip"
+msgstr "検索 · コミットをクリックして展開 · ファイルの履歴ボタンで変更履歴を開く · 右クリックで AI 用にコピー"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allAuthors"
+msgstr "すべての作成者を検索"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allHistory"
+msgstr "全履歴を検索"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allRepos"
+msgstr "すべてのリポジトリを検索"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.searchAria"
+msgstr "作成者を検索"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.searchPlaceholder"
+msgstr "作成者を検索…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.searchAria"
+msgstr "ブランチを検索"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.searchPlaceholder"
+msgstr "ブランチを検索…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.aria"
+msgstr "コミットを検索"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.commits"
+msgstr "コミットを検索"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.commitsTitle"
+msgstr "コミットを検索—メッセージ、作成者、SHA (/)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.placeholder"
+msgstr "コミットを検索—メッセージ、作成者、SHA 接頭辞…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.allBranchesNote"
+msgstr "このリポジトリのすべてのブランチを含めて検索します。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.searchAria"
+msgstr "リポジトリを検索"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.searchPlaceholder"
+msgstr "リポジトリを検索…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeTitle"
+msgstr "検索範囲"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scope"
+msgstr "検索範囲: {scope}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.searching"
+msgstr "検索中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.unavailable"
+msgstr "選択済み · 現在の範囲では利用不可"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.unavailable"
+msgstr "選択済み · 利用できない ref"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.unavailableTitle"
+msgstr "現在のリポジトリ・ブランチ・期間範囲にコミットがない選択済み作成者"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.unavailableTitle"
+msgstr "このリポジトリに存在しない選択済み ref"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.selectedRepoScopeLoading"
+msgstr "選択したリポジトリ範囲（読み込み中）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+#: src/i18n/messages/settings.ts
+msgid "settings.title"
+msgstr "設定"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "settings.openMenu"
+msgstr "設定…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.shortcut.title"
+msgstr "ショートカット"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.showAllTime"
+msgstr "全期間を表示"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.showFileHistory"
+msgstr "ファイル履歴を表示"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.showHistory"
+msgstr "{file} の履歴を表示"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.showOnly"
+msgstr "{author} のみ表示"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.showHistoryInPanel"
+msgstr "パネルでこのファイルの履歴を表示"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.showing"
+msgstr "変更ファイル {total} 件中 {shown} 件を表示"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileCoverageShallow"
+msgstr "このシャロークローンで利用できるすべてのファイル履歴を表示しています。それ以前の履歴はローカルに存在しません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileCoverageMatches"
+msgstr "最近のファイル変更 {count}件を表示しています。さらに古い変更もあります。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.coverageLimited"
+msgstr "この範囲の最近のコミット {limit}件を表示しています。古いコミットは読み込んでいません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.skip"
+msgstr "v{version} をスキップ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileCoverageIncomplete"
+msgstr "一部の Git オブジェクトを読み取れず、ファイル履歴が不完全な可能性があります。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.coverageIncomplete"
+msgstr "一部の ref または Git オブジェクトを読み取れず、リポジトリ履歴が不完全な可能性があります。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.sort"
+msgstr "並べ替え"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sort"
+msgstr "作成者を並べ替え"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.sync"
+msgstr "同期"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.marker.tagged"
+msgstr "タグ付きコミット"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.lfsHint"
+msgstr "実際の画像は Git LFS に保存されています。gitwink はまだ LFS オブジェクトを取得しないため、プレビューできません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteNoPath"
+msgstr "クリップボードに貼り付け可能な絶対パスがありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.cannotShow"
+msgstr "差分を表示できません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.confirmationExpired"
+msgstr "確認後にリポジトリが変更されました。確定する前に現在のリポジトリをもう一度確認してください。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.identityMismatch"
+msgstr "このフォルダーには別の Git リポジトリがあります。置き換えの詳細を確認してから確定してください。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.unsupported"
+msgstr "このインストールでは gitwink 内からアップデートを確認できません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.managedExternally"
+msgstr "このインストールは {provider} が管理し、最終更新も担当します。ターミナルで {command} を実行して v{version} に更新してください。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.coverageShallow"
+msgstr "シャロークローンです。ローカル境界より前の履歴は利用できません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeTime"
+msgstr "期間"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.typeToSearch"
+msgstr "入力して {scope} を検索"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.size"
+msgstr "UI スケール"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.unpin"
+msgstr "ピン留めを解除"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.unpinAria"
+msgstr "{repo} のピン留めを解除"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.unpinPanel"
+msgstr "パネルの固定を解除"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.unpinTitle"
+msgstr "固定解除—フォーカスを失うと自動的に隠れ、常に手前に表示するグランスモードに戻ります"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.available"
+msgstr "アップデートがあります"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.updateAvailableTitle"
+msgstr "アップデートがあります—v{version} · クリックして更新"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.failed"
+msgstr "アップデートに失敗"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.updateAria"
+msgstr "gitwink をバージョン {version} に更新"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.now"
+msgstr "今すぐ更新"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.progress"
+msgstr "アップデートの進行状況"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.offHint"
+msgstr "アップデート機能を完全に無効にします。トレイの「アップデートを確認」も非表示になります。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.title"
+msgstr "アップデート"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.updating"
+msgstr "作成者を更新中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.updatingCommitCountAria"
+msgstr "コミット数を更新中"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.updatingCommitCounts"
+msgstr "現在の作成者・期間フィルターのコミットを更新中"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.inspect"
+msgstr "現在のリポジトリを使用…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.useCurrentAria"
+msgstr "{repo} のフォルダーに現在あるリポジトリを使用"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.provider.githubReleases"
+msgstr "GitHub の検証済み gitwink リリース"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.viewHistory"
+msgstr "表示履歴"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.waiting"
+msgstr "{provider} を待機中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.waitingForFile"
+msgstr "ファイルを待機中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.autoFetch.hint"
+msgstr "1つのリポジトリを表示しているとき、パネルを開くと gitwink が静かに git fetch origin を実行し、チームメンバーが新しくプッシュしたコミットを表示します。更新するのはリモート追跡ミラーだけで、ローカルブランチ、タグ、作業ツリーは変更しません。パネルをブロックせず、認証やネットワークが利用できない場合は何も表示せずに終了し、最近フェッチしたリポジトリはスキップします。全リポジトリ表示ではフェッチしません。gitwink が作業をマージ、プッシュ、書き換えることはありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.context.fullTitle"
+msgstr "変更箇所を強調してファイル全体を表示"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelWide"
+msgstr "ワイド"

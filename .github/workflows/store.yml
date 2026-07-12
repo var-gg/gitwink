@@ -18,6 +18,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: microsoft-store-production
+  cancel-in-progress: false
+
 jobs:
   msix:
     name: Build MSIX bundle
@@ -56,6 +60,9 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
+      - name: Validate Store listing assets
+        run: pnpm store:listing:check
+
       # cargo build (the bundler's default runner) does not run Tauri's
       # beforeBuildCommand, so the frontend must be built into dist/
       # explicitly before the Rust binary is compiled and packed.
@@ -75,31 +82,22 @@ jobs:
           path: src-tauri/target/msix/*.msixbundle
           if-no-files-found: error
 
-      # Auto-submit to the Microsoft Store via the Dev Store CLI (msstore).
+      # Auto-submit to the Microsoft Store packaged-app submission API.
       #
-      # Gated on the `STORE_AUTOPUBLISH` repository variable and Entra secrets:
+      # Gated on the STORE_AUTOPUBLISH repository variable and Entra secrets:
       # forks and credential-free runs still build/upload the MSIX artifact but
       # safely skip publication. `tools/deploy-store.ps1` downloads that exact
       # artifact for a manual Partner Center fallback when an automated publish
-      # fails. Store-update via GitHub Actions is free-product-only — gitwink is
-      # free. Product id 9P0S21GJD53F.
-      - name: Configure Microsoft Store CLI
-        if: ${{ vars.STORE_AUTOPUBLISH == 'true' && env.AZURE_AD_TENANT_ID != '' }}
-        uses: microsoft/microsoft-store-apppublisher@v1.1
-
-      - name: Authenticate to Partner Center
-        if: ${{ vars.STORE_AUTOPUBLISH == 'true' && env.AZURE_AD_TENANT_ID != '' }}
-        run: >-
-          msstore reconfigure
-          --tenantId ${{ secrets.AZURE_AD_TENANT_ID }}
-          --sellerId ${{ secrets.SELLER_ID }}
-          --clientId ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
-          --clientSecret ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
-
-      - name: Publish msixbundle to the Microsoft Store
+      # fails. The wrapper creates exactly one API-owned draft, uploads the
+      # package and any checked-in locale screenshots in one ZIP, then commits
+      # once. An existing Partner Center draft is never changed or deleted.
+      - name: Submit package and listing assets to the Microsoft Store
         if: ${{ vars.STORE_AUTOPUBLISH == 'true' && env.AZURE_AD_TENANT_ID != '' }}
         shell: pwsh
+        env:
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          AZURE_AD_APPLICATION_CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
         run: |
           $pkg = (Get-ChildItem src-tauri/target/msix/*.msixbundle | Select-Object -First 1).FullName
-          Write-Output "Publishing $pkg to Store product 9P0S21GJD53F"
-          msstore publish "$pkg" -id 9P0S21GJD53F
+          & ./tools/publish-store.ps1 -PackagePath $pkg -Publish

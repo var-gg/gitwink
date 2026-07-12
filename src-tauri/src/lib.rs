@@ -7,6 +7,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 mod cache;
 mod commands;
+pub mod control;
 mod discovery;
 mod discovery_orchestrator;
 mod discovery_sources;
@@ -22,8 +23,12 @@ mod history_indexer;
 mod history_query;
 mod history_schema;
 mod history_store;
+mod locale;
+mod panel_geometry;
+mod panel_window_state;
 mod repo_exclusions;
 mod settings;
+mod store_update;
 mod tray;
 mod update;
 mod watcher;
@@ -38,8 +43,13 @@ pub fn run() {
         // LOOKING for the window — summon the existing panel instead of
         // spawning a duplicate instance (second tray icon, silently-dead
         // global hotkey, doubled watchers/fetches, settings.json races).
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            window::show_panel(app);
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            // A normal second launch still means "summon gitwink". A control
+            // launch carries a typed show request; its resolver owns focus and
+            // queues the exact target for the persistent panel webview.
+            if !control::accept_app_argv(app, args, cwd) {
+                window::show_panel(app);
+            }
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(
@@ -64,8 +74,15 @@ pub fn run() {
             }
 
             app.manage(commands::PendingDiff::default());
+            app.manage(control::PendingControl::default());
             app.manage(commands::PanelSticky::default());
             app.manage(commands::PanelPinned::default());
+            let saved_panel_maximized = settings::load(app.handle())
+                .panel_maximized
+                .unwrap_or(false);
+            app.manage(Arc::new(panel_window_state::PanelWindowRuntime::new(
+                saved_panel_maximized,
+            )));
             // Seed the in-memory settings cache from disk BEFORE any
             // window mounts and calls get_settings — see D1 in the
             // GPT Pro review (newly-opened windows could otherwise read
@@ -77,8 +94,8 @@ pub fn run() {
             app.manage(Arc::new(file_history_jobs::FileHistoryJobs::default()));
 
             // Full history is strictly demand-driven: the worker exists at
-            // startup but performs no DB or Git work until Search / All time
-            // requests a concrete repository scope.
+            // startup but performs no DB or Git work until an all-time search
+            // or All time view requests a concrete repository scope.
             let history_app = app.handle().clone();
             let history_events = app.handle().clone();
             let history_indexer = Arc::new(history_indexer::HistoryIndexer::start(
@@ -179,14 +196,13 @@ pub fn run() {
 
             tray::setup(app)?;
 
-            // Apply the saved UI scale to the panel window size before
-            // the first show — so a saved scale survives across launches
-            // without a 520×600 flash of the base panel.
+            // Restore normalized normal geometry and, independently, the
+            // maximized/zoomed state before the first show.
             let saved_scale = settings::load(app.handle())
                 .ui_scale
                 .unwrap_or(1.0)
                 .clamp(commands::UI_SCALE_MIN, commands::UI_SCALE_MAX);
-            window::resize_panel_for_scale(app.handle(), saved_scale);
+            panel_window_state::restore_panel_window(app.handle(), saved_scale as f64);
 
             // Apply the saved panel pin state to the runtime atomic +
             // the panel's always_on_top flag before the first show — so
@@ -202,10 +218,22 @@ pub fn run() {
             }
             window::apply_panel_pinned(app.handle(), saved_pinned);
 
-            // Self-update: managed state + background check loop (one
-            // check on startup, then every 24h). update::start is a
-            // no-op for Scoop and Microsoft Store (MSIX) installs — those
-            // channels manage their own updates.
+            // First-process control activation. Single-instance only invokes
+            // its callback for later processes, so cold launches must feed
+            // their own argv through the same ingress after panel geometry and
+            // pin state are restored (avoids a base-size/always-on-top flash).
+            let initial_args = std::env::args_os()
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+            let initial_cwd = std::env::current_dir()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
+            let _ = control::accept_app_argv(app.handle(), initial_args, initial_cwd);
+
+            // Resolve update ownership once: standalone/Scoop use GitHub for
+            // discovery, while packaged builds stay StoreContext-backed.
+            // One check on startup, then every 24h; no policy auto-opens UI.
             app.manage(update::UpdateState::default());
             update::start(app.handle().clone());
 
@@ -338,9 +366,9 @@ pub fn run() {
             });
 
             if let Some(panel) = app.get_webview_window("panel") {
+                panel_window_state::install_panel_window_events(app.handle(), &panel);
                 let handle = app.handle().clone();
                 let focus_generation = Arc::new(AtomicU64::new(0));
-                let move_generation = Arc::new(AtomicU64::new(0));
 
                 panel.on_window_event(move |event| match event {
                     WindowEvent::Focused(false) => {
@@ -366,24 +394,6 @@ pub fn run() {
                     WindowEvent::Focused(true) => {
                         // Cancel any pending hide.
                         focus_generation.fetch_add(1, Ordering::SeqCst);
-                    }
-                    WindowEvent::Moved(pos) => {
-                        // Debounce: during a drag this fires ~60 Hz. Only
-                        // persist the *settled* position to avoid
-                        // hammering settings.json.
-                        let stamp = move_generation
-                            .fetch_add(1, Ordering::SeqCst)
-                            .wrapping_add(1);
-                        let gen_clone = Arc::clone(&move_generation);
-                        let handle_clone = handle.clone();
-                        let x = pos.x;
-                        let y = pos.y;
-                        std::thread::spawn(move || {
-                            std::thread::sleep(Duration::from_millis(200));
-                            if gen_clone.load(Ordering::SeqCst) == stamp {
-                                settings::save_panel_position(&handle_clone, x, y);
-                            }
-                        });
                     }
                     _ => {}
                 });
@@ -426,7 +436,11 @@ pub fn run() {
             commands::open_file_history,
             commands::open_diff,
             commands::take_pending_diff_open,
+            control::ingress::take_pending_control_deliveries,
             commands::dismiss_panel,
+            commands::get_panel_window_state,
+            commands::toggle_panel_maximized,
+            commands::set_panel_size_preset,
             commands::set_panel_sticky,
             commands::get_scan_state,
             commands::get_pinned_repos,
@@ -445,6 +459,7 @@ pub fn run() {
             commands::set_panel_pinned,
             commands::open_settings_window,
             commands::set_update_check,
+            commands::set_locale,
             commands::set_auto_fetch_on_show,
             commands::ack_auto_fetch_notice,
             commands::maybe_fetch_repo,

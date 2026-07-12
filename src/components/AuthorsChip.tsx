@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLingui } from "@lingui/react/macro";
 
 import type { AuthorTally } from "../types";
 import {
@@ -9,6 +10,8 @@ import {
 import { ChipDropdown } from "./ChipDropdown";
 import { VirtualChipList, type VirtualChipRow } from "./VirtualChipList";
 import { chipRowH, useUiScale } from "../lib/settings";
+import { filterMessages } from "../i18n/messages/filters";
+import { translate } from "../i18n/translate";
 
 // Virtualised-row BASE heights (px) at scale 1.0 — chipRowH scales them
 // against the current --ui-scale so JS row heights match the CSS content.
@@ -25,11 +28,6 @@ function loadAuthorSort(): AuthorSort {
   const v = window.localStorage.getItem(SORT_KEY);
   return v === "name" || v === "recent" ? v : "count";
 }
-const SORT_OPTIONS: { value: AuthorSort; label: string; title: string }[] = [
-  { value: "count", label: "Count", title: "Most commits first" },
-  { value: "name", label: "A–Z", title: "Alphabetical" },
-  { value: "recent", label: "Recent", title: "Most recent activity first" },
-];
 const byName = (a: AuthorTally, b: AuthorTally) =>
   a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
 
@@ -54,10 +52,28 @@ export function AuthorsChip({
   selected,
   onChange,
 }: Props) {
+  const { i18n } = useLingui();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<AuthorSort>(loadAuthorSort);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const scale = useUiScale();
+  const sortOptions: { value: AuthorSort; label: string; title: string }[] = [
+    {
+      value: "count",
+      label: i18n._(filterMessages.sortCount),
+      title: i18n._(filterMessages.sortCountTitle),
+    },
+    {
+      value: "name",
+      label: i18n._(filterMessages.sortName),
+      title: i18n._(filterMessages.sortNameTitle),
+    },
+    {
+      value: "recent",
+      label: i18n._(filterMessages.sortRecent),
+      title: i18n._(filterMessages.sortRecentTitle),
+    },
+  ];
 
   useEffect(() => {
     if (!open) setQuery("");
@@ -107,16 +123,21 @@ export function AuthorsChip({
 
   const label =
     selected === "all"
-      ? "All authors"
+      ? i18n._(filterMessages.allAuthors)
       : selected.length === 0
-        ? "No authors"
+        ? i18n._(filterMessages.noAuthors)
         : selected.length === 1
           ? unavailableSelected.length === 1
             ? `${selected[0]} · 0`
             : selected[0]
           : unavailableSelected.length > 0
-            ? `${selected.length} authors · ${unavailableSelected.length} unavailable`
-            : `${selected.length} authors`;
+            ? translate(i18n, filterMessages.authorCountUnavailable, {
+                count: selected.length,
+                unavailable: unavailableSelected.length,
+              })
+            : translate(i18n, filterMessages.authorCount, {
+                count: selected.length,
+              });
 
   const toggle = useCallback(
     (name: string) => {
@@ -140,7 +161,7 @@ export function AuthorsChip({
         height: EMPTY_H,
         render: () => (
           <div className="chip-empty" role="status">
-            Updating authors…
+            {i18n._(filterMessages.updatingAuthors)}
           </div>
         ),
       });
@@ -160,7 +181,9 @@ export function AuthorsChip({
             onClose();
           }}
         >
-          <span className="chip-item-name">All authors</span>
+          <span className="chip-item-name">
+            {i18n._(filterMessages.allAuthors)}
+          </span>
         </button>
       ),
     });
@@ -171,9 +194,9 @@ export function AuthorsChip({
         render: () => (
           <div
             className="chip-section-header chip-section-warning"
-            title="Selected authors with no commits in the current repo, branch and time scope"
+            title={i18n._(filterMessages.unavailableAuthorsTitle)}
           >
-            Selected · unavailable in this scope
+            {i18n._(filterMessages.unavailableAuthors)}
           </div>
         ),
       });
@@ -187,7 +210,9 @@ export function AuthorsChip({
               className="chip-item checked chip-item-unavailable"
               role="checkbox"
               aria-checked={true}
-              title={`${name} has no commits in the current scope. Click to remove this filter.`}
+              title={translate(i18n, filterMessages.unavailableAuthorRemove, {
+                author: name,
+              })}
               onClick={() => {
                 onChange(removeUnavailableFacetValue(selected, name));
               }}
@@ -235,15 +260,19 @@ export function AuthorsChip({
             <button
               type="button"
               className="chip-only"
-              title={`Show only ${name}`}
-              aria-label={`Show only ${name}`}
+              title={translate(i18n, filterMessages.showOnlyAuthor, {
+                author: name,
+              })}
+              aria-label={translate(i18n, filterMessages.showOnlyAuthor, {
+                author: name,
+              })}
               onClick={() => onChange([name])}
             >
-              only
+              {i18n._(filterMessages.only)}
             </button>
             <span
               className="chip-item-count"
-              title="Commits in the current repository and time scope"
+              title={i18n._(filterMessages.authorCountTitle)}
             >
               {count}
             </span>
@@ -255,7 +284,11 @@ export function AuthorsChip({
       out.push({
         key: "__empty",
         height: EMPTY_H,
-        render: () => <div className="chip-empty">No authors match.</div>,
+        render: () => (
+          <div className="chip-empty">
+            {i18n._(filterMessages.noAuthorsMatch)}
+          </div>
+        ),
       });
     }
     return out;
@@ -268,6 +301,8 @@ export function AuthorsChip({
     toggle,
     scale,
     loading,
+    i18n,
+    i18n.locale,
   ]);
 
   return (
@@ -286,14 +321,18 @@ export function AuthorsChip({
           autoFocus
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search authors…"
-          aria-label="Search authors"
+          placeholder={i18n._(filterMessages.searchAuthors)}
+          aria-label={i18n._(filterMessages.searchAuthorsAria)}
           disabled={loading}
         />
       </div>
-      <div className="chip-sort" role="group" aria-label="Sort authors">
-        <span className="chip-sort-label">Sort</span>
-        {SORT_OPTIONS.map((o) => (
+      <div
+        className="chip-sort"
+        role="group"
+        aria-label={i18n._(filterMessages.sortAuthors)}
+      >
+        <span className="chip-sort-label">{i18n._(filterMessages.sort)}</span>
+        {sortOptions.map((o) => (
           <button
             key={o.value}
             type="button"

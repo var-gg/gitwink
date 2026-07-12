@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "gitwink",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "identifier": "gg.var.gitwink",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -16,7 +16,10 @@
         "title": "gitwink",
         "width": 520,
         "height": 600,
-        "resizable": false,
+        "minWidth": 420,
+        "minHeight": 420,
+        "resizable": true,
+        "maximizable": true,
         "decorations": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
@@ -42,7 +45,12 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "languages": ["English", "Korean", "Japanese"]
+      }
+    }
   },
   "plugins": {
     "updater": {

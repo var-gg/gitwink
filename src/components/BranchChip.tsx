@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useLingui } from "@lingui/react/macro";
 
 import { countBranchCommits } from "../lib/ipc";
 import {
@@ -18,6 +19,8 @@ import { compactAge, fullDateTime } from "../lib/time";
 import type { BranchInfo } from "../types";
 import { ChipDropdown } from "./ChipDropdown";
 import { VirtualChipList, type VirtualChipRow } from "./VirtualChipList";
+import { filterMessages } from "../i18n/messages/filters";
+import { translate } from "../i18n/translate";
 
 // Virtualised-row BASE heights (px) at scale 1.0 — chipRowH scales them
 // against the current --ui-scale so JS row heights match the CSS content.
@@ -90,6 +93,7 @@ export function BranchChip({
   selected,
   onChange,
 }: Props) {
+  const { i18n } = useLingui();
   const [query, setQuery] = useState("");
   const scale = useUiScale();
 
@@ -388,17 +392,33 @@ export function BranchChip({
   // name itself — minimum cognitive load — and fall back to a count when
   // multiple are picked.
   const label = useMemo(() => {
-    if (loading && branches.length === 0) return "Loading branches…";
-    if (selected === "all") return `All branches (${branches.length})`;
-    if (selected.length === 0) return "No branches";
+    if (loading && branches.length === 0) {
+      return i18n._(filterMessages.loadingBranches);
+    }
+    if (selected === "all") {
+      return translate(i18n, filterMessages.allBranchesCount, {
+        count: branches.length,
+      });
+    }
+    if (selected.length === 0) return i18n._(filterMessages.noBranches);
     if (selected.length === 1) {
       const only = branches.find((b) => b.refName === selected[0]);
-      return only?.name ?? `${displayRefName(selected[0])} · unavailable`;
+      return (
+        only?.name ??
+        translate(i18n, filterMessages.branchUnavailable, {
+          branch: displayRefName(selected[0]),
+        })
+      );
     }
     return unavailableSelected.length > 0
-      ? `${selected.length} branches · ${unavailableSelected.length} unavailable`
-      : `${selected.length} branches`;
-  }, [selected, branches, unavailableSelected, loading]);
+      ? translate(i18n, filterMessages.branchCountUnavailable, {
+          count: selected.length,
+          unavailable: unavailableSelected.length,
+        })
+      : translate(i18n, filterMessages.branchCount, {
+          count: selected.length,
+        });
+  }, [selected, branches, unavailableSelected, loading, i18n, i18n.locale]);
 
   const toggle = useCallback(
     (refName: string) => {
@@ -445,7 +465,9 @@ export function BranchChip({
             <span className="chip-branch-tail">
               <span
                 className="chip-branch-age"
-                title={`Last activity: ${fullDateTime(b.lastActivity)}`}
+                title={translate(i18n, filterMessages.lastActivity, {
+                  date: fullDateTime(b.lastActivity, i18n.locale),
+                })}
               >
                 {compactAge(b.lastActivity)}
               </span>
@@ -453,8 +475,10 @@ export function BranchChip({
                 className="chip-branch-count"
                 title={
                   failedCounts.has(b.refName)
-                    ? `Count unavailable after ${BRANCH_COUNT_MAX_RETRIES} retries. Close and reopen this list to retry.`
-                    : "Reachable commits across all time (independent of the time filter)"
+                    ? translate(i18n, filterMessages.countUnavailable, {
+                        count: BRANCH_COUNT_MAX_RETRIES,
+                      })
+                    : i18n._(filterMessages.reachableCommits)
                 }
               >
                 {countLabel(b, counts, failedCounts)}
@@ -480,7 +504,9 @@ export function BranchChip({
             onClose();
           }}
         >
-          <span className="chip-item-name">All branches</span>
+          <span className="chip-item-name">
+            {i18n._(filterMessages.allBranches)}
+          </span>
         </button>
       ),
     });
@@ -491,9 +517,9 @@ export function BranchChip({
         render: () => (
           <div
             className="chip-section-header chip-section-warning"
-            title="Selected refs that no longer exist in this repository"
+            title={i18n._(filterMessages.unavailableRefsTitle)}
           >
-            Selected · unavailable refs
+            {i18n._(filterMessages.unavailableRefs)}
           </div>
         ),
       });
@@ -507,7 +533,9 @@ export function BranchChip({
               className="chip-item checked chip-item-unavailable"
               role="checkbox"
               aria-checked={true}
-              title={`${refName} no longer exists. Click to remove this filter.`}
+              title={translate(i18n, filterMessages.unavailableRefRemove, {
+                ref: refName,
+              })}
               onClick={() => {
                 onChange(removeUnavailableFacetValue(selected, refName));
               }}
@@ -521,7 +549,9 @@ export function BranchChip({
               >
                 {displayRefName(refName)}
               </span>
-              <span className="chip-item-count">missing</span>
+              <span className="chip-item-count">
+                {i18n._(filterMessages.missingRef)}
+              </span>
             </button>
           ),
         });
@@ -531,7 +561,11 @@ export function BranchChip({
       out.push({
         key: "__local",
         height: HEADER_H,
-        render: () => <div className="chip-section-header">Local</div>,
+        render: () => (
+          <div className="chip-section-header">
+            {i18n._(filterMessages.localBranches)}
+          </div>
+        ),
       });
       for (const b of localBranches) out.push(branchRow(b));
     }
@@ -542,9 +576,9 @@ export function BranchChip({
         render: () => (
           <div
             className="chip-section-header"
-            title="Remote-tracking refs are read locally — refreshed by your IDE / CLI, or by gitwink's auto-fetch on panel open (Settings → Auto-fetch)."
+            title={i18n._(filterMessages.remoteTrackingTitle)}
           >
-            Remote tracking
+            {i18n._(filterMessages.remoteTracking)}
           </div>
         ),
       });
@@ -554,7 +588,11 @@ export function BranchChip({
       out.push({
         key: "__loading",
         height: EMPTY_H,
-        render: () => <div className="chip-empty">Loading branches…</div>,
+        render: () => (
+          <div className="chip-empty">
+            {i18n._(filterMessages.loadingBranches)}
+          </div>
+        ),
       });
     } else if (
       localBranches.length === 0 &&
@@ -564,7 +602,11 @@ export function BranchChip({
       out.push({
         key: "__empty",
         height: EMPTY_H,
-        render: () => <div className="chip-empty">No branches match.</div>,
+        render: () => (
+          <div className="chip-empty">
+            {i18n._(filterMessages.noBranchesMatch)}
+          </div>
+        ),
       });
     }
     return out;
@@ -580,6 +622,8 @@ export function BranchChip({
     scale,
     counts,
     failedCounts,
+    i18n,
+    i18n.locale,
   ]);
 
   return (
@@ -596,8 +640,8 @@ export function BranchChip({
           autoFocus
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search branches…"
-          aria-label="Search branches"
+          placeholder={i18n._(filterMessages.searchBranches)}
+          aria-label={i18n._(filterMessages.searchBranchesAria)}
         />
       </div>
       <VirtualChipList

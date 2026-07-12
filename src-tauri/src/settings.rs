@@ -7,6 +7,8 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
+use crate::locale::LocalePreference;
+
 /// Serializes every settings round-trip (load → mutate → save) across the
 /// process. Writers run on at least four independent threads — the panel
 /// move-debounce thread, the diff-window persist threads, sync IPC
@@ -38,6 +40,15 @@ pub enum UpdateCheckMode {
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct Settings {
     pub panel_position: Option<PanelPosition>,
+    /// Preferred panel client size at gitwink UI scale 100%. Kept separate
+    /// from OS DPI and the actual monitor-clamped allocation so moving to a
+    /// small display never destroys the user's large-display preference.
+    #[serde(default)]
+    pub panel_size_at_100_percent: Option<PanelSizePreference>,
+    /// Whether the panel should return in maximized/zoomed geometry. The last
+    /// normal size and position remain in their own fields while this is true.
+    #[serde(default)]
+    pub panel_maximized: Option<bool>,
     #[serde(default)]
     pub pinned_repos: Vec<String>,
     #[serde(default)]
@@ -57,6 +68,10 @@ pub struct Settings {
     /// Update-checker behaviour — see `UpdateCheckMode`.
     #[serde(default)]
     pub update_check: UpdateCheckMode,
+    /// UI language preference. `System` resolves through the OS locale at
+    /// runtime; unsupported languages fall back to English.
+    #[serde(default)]
+    pub locale: LocalePreference,
     /// Version the user chose to "Skip" in the update modal. Suppresses
     /// the update indicator for exactly this version; a newer release
     /// re-surfaces it (different version string).
@@ -115,6 +130,12 @@ pub struct DiffWindowState {
 pub struct PanelPosition {
     pub x: i32,
     pub y: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
+pub struct PanelSizePreference {
+    pub width: f64,
+    pub height: f64,
 }
 
 fn settings_path(app: &AppHandle) -> Result<PathBuf> {
@@ -371,5 +392,60 @@ pub fn save_auto_fetch_notice_seen(app: &AppHandle, seen: bool) {
 pub fn save_update_check_mode(app: &AppHandle, mode: UpdateCheckMode) {
     if let Err(e) = update_with(app, |s| s.update_check = mode) {
         eprintln!("settings: failed to persist update_check: {e:#}");
+    }
+}
+
+pub fn save_panel_size_preference(app: &AppHandle, preference: PanelSizePreference) {
+    if let Err(e) = update_with(app, |s| {
+        s.panel_size_at_100_percent = Some(preference);
+    }) {
+        eprintln!("settings: failed to persist panel size preference: {e:#}");
+    }
+}
+
+/// Persist only the geometry mode, preserving the last normal rect. Returning
+/// the write result lets explicit maximize/restore commands refuse a state
+/// change when durability cannot be guaranteed.
+pub fn save_panel_maximized(app: &AppHandle, maximized: bool) -> Result<()> {
+    update_with(app, |s| s.panel_maximized = Some(maximized))
+}
+
+/// One atomic snapshot immediately before maximize. This closes the race where
+/// the user resizes and clicks maximize inside the resize debounce window: the
+/// settled normal rect still becomes the exact restore target.
+pub fn save_panel_before_maximize(
+    app: &AppHandle,
+    position: PanelPosition,
+    preference: PanelSizePreference,
+) -> Result<()> {
+    update_with(app, |s| {
+        s.panel_position = Some(position);
+        s.panel_size_at_100_percent = Some(preference);
+        s.panel_maximized = Some(true);
+    })
+}
+
+/// Apply a user-selected normal-size preset. Reset additionally clears the
+/// remembered position so the next placement returns to the tray/menu-bar
+/// anchor; Wide keeps the current anchor and only changes information width.
+pub fn save_panel_layout_preset(
+    app: &AppHandle,
+    preference: PanelSizePreference,
+    reset_position: bool,
+) -> Result<()> {
+    update_with(app, |s| {
+        s.panel_size_at_100_percent = Some(preference);
+        s.panel_maximized = Some(false);
+        if reset_position {
+            s.panel_position = None;
+        }
+    })
+}
+
+/// Persist the UI language preference. Rebuilding native surfaces and the
+/// live settings cache is the caller's job — see `set_locale`.
+pub fn save_locale(app: &AppHandle, locale: LocalePreference) {
+    if let Err(e) = update_with(app, |s| s.locale = locale) {
+        eprintln!("settings: failed to persist locale: {e:#}");
     }
 }

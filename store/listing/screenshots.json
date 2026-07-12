@@ -1,0 +1,12 @@
+{
+  "$schema": "./screenshots.schema.json",
+  "productId": "9P0S21GJD53F",
+  "locales": {
+    "en-us": [
+      "en-us/01-tray-glance.png",
+      "en-us/02-scoped-search.png",
+      "en-us/03-file-history.png",
+      "en-us/04-side-by-side-diff.png"
+    ]
+  }
+}

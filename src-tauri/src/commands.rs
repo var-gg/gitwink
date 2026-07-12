@@ -5,12 +5,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_updater::UpdaterExt;
 
 use crate::{
     cache, discovery, discovery_orchestrator, file_history_jobs, git, history_fts, history_git,
-    history_indexer, history_query, history_store, repo_exclusions, settings, update, watcher,
-    window,
+    history_indexer, history_query, history_store, panel_window_state, repo_exclusions, settings,
+    update, watcher, window,
 };
 
 /// Per-repo walk cap for the windowed refill. Sized to swallow a whole
@@ -850,8 +849,8 @@ fn history_index_status(
     })
 }
 
-/// Demand-driven full-history expansion. Opening Search or choosing All time
-/// requests exactly the current repository scope; normal 7/30-day startup
+/// Demand-driven full-history expansion. An all-time search or All time view
+/// requests exactly the current repository scope; bounded 7/30-day search
 /// remains independent of repository history size.
 #[tauri::command]
 pub async fn request_history_index(
@@ -1215,6 +1214,26 @@ pub fn dismiss_panel(app: AppHandle) {
     }
 }
 
+#[tauri::command]
+pub fn get_panel_window_state(app: AppHandle) -> panel_window_state::PanelWindowStatePayload {
+    panel_window_state::get_panel_window_state(&app)
+}
+
+#[tauri::command]
+pub fn toggle_panel_maximized(
+    app: AppHandle,
+) -> Result<panel_window_state::PanelWindowStatePayload, String> {
+    panel_window_state::toggle_panel_maximized(&app)
+}
+
+#[tauri::command]
+pub fn set_panel_size_preset(
+    app: AppHandle,
+    preset: panel_window_state::PanelSizePreset,
+) -> Result<panel_window_state::PanelWindowStatePayload, String> {
+    panel_window_state::apply_panel_size_preset(&app, preset)
+}
+
 /// Whether the panel should resist blur-dismiss. The frontend sets this
 /// true while the empty-state add-repo screen is showing or a native
 /// folder picker is open — both legitimately move focus off the panel
@@ -1342,13 +1361,23 @@ pub async fn open_diff(
     // never blocks because we send exactly once.
     let (tx, mut rx) = tauri::async_runtime::channel::<Result<(), String>>(1);
     let app2 = app.clone();
-    app.run_on_main_thread(move || {
+    if let Err(error) = app.run_on_main_thread(move || {
         let _ = tx.try_send(window::open_or_focus_diff(&app2, payload));
-    })
-    .map_err(|e| e.to_string())?;
-    rx.recv()
-        .await
-        .ok_or_else(|| "diff dispatch dropped".to_string())?
+    }) {
+        window::assert_panel_always_on_top(&app);
+        return Err(error.to_string());
+    }
+    let Some(result) = rx.recv().await else {
+        window::assert_panel_always_on_top(&app);
+        return Err("diff dispatch dropped".to_string());
+    };
+    if result.is_err() {
+        // If the child never became visible, restore glance stacking. If it
+        // did become visible and only a later payload emit failed, the shared
+        // invariant correctly keeps the panel lowered.
+        window::assert_panel_always_on_top(&app);
+    }
+    result
 }
 
 /// Commits that changed `file_path` in `repo_path`, newest first. Live, capped
@@ -1617,8 +1646,8 @@ pub struct AppSettings {
     pub diff_font_family: Option<String>,
     /// Effective global hotkey spec — the resolved default if unset.
     pub panel_hotkey: String,
-    /// When true, the panel is "pinned" — no blur auto-hide, shows in
-    /// the taskbar, not always-on-top. False = tray-glance default.
+    /// When true, the panel is "pinned" — no blur auto-hide and normal
+    /// stacking. The tray/accessory panel remains absent from the taskbar.
     pub panel_pinned: bool,
     /// One-shot `git fetch` of the viewed repo on panel summon (single-repo
     /// mode only). Default ON. See `maybe_fetch_repo` / `fetch.rs`.
@@ -1627,23 +1656,26 @@ pub struct AppSettings {
     /// Default false (show it once). Persisted via `ack_auto_fetch_notice`.
     pub auto_fetch_notice_seen: bool,
     /// Self-update behaviour. Serialized as "enabled" / "manual" /
-    /// "disabled" via the enum's lowercase rename. Meaningful only when
-    /// `updater_available` is true.
+    /// "disabled" via the enum's lowercase rename.
     pub update_check: settings::UpdateCheckMode,
-    /// False for Scoop and Microsoft Store (MSIX) installs — those
-    /// channels manage their own updates, so the Updates section in
-    /// the Settings window is hidden and the `update_check` knob is
-    /// inert. The frontend uses this flag to gate the UI.
-    pub updater_available: bool,
+    /// Stored choice (`system` / `en` / `ko` / `ja`).
+    pub locale_preference: crate::locale::LocalePreference,
+    /// Backend-resolved locale used to load one frontend catalog.
+    pub resolved_locale: crate::locale::AppLocale,
+    /// Computed update capabilities; accepted on the live-broadcast input but
+    /// never trusted or persisted. Backend commands use their own runtime
+    /// policy snapshot.
+    pub update_policy: update::UpdatePolicyView,
 }
 
 #[tauri::command]
-pub fn get_settings(live: tauri::State<'_, LiveSettings>) -> AppSettings {
+pub fn get_settings(app: AppHandle, live: tauri::State<'_, LiveSettings>) -> AppSettings {
     // Read the in-memory snapshot, NOT disk — the Settings window's
     // broadcast hot path already updated LiveSettings synchronously,
     // so a newly-opened window's initSettings sees the fresh value
     // even when the debounced disk write hasn't landed yet.
     let s = live.snapshot();
+    let locale_preference = s.locale;
     AppSettings {
         ui_scale: s.ui_scale.unwrap_or(1.0).clamp(UI_SCALE_MIN, UI_SCALE_MAX),
         diff_font_family: s.diff_font_family,
@@ -1655,13 +1687,15 @@ pub fn get_settings(live: tauri::State<'_, LiveSettings>) -> AppSettings {
         auto_fetch_on_show: s.auto_fetch_on_show.unwrap_or(true),
         auto_fetch_notice_seen: s.auto_fetch_notice_seen.unwrap_or(false),
         update_check: s.update_check,
-        updater_available: !update::installed_via_scoop() && !update::installed_via_msix(),
+        locale_preference,
+        resolved_locale: crate::locale::resolve_system(locale_preference),
+        update_policy: update::policy_view(&app),
     }
 }
 
 /// Project an incoming AppSettings (the user-facing slice the frontend
 /// passes via broadcastSettings) into the live Settings cache. Skips
-/// `updater_available` (computed) and re-clamps `ui_scale` defensively
+/// `update_policy` (computed) and re-clamps `ui_scale` defensively
 /// so an out-of-range value from a stale frontend can't poison the
 /// cache. Hotkey persistence still goes through `set_panel_hotkey`
 /// because re-binding the global shortcut has to succeed before we
@@ -1680,10 +1714,13 @@ pub fn set_live_settings(next: AppSettings, live: tauri::State<'_, LiveSettings>
             s.auto_fetch_notice_seen = Some(true);
         }
         s.update_check = next.update_check;
+        s.locale = next.locale_preference;
     });
 }
 
-/// Persist the UI scale and resize the panel window proportionally.
+/// Persist the UI scale and re-derive the normal panel allocation from its
+/// independent 100%-scale size preference. A maximized panel keeps its work-
+/// area geometry and only the web content scales until restore.
 /// Clamped to [UI_SCALE_MIN, UI_SCALE_MAX] — the slider enforces the
 /// same bounds; this is the hand-edit backstop. The resize lags slider
 /// drags by Settings.tsx's persist debounce (a knob, easy to remove).
@@ -1694,7 +1731,7 @@ pub fn set_ui_scale(app: AppHandle, scale: f32) {
     if let Some(live) = app.try_state::<LiveSettings>() {
         live.with_mut(|s| s.ui_scale = Some(clamped));
     }
-    window::resize_panel_for_scale(&app, clamped);
+    panel_window_state::apply_ui_scale(&app, clamped as f64);
 }
 
 /// Persist the diff font family. An empty/whitespace value clears it,
@@ -1767,17 +1804,13 @@ pub fn set_panel_pinned(app: AppHandle, pinned: bool) -> Result<(), String> {
     if let Some(state) = app.try_state::<PanelPinned>() {
         state.0.store(pinned, std::sync::atomic::Ordering::SeqCst);
     }
-    // Runtime toggle: ONLY flip always_on_top (safe Win32 toggle). We
+    // Runtime toggle: ONLY recompute always_on_top (safe Win32 toggle). We
     // deliberately do NOT touch set_skip_taskbar here — that mutates
     // WS_EX_TOOLWINDOW / WS_EX_APPWINDOW at runtime, which on Windows
     // is a known WebView2 destabiliser (subsequent window builds can
     // come up blank). The blur-dismiss behaviour change is live
     // regardless — it's just an atomic check.
-    if let Some(panel) = app.get_webview_window("panel") {
-        if let Err(e) = panel.set_always_on_top(!pinned) {
-            eprintln!("gitwink: set_panel_pinned set_always_on_top failed: {e}");
-        }
-    }
+    window::apply_panel_pinned(&app, pinned);
     Ok(())
 }
 
@@ -1824,6 +1857,22 @@ pub fn set_update_check(app: AppHandle, mode: settings::UpdateCheckMode) {
     if mode == settings::UpdateCheckMode::Enabled {
         update::check_now_background(&app);
     }
+}
+
+/// Persist and apply a language choice without restarting. The returned
+/// resolved locale lets every webview load the right lazy catalog; rebuilding
+/// the update indicator also rebuilds the native tray menu and tooltip.
+#[tauri::command]
+pub fn set_locale(
+    app: AppHandle,
+    preference: crate::locale::LocalePreference,
+) -> crate::locale::AppLocale {
+    settings::save_locale(&app, preference);
+    if let Some(live) = app.try_state::<LiveSettings>() {
+        live.with_mut(|s| s.locale = preference);
+    }
+    update::refresh_indicator(&app);
+    crate::locale::resolve_system(preference)
 }
 
 /// Persist the auto-fetch-on-show toggle and update the live cache. No
@@ -1946,13 +1995,11 @@ fn unix_now() -> i64 {
 pub struct UpdateStatePayload {
     /// The pending update, or `None` when up to date / not yet checked.
     pub available: Option<update::AvailableUpdate>,
-    /// True for Scoop installs — the modal shows a `scoop update` hint
-    /// instead of an in-app "Update now" button.
-    pub scoop: bool,
+    pub policy: update::UpdatePolicyView,
 }
 
-/// Snapshot the updater state for the modal: the pending update (if any)
-/// plus whether this is a Scoop install.
+/// Snapshot the updater state for the modal, including the authoritative
+/// installer channel that owns the update action.
 #[tauri::command]
 pub fn update_get_state(app: AppHandle) -> UpdateStatePayload {
     // Never panic the IPC command on a poisoned mutex — a poisoned lock
@@ -1965,32 +2012,18 @@ pub fn update_get_state(app: AppHandle) -> UpdateStatePayload {
         .unwrap_or(None);
     UpdateStatePayload {
         available,
-        scoop: update::installed_via_scoop(),
+        policy: update::policy_view(&app),
     }
 }
 
-/// Download + install the pending update, then relaunch. The NSIS
-/// installer runs in `passive` mode (progress UI, no prompts). Refuses
-/// to run for Scoop installs.
+/// Execute the install action selected by the runtime update policy. The
+/// provider layer owns Tauri/Store/external routing; this IPC surface cannot
+/// accidentally bypass a package manager.
 #[tauri::command]
 pub async fn update_install(app: AppHandle) -> Result<(), String> {
-    if update::installed_via_scoop() {
-        return Err("Installed via Scoop — run `scoop update gitwink` instead.".into());
-    }
-    if update::installed_via_msix() {
-        return Err("Installed from the Microsoft Store — the Store manages updates.".into());
-    }
-    let updater = app.updater().map_err(|e| e.to_string())?;
-    let pending = updater
-        .check()
+    update::install(&app)
         .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "No update available.".to_string())?;
-    pending
-        .download_and_install(|_, _| {}, || {})
-        .await
-        .map_err(|e| e.to_string())?;
-    app.restart();
+        .map_err(|error| format!("{error:#}"))
 }
 
 /// "Skip vX" — suppress the update indicator for the current version.

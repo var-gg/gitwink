@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLingui } from "@lingui/react/macro";
 
 import { FILE_STATUS_BADGES } from "../lib/changedFileBadge";
 import {
@@ -6,6 +7,8 @@ import {
   openFileHistory,
 } from "../lib/ipc";
 import type { ChangedFile } from "../types";
+import { diffMessages } from "../i18n/messages/diff";
+import { translate } from "../i18n/translate";
 
 interface Props {
   repoPath: string;
@@ -14,6 +17,7 @@ interface Props {
 }
 
 export function ChangedFiles({ repoPath, hash, onOpenDiff }: Props) {
+  const { i18n } = useLingui();
   const [files, setFiles] = useState<ChangedFile[] | null>(null);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -40,13 +44,25 @@ export function ChangedFiles({ repoPath, hash, onOpenDiff }: Props) {
   }, [repoPath, hash]);
 
   if (error) {
-    return <div className="changed-files-empty">Error: {error}</div>;
+    return (
+      <div className="changed-files-empty">
+        {translate(i18n, diffMessages.error, { error })}
+      </div>
+    );
   }
   if (files == null) {
-    return <div className="changed-files-empty">Loading files…</div>;
+    return (
+      <div className="changed-files-empty">
+        {i18n._(diffMessages.loadingFiles)}
+      </div>
+    );
   }
   if (files.length === 0) {
-    return <div className="changed-files-empty">No file changes.</div>;
+    return (
+      <div className="changed-files-empty">
+        {i18n._(diffMessages.noFileChanges)}
+      </div>
+    );
   }
 
   return (
@@ -64,7 +80,11 @@ export function ChangedFiles({ repoPath, hash, onOpenDiff }: Props) {
             }
             data-file-path={f.path}
             onClick={() => onOpenDiff?.(f)}
-            title={f.oldPath ? `Renamed from ${f.oldPath}` : f.path}
+            title={
+              f.oldPath
+                ? translate(i18n, diffMessages.renamedFrom, { path: f.oldPath })
+                : f.path
+            }
           >
             <span className={"changed-file-badge " + badge.cls}>
               {badge.label}
@@ -76,7 +96,10 @@ export function ChangedFiles({ repoPath, hash, onOpenDiff }: Props) {
               {dir && <span className="changed-file-dir">{dir}</span>}
               <span className="changed-file-name">{name}</span>
               {f.isBinary && (
-                <span className="changed-file-bin" title="Binary file">
+                <span
+                  className="changed-file-bin"
+                  title={i18n._(diffMessages.binaryFile)}
+                >
                   bin
                 </span>
               )}
@@ -96,8 +119,10 @@ export function ChangedFiles({ repoPath, hash, onOpenDiff }: Props) {
             <button
               type="button"
               className="changed-file-history"
-              title={`Show history of ${name}`}
-              aria-label={`Show history of ${name}`}
+              title={translate(i18n, diffMessages.showHistory, { file: name })}
+              aria-label={translate(i18n, diffMessages.showHistory, {
+                file: name,
+              })}
               // stopPropagation so opening history doesn't also open the diff
               // (the row click does that).
               onClick={(e) => {
@@ -112,8 +137,10 @@ export function ChangedFiles({ repoPath, hash, onOpenDiff }: Props) {
       })}
       {total > files.length && (
         <div className="changed-files-more">
-          Showing {files.length.toLocaleString()} of {total.toLocaleString()}{" "}
-          changed files
+          {translate(i18n, diffMessages.showingChangedFiles, {
+            shown: files.length.toLocaleString(i18n.locale),
+            total: total.toLocaleString(i18n.locale),
+          })}
         </div>
       )}
     </div>

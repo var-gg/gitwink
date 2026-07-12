@@ -15,6 +15,30 @@ import { refLine, refLineWithFile } from "./smartcopy";
  * the clipboard payload stays usable in a chat prompt. */
 const AI_CONTEXT_DIFF_LINE_BUDGET = 800;
 
+export interface CommitMenuLabels {
+  copy: string;
+  copyWithReference: string;
+  showFileHistory: string;
+  showFileHistoryAria: string;
+  copyFilePath: string;
+  copyAiContext: string;
+  copyCommitMessage: string;
+  copyShortHash: string;
+  copyFullHash: string;
+}
+
+const ENGLISH_MENU_LABELS: CommitMenuLabels = {
+  copy: "Copy",
+  copyWithReference: "Copy with reference",
+  showFileHistory: "🕘 Show file history",
+  showFileHistoryAria: "Show file history",
+  copyFilePath: "Copy file path",
+  copyAiContext: "Copy as AI context",
+  copyCommitMessage: "Copy commit message",
+  copyShortHash: "Copy short hash",
+  copyFullHash: "Copy full hash",
+};
+
 /** Copy a commit as an AI-ready context block: the changed-file list plus,
  * when the commit is small enough, the full diff. Returns a status string
  * for the caller's transient UI ("Copied ✓" / "Copy failed"). */
@@ -61,18 +85,19 @@ export async function copyCommitAiContext(
 export function fileMenuItems(
   repoPath: string | null,
   filePath: string | null,
+  labels: CommitMenuLabels = ENGLISH_MENU_LABELS,
 ): MenuItem[] {
   if (!filePath) return [];
   const items: MenuItem[] = [];
   if (repoPath) {
     items.push({
-      label: "🕘 Show file history",
-      ariaLabel: "Show file history",
+      label: labels.showFileHistory,
+      ariaLabel: labels.showFileHistoryAria,
       onClick: () => void openFileHistory(repoPath, filePath),
     });
   }
   items.push({
-    label: "Copy file path",
+    label: labels.copyFilePath,
     onClick: () => void writeText(filePath),
   });
   return items;
@@ -89,25 +114,32 @@ export function buildCommitMenuItems(opts: {
   filePath: string | null;
   selection: string;
   onCopyAiContext: (commit: CommitSummary) => void;
+  labels?: CommitMenuLabels;
 }): MenuItem[] {
-  const { commit, filePath, selection, onCopyAiContext } = opts;
+  const {
+    commit,
+    filePath,
+    selection,
+    onCopyAiContext,
+    labels = ENGLISH_MENU_LABELS,
+  } = opts;
   const items: MenuItem[] = [];
 
   if (selection) {
-    items.push({ label: "Copy", onClick: () => void writeText(selection) });
+    items.push({ label: labels.copy, onClick: () => void writeText(selection) });
     if (commit) {
       const ref = filePath
         ? refLineWithFile(commit.repoName, commit.shortHash, filePath, null, null)
         : refLine(commit.repoName, commit.shortHash);
       items.push({
-        label: "Copy with reference",
+        label: labels.copyWithReference,
         onClick: () => void writeText(`${ref}\n${selection}`),
       });
     }
     items.push({ divider: true });
   }
 
-  const fileItems = fileMenuItems(commit?.repoPath ?? null, filePath);
+  const fileItems = fileMenuItems(commit?.repoPath ?? null, filePath, labels);
   if (fileItems.length) {
     items.push(...fileItems);
     if (commit) items.push({ divider: true });
@@ -115,22 +147,22 @@ export function buildCommitMenuItems(opts: {
 
   if (commit) {
     items.push({
-      label: "Copy as AI context",
+      label: labels.copyAiContext,
       onClick: () => onCopyAiContext(commit),
     });
     const messageText = (commit.message || commit.summary).trim();
     if (messageText) {
       items.push({
-        label: "Copy commit message",
+        label: labels.copyCommitMessage,
         onClick: () => void writeText(messageText),
       });
     }
     items.push({
-      label: "Copy short hash",
+      label: labels.copyShortHash,
       onClick: () => void writeText(commit.shortHash),
     });
     items.push({
-      label: "Copy full hash",
+      label: labels.copyFullHash,
       onClick: () => void writeText(commit.hash),
     });
   }

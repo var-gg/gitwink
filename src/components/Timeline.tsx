@@ -21,6 +21,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useLingui } from "@lingui/react/macro";
 
 import { bridgeParents } from "../lib/bridge";
 import { colorForBranch } from "../lib/colors";
@@ -28,6 +29,10 @@ import {
   buildCommitMenuItems,
   copyCommitAiContext,
 } from "../lib/commitClipboard";
+import {
+  shouldApplyAnchoredRow,
+  shouldRestoreAnchorExpansion,
+} from "../lib/controlHandoff";
 import { computeLanes, type LaneEdge } from "../lib/lanes";
 import { openDiff, prefetchCommit } from "../lib/ipc";
 import { timeAgo } from "../lib/relativeTime";
@@ -38,6 +43,9 @@ import { CommitDetail } from "./CommitDetail";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import type { ExpansionControl } from "./TimelineWindowed";
 import { LaneGraph } from "./LaneGraph";
+import { panelMessages } from "../i18n/messages/panel";
+import { translate } from "../i18n/translate";
+import { commitMenuLabels } from "../i18n/clipboard";
 
 /** Extra rows rendered above/below the viewport for scroll smoothness. */
 const OVERSCAN = 8;
@@ -65,7 +73,7 @@ interface Props {
   /** Warp landing (search → jump). When `nonce` changes, the row for
    *  `hash` is selected, centred in the viewport and pulsed — retried as
    *  `commits` refreshes until the hash is actually loaded. */
-  anchor?: { hash: string; nonce: number } | null;
+  anchor?: { hash: string; nonce: number; expand?: boolean } | null;
   /** File-history "thread" mode: the rows are a sparse subset of history
    *  (the commits that touched one file), so their real parents aren't in
    *  the list and the DAG would shatter into disconnected lanes. Instead we
@@ -78,8 +86,8 @@ interface Props {
 
 /** Full local datetime for hover tooltips — 24-hour, 2-digit components in
  * the user's locale so it's unambiguous regardless of region. */
-function formatFullTime(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleString(undefined, {
+function formatFullTime(unixSeconds: number, locale?: string): string {
+  return new Date(unixSeconds * 1000).toLocaleString(locale, {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -99,6 +107,7 @@ export function Timeline({
   linear,
   expansionControlRef,
 }: Props) {
+  const { i18n } = useLingui();
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportH, setViewportH] = useState(0);
   const [selected, setSelected] = useState(0);
@@ -280,9 +289,33 @@ export function Timeline({
   const [pulseHash, setPulseHash] = useState<string | null>(null);
   const [anchorMiss, setAnchorMiss] = useState<string | null>(null);
   const anchorAppliedRef = useRef(0);
+  const anchorAppliedIndexRef = useRef(-1);
+  const anchorTrackingNonceRef = useRef(0);
+  const anchorResetKeyRef = useRef<string | undefined>(undefined);
+  const anchorExpansionHashRef = useRef<string | null>(null);
+  const anchorExpansionHeightRef = useRef(-1);
+  const pulseTimerRef = useRef<number | null>(null);
+  const retireAnchorTracking = useCallback(() => {
+    anchorTrackingNonceRef.current = 0;
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (pulseTimerRef.current != null) {
+        window.clearTimeout(pulseTimerRef.current);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
-    if (!anchor || anchor.nonce === anchorAppliedRef.current) {
+    if (!anchor) {
       setAnchorMiss(null);
+      anchorAppliedIndexRef.current = -1;
+      anchorTrackingNonceRef.current = 0;
+      anchorResetKeyRef.current = undefined;
+      anchorExpansionHashRef.current = null;
+      anchorExpansionHeightRef.current = -1;
       return;
     }
     const idx = commits.findIndex((c) => c.hash === anchor.hash);
@@ -293,9 +326,60 @@ export function Timeline({
       if (commits.length > 0) setAnchorMiss(anchor.hash.slice(0, 7));
       return;
     }
+    const rowNeedsLanding = shouldApplyAnchoredRow(
+        anchor.nonce,
+        anchorAppliedRef.current,
+        anchorTrackingNonceRef.current,
+        idx,
+        anchorAppliedIndexRef.current,
+      );
+    const expansionLayoutChanged =
+      anchorTrackingNonceRef.current === anchor.nonce &&
+      anchor.expand === true &&
+      expandedHash === anchor.hash &&
+      (anchorExpansionHashRef.current !== expandedHash ||
+        anchorExpansionHeightRef.current !== expansionH);
+    const viewResetWhileTracking =
+      anchorTrackingNonceRef.current === anchor.nonce &&
+      anchorResetKeyRef.current !== resetKey;
+    const expansionPresentationDrift = shouldRestoreAnchorExpansion(
+      anchor.nonce,
+      anchorTrackingNonceRef.current,
+      anchor.hash,
+      anchor.expand === true,
+      expandedHash,
+    );
+    if (
+      !rowNeedsLanding &&
+      !expansionLayoutChanged &&
+      !viewResetWhileTracking &&
+      !expansionPresentationDrift
+    ) {
+      setAnchorMiss(null);
+      return;
+    }
+    const isNewLanding = anchor.nonce !== anchorAppliedRef.current;
+    const rowMoved = idx !== anchorAppliedIndexRef.current;
     setAnchorMiss(null);
     anchorAppliedRef.current = anchor.nonce;
+    anchorAppliedIndexRef.current = idx;
+    anchorTrackingNonceRef.current = anchor.nonce;
+    anchorResetKeyRef.current = resetKey;
+    if (expandedHash === anchor.hash) {
+      anchorExpansionHashRef.current = expandedHash;
+      anchorExpansionHeightRef.current = expansionH;
+    } else {
+      anchorExpansionHashRef.current = null;
+      anchorExpansionHeightRef.current = -1;
+    }
     setSelected(idx);
+    if (
+      isNewLanding ||
+      viewResetWhileTracking ||
+      expansionPresentationDrift
+    ) {
+      setExpandedHash(anchor.expand ? anchor.hash : null);
+    }
     const el = scrollRef.current;
     if (el) {
       const top =
@@ -304,10 +388,17 @@ export function Timeline({
       el.scrollTop = Math.max(0, top);
       setScrollTop(el.scrollTop);
     }
-    setPulseHash(anchor.hash);
-    const timer = window.setTimeout(() => setPulseHash(null), 2600);
-    return () => window.clearTimeout(timer);
-  }, [anchor, commits, ROW_H]);
+    if (isNewLanding || rowMoved || viewResetWhileTracking) {
+      setPulseHash(anchor.hash);
+      if (pulseTimerRef.current != null) {
+        window.clearTimeout(pulseTimerRef.current);
+      }
+      pulseTimerRef.current = window.setTimeout(() => {
+        setPulseHash(null);
+        pulseTimerRef.current = null;
+      }, 2600);
+    }
+  }, [anchor, commits, expandedHash, expansionH, resetKey, ROW_H]);
 
   // Keep `selected` in range as the commit list changes.
   useEffect(() => {
@@ -365,8 +456,9 @@ export function Timeline({
   }, []);
 
   const toggleExpand = useCallback((hash: string) => {
+    retireAnchorTracking();
     setExpandedHash((cur) => (cur === hash ? null : hash));
-  }, []);
+  }, [retireAnchorTracking]);
 
   // Hand App's Esc cascade the collapse control (see ExpansionControl in
   // TimelineWindowed). Reads through the live ref — never re-registers.
@@ -375,6 +467,7 @@ export function Timeline({
     expansionControlRef.current = {
       collapse: () => {
         if (expandedHashRef.current == null) return false;
+        retireAnchorTracking();
         setExpandedHash(null);
         return true;
       },
@@ -382,7 +475,7 @@ export function Timeline({
     return () => {
       expansionControlRef.current = null;
     };
-  }, [expansionControlRef]);
+  }, [expansionControlRef, retireAnchorTracking]);
 
   // `ref` for the open expansion's <li>: measure its height (it grows as
   // ChangedFiles loads in) and keep `expansionH` current. Called with null
@@ -425,9 +518,11 @@ export function Timeline({
         return;
       }
       if (e.key === "j" || e.key === "ArrowDown") {
+        retireAnchorTracking();
         setSelected((s) => Math.min(s + 1, Math.max(0, total - 1)));
         e.preventDefault();
       } else if (e.key === "k" || e.key === "ArrowUp") {
+        retireAnchorTracking();
         setSelected((s) => Math.max(s - 1, 0));
         e.preventDefault();
       } else if (e.key === "Enter") {
@@ -455,7 +550,14 @@ export function Timeline({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [commits, selected, total, toggleExpand, copyAiContext]);
+  }, [
+    commits,
+    selected,
+    total,
+    toggleExpand,
+    copyAiContext,
+    retireAnchorTracking,
+  ]);
 
   // Bring the selected row into view. Uses the live row geometry so a
   // selection below the open expansion still lands right.
@@ -502,6 +604,7 @@ export function Timeline({
   function onTimelineContextMenu(e: React.MouseEvent) {
     const target = e.target as HTMLElement;
     if (target.closest('input, textarea, [contenteditable="true"]')) return;
+    retireAnchorTracking();
     e.preventDefault();
 
     // Direct hit on a timeline row wins; otherwise inherit from the
@@ -521,6 +624,7 @@ export function Timeline({
       filePath,
       selection,
       onCopyAiContext: (c) => void copyAiContext(c),
+      labels: commitMenuLabels(i18n),
     });
     if (items.length === 0) return;
     setContextMenu({ x: e.clientX, y: e.clientY, items });
@@ -531,6 +635,8 @@ export function Timeline({
       className="timeline-scroll"
       ref={scrollRef}
       onScroll={onScroll}
+      onWheel={retireAnchorTracking}
+      onPointerDown={retireAnchorTracking}
       onContextMenu={onTimelineContextMenu}
     >
       {contextMenu && (
@@ -552,22 +658,24 @@ export function Timeline({
             }
           >
             {copyStatus === "copied"
-              ? "Copied as AI context ✓"
-              : "Copy failed — try again"}
+              ? i18n._(panelMessages.copiedAi)
+              : i18n._(panelMessages.copyFailedTry)}
           </span>
         )}
       </div>
       {anchorMiss && (
         <div className="timeline-anchor-miss" role="status">
           <span className="timeline-anchor-miss-text">
-            Commit <code>{anchorMiss}</code> is older than the{" "}
-            {commits.length} commits loaded here.
+            {translate(i18n, panelMessages.anchorOlder, {
+              hash: anchorMiss,
+              count: commits.length,
+            })}
           </span>
           <button
             type="button"
             className="timeline-anchor-miss-x"
-            aria-label="Dismiss"
-            title="Dismiss"
+            aria-label={i18n._(panelMessages.dismiss)}
+            title={i18n._(panelMessages.dismiss)}
             onClick={() => setAnchorMiss(null)}
           >
             ✕
@@ -575,7 +683,7 @@ export function Timeline({
         </div>
       )}
       {total === 0 ? (
-        <p className="panel-empty">No commits match.</p>
+        <p className="panel-empty">{i18n._(panelMessages.noCommits)}</p>
       ) : (
         <ul
           className="timeline-windowed-list timeline-single"
@@ -605,6 +713,7 @@ export function Timeline({
                     (pulseHash === c.hash ? " warp-pulse" : "")
                   }
                   onClick={() => {
+                    retireAnchorTracking();
                     setSelected(idx);
                     toggleExpand(c.hash);
                   }}
@@ -614,7 +723,7 @@ export function Timeline({
                   <span className="timeline-lane-spacer" aria-hidden="true" />
                   <span
                     className="timeline-time"
-                    title={formatFullTime(c.timestamp)}
+                    title={formatFullTime(c.timestamp, i18n.locale)}
                   >
                     {timeAgo(c.timestamp)}
                   </span>
@@ -628,8 +737,10 @@ export function Timeline({
                         className="timeline-remote-tip"
                         title={
                           c.remoteTipExtraCount > 0
-                            ? `Remote tracking refs at this commit (read-only, from your last git fetch). +${c.remoteTipExtraCount} more.`
-                            : "Remote tracking ref at this commit (read-only, from your last git fetch)."
+                            ? translate(i18n, panelMessages.remoteTips, {
+                                count: c.remoteTipExtraCount,
+                              })
+                            : i18n._(panelMessages.remoteTip)
                         }
                       >
                         {c.remoteTipLabel}
@@ -654,13 +765,13 @@ export function Timeline({
                         type="button"
                         className="commit-copy-btn"
                         onClick={() => void copyAiContext(c)}
-                        title="Copy as AI context (c)"
+                        title={i18n._(panelMessages.copyAiTitle)}
                       >
                         {copyStatus === "copied"
-                          ? "Copied ✓"
+                          ? i18n._(panelMessages.copied)
                           : copyStatus === "error"
-                            ? "Copy failed"
-                            : "Copy as AI context"}
+                            ? i18n._(panelMessages.copyFailed)
+                            : i18n._(panelMessages.copyAi)}
                       </button>
                     </div>
                     <ChangedFiles

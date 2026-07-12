@@ -1,27 +1,43 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
+import { setupI18n } from "@lingui/core";
+import { I18nProvider } from "@lingui/react";
 
 import {
   BRANCH_COUNT_MAX_RETRIES,
   branchCountRetryDelay,
 } from "./BranchChip";
 import { contextMenuDismissesOnTab } from "./ContextMenu";
+import { PanelFooter, PasteRepoButton } from "./panel/PanelOnboarding";
 import { SearchBar } from "./SearchBar";
 import { SearchResultJumpAffordance } from "./TimelineWindowed";
-import { modalTabDestination } from "./UpdateModal";
+import {
+  canDeferUpdate,
+  modalTabDestination,
+  updateProgressLabel,
+} from "./UpdateModal";
+import { updateCheckNoticeLabel } from "./header/PanelChromeRow";
 import {
   SEARCH_RESULTS_LIST_ID,
   searchResultOptionId,
 } from "./searchAccessibility";
 
 const noop = () => {};
+const testI18n = setupI18n({ locale: "en", messages: {} });
+
+function renderLocalized(node: ReactNode) {
+  return renderToStaticMarkup(
+    <I18nProvider i18n={testI18n}>{node}</I18nProvider>,
+  );
+}
 
 function renderSearch(overrides?: {
   resultsAvailable?: boolean;
   resultsBusy?: boolean;
   activeDescendant?: string | null;
 }) {
-  return renderToStaticMarkup(
+  return renderLocalized(
     <SearchBar
       value="fix race"
       count={2}
@@ -57,7 +73,7 @@ describe("overlay keyboard ownership", () => {
   });
 
   it("keeps the pointer jump glyph presentational inside a listbox option", () => {
-    const markup = renderToStaticMarkup(
+    const markup = renderLocalized(
       <SearchResultJumpAffordance onActivate={noop} />,
     );
     expect(markup).toContain('class="row-jump"');
@@ -71,6 +87,40 @@ describe("overlay keyboard ownership", () => {
     expect(modalTabDestination(3, 0, true)).toBe(2);
     expect(modalTabDestination(3, 1, false)).toBeNull();
   });
+
+  it("describes update phases without exposing backend state names", () => {
+    expect(updateProgressLabel(null)).toBe("Preparing…");
+    expect(
+      updateProgressLabel(
+        { phase: "waiting", progress: 0 },
+        "Microsoft Store",
+      ),
+    ).toBe("Waiting for Microsoft Store…");
+    expect(updateProgressLabel({ phase: "downloading", progress: 0.42 })).toBe(
+      "Downloading…",
+    );
+    expect(updateProgressLabel({ phase: "installing", progress: 0.9 })).toBe(
+      "Installing…",
+    );
+    expect(updateProgressLabel({ phase: "restarting", progress: 1 })).toBe(
+      "Restarting…",
+    );
+  });
+
+  it("keeps every manual update-check outcome visible and concise", () => {
+    expect(updateCheckNoticeLabel({ kind: "checking" })).toBe(
+      "Checking updates…",
+    );
+    expect(updateCheckNoticeLabel({ kind: "current" })).toBe("✓ Up to date");
+    expect(updateCheckNoticeLabel({ kind: "error" })).toBe(
+      "⚠ Update check failed",
+    );
+  });
+
+  it("never offers skip or snooze for a mandatory Store update", () => {
+    expect(canDeferUpdate({ mandatory: true })).toBe(false);
+    expect(canDeferUpdate({ mandatory: false })).toBe(true);
+  });
 });
 
 describe("commit-search accessibility contract", () => {
@@ -81,6 +131,8 @@ describe("commit-search accessibility contract", () => {
     expect(markup).toContain(`aria-controls="${SEARCH_RESULTS_LIST_ID}"`);
     expect(markup).toContain('aria-expanded="true"');
     expect(markup).toContain('aria-busy="false"');
+    expect(markup).toContain('aria-describedby="commit-search-scope"');
+    expect(markup).toContain('id="commit-search-scope"');
     expect(markup).toContain(
       `aria-activedescendant="${searchResultOptionId(0)}"`,
     );
@@ -97,5 +149,46 @@ describe("commit-search accessibility contract", () => {
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).not.toContain("aria-controls");
     expect(markup).not.toContain("aria-activedescendant");
+  });
+});
+
+describe("repository paste affordance", () => {
+  it("is an explicit action with the native shortcut visible", () => {
+    const markup = renderLocalized(
+      <PasteRepoButton
+        onPaste={noop}
+        pasteShortcut="Ctrl+V"
+        pasting={false}
+      />,
+    );
+    expect(markup).toContain("<button");
+    expect(markup).toContain("Paste path");
+    expect(markup).toContain("<kbd>Ctrl+V</kbd>");
+    expect(markup).toContain(
+      'aria-label="Paste repository paths from the clipboard (Ctrl+V)"',
+    );
+  });
+
+  it("blocks duplicate clipboard reads while one is in flight", () => {
+    const markup = renderLocalized(
+      <PasteRepoButton onPaste={noop} pasteShortcut="⌘V" pasting />,
+    );
+    expect(markup).toContain("disabled");
+    expect(markup).toContain("Pasting…");
+  });
+
+  it("announces an intake error on its own footer row", () => {
+    const markup = renderLocalized(
+      <PanelFooter
+        addError="Clipboard has no absolute path"
+        onAddRepo={noop}
+        onPaste={noop}
+        pasteShortcut="Ctrl+V"
+        pasting={false}
+      />,
+    );
+    expect(markup).toContain('class="panel-footer-actions"');
+    expect(markup).toContain('class="panel-footer-hint-error" role="status"');
+    expect(markup).toContain("Clipboard has no absolute path");
   });
 });

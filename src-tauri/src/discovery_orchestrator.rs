@@ -125,6 +125,12 @@ pub(crate) struct RepoLifecycleFence {
     status: String,
 }
 
+impl RepoLifecycleFence {
+    pub(crate) fn canonical_path(&self) -> &str {
+        &self.canonical_path
+    }
+}
+
 pub(crate) fn capture_repo_lifecycle_fence(
     conn: &Connection,
     canonical_path: &str,

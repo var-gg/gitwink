@@ -1,18 +1,32 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::{
-    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder, WindowEvent,
+    AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    WindowEvent,
 };
 
-use crate::{commands, settings};
+use crate::panel_geometry::{self, PhysicalWorkArea};
+use crate::{commands, settings, update};
 
 const PANEL_LABEL: &str = "panel";
 const DIFF_LABEL: &str = "diff";
-/// Base panel size at scale 1.0 — mirrors tauri.conf.json. The UI scale
-/// multiplies these for the actual window size.
-const PANEL_BASE_W: f64 = 520.0;
-const PANEL_BASE_H: f64 = 600.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PanelToggleIntent {
+    Hide,
+    Surface,
+}
+
+fn panel_toggle_intent(visible: bool, focused: bool) -> PanelToggleIntent {
+    if visible && focused {
+        PanelToggleIntent::Hide
+    } else {
+        // A visible-but-unfocused panel may be covered by a fullscreen or
+        // newer topmost window. Treat the tray/hotkey as a summon in that
+        // state instead of "toggling" an already invisible-to-the-user panel.
+        PanelToggleIntent::Surface
+    }
+}
 
 pub fn toggle_panel(app: &AppHandle) {
     let Some(window) = app.get_webview_window(PANEL_LABEL) else {
@@ -20,23 +34,12 @@ pub fn toggle_panel(app: &AppHandle) {
     };
 
     let visible = window.is_visible().unwrap_or(false);
-    if visible {
-        let _ = window.hide();
-    } else {
-        position_panel(&window);
-        // Re-assert always-on-top on every summon (open_diff drops it so
-        // the diff window isn't trapped behind the panel, and it can
-        // still be false from an earlier diff session). assert_* reads
-        // the pinned state so glance summons re-float and pinned summons
-        // stay un-topmost.
-        assert_panel_always_on_top(app);
-        let _ = window.show();
-        let _ = window.set_focus();
-        // The webview is only un-hidden on show, never re-created, so the
-        // bootstrap commit fetch runs once per app launch. Nudge the
-        // frontend to re-pull so a commit the file-watcher missed (or a
-        // repo whose watcher never attached) still surfaces on summon.
-        let _ = window.emit("panel://shown", ());
+    let focused = window.is_focused().unwrap_or(false);
+    match panel_toggle_intent(visible, focused) {
+        PanelToggleIntent::Hide => {
+            let _ = window.hide();
+        }
+        PanelToggleIntent::Surface => surface_panel(app, &window, !visible),
     }
 }
 
@@ -53,12 +56,23 @@ pub fn show_panel(app: &AppHandle) {
     let Some(window) = app.get_webview_window(PANEL_LABEL) else {
         return;
     };
-    if !window.is_visible().unwrap_or(false) {
-        position_panel(&window);
+    let reposition = !window.is_visible().unwrap_or(false);
+    surface_panel(app, &window, reposition);
+}
+
+fn surface_panel(app: &AppHandle, window: &WebviewWindow, reposition: bool) {
+    if reposition {
+        position_panel(window);
     }
-    assert_panel_always_on_top(app);
+    let _ = window.unminimize();
     let _ = window.show();
+    // Apply stacking after the native window is visible. Settings/diff,
+    // maximize and pin state still decide whether topmost is appropriate.
+    assert_panel_always_on_top(app);
     let _ = window.set_focus();
+    // The webview is only un-hidden on show, never re-created, so the
+    // bootstrap commit fetch runs once per app launch. Nudge the frontend to
+    // re-pull so a commit missed by a watcher still surfaces on summon.
     let _ = window.emit("panel://shown", ());
 }
 
@@ -102,6 +116,11 @@ pub fn open_settings(app: &AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window(SETTINGS_LABEL) {
         let _ = win.unminimize();
         win.show().map_err(|e| e.to_string())?;
+        // Only lower the panel once the child is actually visible. A failed
+        // reopen must not strand glance mode below unrelated applications.
+        if let Some(panel) = app.get_webview_window(PANEL_LABEL) {
+            let _ = panel.set_always_on_top(false);
+        }
         win.set_focus().map_err(|e| e.to_string())?;
         return Ok(());
     }
@@ -121,6 +140,11 @@ pub fn open_settings(app: &AppHandle) -> Result<(), String> {
         eprintln!("gitwink: failed to build settings window: {e:#}");
         e.to_string()
     })?;
+    // A child window must never be trapped behind the glance panel. The
+    // invariant is restored on CloseRequested according to pin/maximize state.
+    if let Some(panel) = app.get_webview_window(PANEL_LABEL) {
+        let _ = panel.set_always_on_top(false);
+    }
     // Hide instead of destroy on close — same pattern as the diff
     // window. Two reasons: re-open is instant (no rebuild / no
     // re-mount), and the get_webview_window check at the top of
@@ -270,48 +294,6 @@ fn monitor_can_contain(app: &AppHandle, x: i32, y: i32, w: u32, h: u32) -> bool 
     })
 }
 
-/// Minimum panel size the window can fall to on tiny / portrait
-/// monitors where even PANEL_BASE doesn't fit. The chip dropdowns
-/// degrade gracefully under this; the panel header is still reachable
-/// because we keep above zero.
-const PANEL_MIN_W: f64 = 360.0;
-const PANEL_MIN_H: f64 = 420.0;
-
-/// Resize the panel window to PANEL_BASE × scale, clamped to the current
-/// monitor minus a small pad so it never opens larger than the screen.
-/// Called by set_ui_scale on every change and by lib.rs setup so a saved
-/// scale's window size is applied before the first show.
-///
-/// On small / portrait / remote displays where even the BASE size won't
-/// fit, we let the panel shrink to PANEL_MIN_* rather than clamping
-/// back up to BASE (the old code did `.max(PANEL_BASE_*)` which
-/// silently undid the monitor clamp and could clip the header off-screen
-/// — GPT Pro review C1).
-pub fn resize_panel_for_scale(app: &AppHandle, scale: f32) {
-    let Some(panel) = app.get_webview_window(PANEL_LABEL) else {
-        return;
-    };
-    let want_w = PANEL_BASE_W * scale as f64;
-    let want_h = PANEL_BASE_H * scale as f64;
-    let (max_w, max_h) = panel
-        .current_monitor()
-        .ok()
-        .flatten()
-        .map(|m| {
-            let s = m.scale_factor();
-            let size = m.size();
-            (size.width as f64 / s - 80.0, size.height as f64 / s - 80.0)
-        })
-        .unwrap_or((f64::INFINITY, f64::INFINITY));
-    // Floor against PANEL_MIN_* — but never above the monitor max, so
-    // a 320px-wide remote display still gets a window that fits.
-    let min_w = PANEL_MIN_W.min(max_w.max(1.0));
-    let min_h = PANEL_MIN_H.min(max_h.max(1.0));
-    let final_w = want_w.min(max_w).max(min_w);
-    let final_h = want_h.min(max_h).max(min_h);
-    let _ = panel.set_size(LogicalSize::new(final_w, final_h));
-}
-
 /// Re-evaluate whether the panel should auto-hide and do it if so. The
 /// blur debounce, the Settings/Diff CloseRequested handlers, and any
 /// future "may have removed the last reason to keep the panel up"
@@ -319,6 +301,7 @@ pub fn resize_panel_for_scale(app: &AppHandle, scale: f32) {
 ///
 /// The rule: hide iff
 ///   - not sticky (add-repo / native picker), AND
+///   - no update install / Store consent flow is active, AND
 ///   - not pinned (pinned mode never auto-hides), AND
 ///   - no child window (settings or diff) is visible, AND
 ///   - the panel itself is no longer focused.
@@ -335,6 +318,9 @@ pub fn maybe_hide_panel_for_blur(app: &AppHandle) {
         .map(|s| s.0.load(Ordering::SeqCst))
         .unwrap_or(false);
     if sticky {
+        return;
+    }
+    if update::install_in_progress(app) {
         return;
     }
     let pinned = app
@@ -370,8 +356,10 @@ pub fn assert_panel_always_on_top(app: &AppHandle) {
         .try_state::<commands::PanelPinned>()
         .map(|s| s.0.load(std::sync::atomic::Ordering::SeqCst))
         .unwrap_or(false);
+    let child_visible = child_window_visible(app);
     if let Some(panel) = app.get_webview_window(PANEL_LABEL) {
-        let _ = panel.set_always_on_top(!pinned);
+        let maximized = panel.is_maximized().unwrap_or(false);
+        let _ = panel.set_always_on_top(!pinned && !maximized && !child_visible);
     }
 }
 
@@ -387,12 +375,25 @@ pub fn apply_panel_pinned(app: &AppHandle, pinned: bool) {
         eprintln!("gitwink: apply_panel_pinned but panel window missing");
         return;
     };
-    if let Err(e) = panel.set_always_on_top(!pinned) {
+    let maximized = panel.is_maximized().unwrap_or(false);
+    let always_on_top = !pinned && !maximized && !child_window_visible(app);
+    if let Err(e) = panel.set_always_on_top(always_on_top) {
         eprintln!("gitwink: apply_panel_pinned set_always_on_top failed: {e}");
     }
 }
 
+fn child_window_visible(app: &AppHandle) -> bool {
+    [DIFF_LABEL, SETTINGS_LABEL].iter().any(|label| {
+        app.get_webview_window(label)
+            .and_then(|window| window.is_visible().ok())
+            .unwrap_or(false)
+    })
+}
+
 fn position_panel(window: &WebviewWindow) {
+    if window.is_maximized().unwrap_or(false) {
+        return;
+    }
     let app = window.app_handle();
     let saved = settings::load(app).panel_position;
     let win_size = window.outer_size().unwrap_or_default();
@@ -400,41 +401,42 @@ fn position_panel(window: &WebviewWindow) {
     let win_h = win_size.height as i32;
 
     if let Some(pos) = saved {
-        if point_visible_on_any_monitor(window, pos.x, pos.y, win_w, win_h) {
-            let _ = window.set_position(PhysicalPosition::new(pos.x, pos.y));
-            return;
+        if let Ok(monitors) = window.available_monitors() {
+            let candidate = monitors
+                .iter()
+                .filter_map(|monitor| {
+                    let area = monitor.work_area();
+                    let overlap_x = (pos.x + win_w).min(area.position.x + area.size.width as i32)
+                        - pos.x.max(area.position.x);
+                    let overlap_y = (pos.y + win_h).min(area.position.y + area.size.height as i32)
+                        - pos.y.max(area.position.y);
+                    let visible = overlap_x.max(0) as i64 * overlap_y.max(0) as i64;
+                    (visible > 0).then_some((visible, monitor))
+                })
+                .max_by_key(|(visible, _)| *visible);
+            if let Some((_, monitor)) = candidate {
+                let area = monitor.work_area();
+                let (x, y) = panel_geometry::clamp_physical_position(
+                    pos.x,
+                    pos.y,
+                    win_size.width,
+                    win_size.height,
+                    PhysicalWorkArea {
+                        x: area.position.x,
+                        y: area.position.y,
+                        width: area.size.width,
+                        height: area.size.height,
+                    },
+                );
+                let _ = window.set_position(PhysicalPosition::new(x, y));
+                return;
+            }
         }
         // Saved position is off-screen (monitor unplugged, resolution change).
-        // Fall through to cursor anchor.
+        // Fall through to the tray/menu-bar cursor anchor.
     }
 
     position_near_cursor(window, win_w, win_h);
-}
-
-fn point_visible_on_any_monitor(
-    window: &WebviewWindow,
-    x: i32,
-    y: i32,
-    win_w: i32,
-    win_h: i32,
-) -> bool {
-    let Ok(monitors) = window.available_monitors() else {
-        return false;
-    };
-    // Require at least ~80px of the panel header to be on some monitor so the
-    // user can grab it back if they nudged it almost off-screen.
-    const VISIBLE_PAD: i32 = 80;
-    monitors.iter().any(|m| {
-        let mp = m.position();
-        let ms = m.size();
-        let mx2 = mp.x + ms.width as i32;
-        let my2 = mp.y + ms.height as i32;
-        let panel_x2 = x + win_w;
-        let panel_y2 = y + win_h;
-        let overlap_x = panel_x2.min(mx2) - x.max(mp.x);
-        let overlap_y = panel_y2.min(my2) - y.max(mp.y);
-        overlap_x >= VISIBLE_PAD && overlap_y >= VISIBLE_PAD
-    })
 }
 
 fn position_near_cursor(window: &WebviewWindow, win_w: i32, win_h: i32) {
@@ -450,21 +452,24 @@ fn position_near_cursor(window: &WebviewWindow, win_w: i32, win_h: i32) {
         .ok()
         .and_then(|monitors| {
             monitors.into_iter().find(|m| {
-                let pos = m.position();
-                let size = m.size();
-                cursor_x >= pos.x
-                    && cursor_x < pos.x + size.width as i32
-                    && cursor_y >= pos.y
-                    && cursor_y < pos.y + size.height as i32
+                let area = m.work_area();
+                cursor_x >= area.position.x
+                    && cursor_x < area.position.x + area.size.width as i32
+                    && cursor_y >= area.position.y
+                    && cursor_y < area.position.y + area.size.height as i32
             })
         })
         .or_else(|| window.primary_monitor().ok().flatten());
 
     let (mon_x, mon_y, mon_w, mon_h) = match monitor {
         Some(m) => {
-            let p = m.position();
-            let s = m.size();
-            (p.x, p.y, s.width as i32, s.height as i32)
+            let area = m.work_area();
+            (
+                area.position.x,
+                area.position.y,
+                area.size.width as i32,
+                area.size.height as i32,
+            )
         }
         None => (0, 0, 1920, 1080),
     };
@@ -472,29 +477,50 @@ fn position_near_cursor(window: &WebviewWindow, win_w: i32, win_h: i32) {
     // Anchor panel above-and-centered on the cursor for Windows trays (bottom),
     // below-and-centered for macOS menu bar (top).
     #[cfg(target_os = "macos")]
-    let mut y = cursor_y + 8;
+    let desired_y = cursor_y + 8;
     #[cfg(not(target_os = "macos"))]
-    let mut y = cursor_y - win_h - 8;
+    let desired_y = cursor_y - win_h - 8;
 
-    let mut x = cursor_x - win_w / 2;
-
-    let min_x = mon_x;
-    let min_y = mon_y;
-    let max_x = mon_x + mon_w - win_w;
-    let max_y = mon_y + mon_h - win_h;
-
-    if x < min_x {
-        x = min_x;
-    }
-    if x > max_x {
-        x = max_x;
-    }
-    if y < min_y {
-        y = min_y;
-    }
-    if y > max_y {
-        y = max_y;
-    }
+    let desired_x = cursor_x - win_w / 2;
+    let (x, y) = panel_geometry::clamp_physical_position(
+        desired_x,
+        desired_y,
+        win_w.max(1) as u32,
+        win_h.max(1) as u32,
+        PhysicalWorkArea {
+            x: mon_x,
+            y: mon_y,
+            width: mon_w.max(1) as u32,
+            height: mon_h.max(1) as u32,
+        },
+    );
 
     let _ = window.set_position(PhysicalPosition::new(x, y));
+}
+
+/// Re-apply saved/cursor placement after a size, DPI or monitor transition.
+/// Maximized windows are intentionally ignored so their normal rect survives.
+pub(crate) fn reposition_panel(app: &AppHandle) {
+    if let Some(panel) = app.get_webview_window(PANEL_LABEL) {
+        position_panel(&panel);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn focused_visible_panel_toggles_closed() {
+        assert_eq!(panel_toggle_intent(true, true), PanelToggleIntent::Hide);
+    }
+
+    #[test]
+    fn obscured_or_hidden_panel_is_surfaced() {
+        assert_eq!(panel_toggle_intent(true, false), PanelToggleIntent::Surface);
+        assert_eq!(
+            panel_toggle_intent(false, false),
+            PanelToggleIntent::Surface
+        );
+    }
 }

@@ -1,5 +1,8 @@
 import type { WindowDays } from "../types";
+import { useLingui } from "@lingui/react/macro";
 import { ChipDropdown } from "./ChipDropdown";
+import { filterMessages } from "../i18n/messages/filters";
+import { translate } from "../i18n/translate";
 
 interface Props {
   open: boolean;
@@ -15,39 +18,35 @@ interface Props {
  * can't silently desync the two. */
 export const WINDOW_DAY_PRESETS = [1, 3, 7, 30] as const;
 
-const LABELS: Record<number, string> = {
-  1: "Last 24 hours",
-  3: "Last 3 days",
-  7: "Last 7 days",
-  30: "Last 30 days",
-};
-
-const OPTIONS: { value: WindowDays; label: string }[] = [
-  ...WINDOW_DAY_PRESETS.map((d) => ({
-    value: d as WindowDays,
-    label: LABELS[d] ?? `Last ${d} days`,
-  })),
-  { value: "all", label: "All time" },
-];
-
-function labelFor(v: WindowDays): string {
-  if (v === "all") return "All time";
+function labelFor(v: WindowDays, allTime: string): string {
+  if (v === "all") return allTime;
   if (v === 1) return "24h";
   return `${v}d`;
 }
 
 export function TimeRangeChip({ open, onToggle, onClose, value, onChange }: Props) {
+  const { i18n } = useLingui();
+  const options: { value: WindowDays; label: string }[] = [
+    ...WINDOW_DAY_PRESETS.map((days) => ({
+      value: days as WindowDays,
+      label:
+        days === 1
+          ? i18n._(filterMessages.last24Hours)
+          : translate(i18n, filterMessages.lastDays, { count: days }),
+    })),
+    { value: "all", label: i18n._(filterMessages.allTime) },
+  ];
   return (
     <ChipDropdown
       id="time"
-      label={labelFor(value)}
+      label={labelFor(value, i18n._(filterMessages.allTime))}
       open={open}
       onToggle={onToggle}
       onClose={onClose}
       align="right"
     >
       <div className="chip-list">
-        {OPTIONS.map((o) => (
+        {options.map((o) => (
           <button
             key={String(o.value)}
             type="button"

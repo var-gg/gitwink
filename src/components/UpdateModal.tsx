@@ -1,7 +1,24 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { I18n } from "@lingui/core";
+import { useLingui } from "@lingui/react";
 
-import { updateInstall, updateSkip, updateSnooze } from "../lib/ipc";
-import type { UpdateStatePayload } from "../types";
+import {
+  onUpdateProgress,
+  updateInstall,
+  updateSkip,
+  updateSnooze,
+} from "../lib/ipc";
+import { shouldPresentUpdate } from "../lib/updatePolicy";
+import {
+  updateMessages as m,
+  updateProviderLabel,
+} from "../i18n/messages/updates";
+import { translate } from "../i18n/translate";
+import type {
+  AvailableUpdate,
+  UpdateProgress,
+  UpdateStatePayload,
+} from "../types";
 import { announceModalOpen } from "./overlayLifecycle";
 
 interface UpdateModalProps {
@@ -12,34 +29,55 @@ interface UpdateModalProps {
 /** Panel-overlay modal for the self-updater. Summoned by the backend
  * (tray "Update available" / a manual check) — never auto-pops. */
 export function UpdateModal({ state, onClose }: UpdateModalProps) {
+  const { i18n } = useLingui();
   const [installing, setInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<UpdateProgress | null>(null);
 
   const update = state.available;
-  const visible = state.scoop || update != null;
+  const visible = shouldPresentUpdate(state);
 
   useLayoutEffect(() => {
     if (visible) announceModalOpen();
   }, [visible]);
 
-  // Scoop installs: no in-app update path — point the user at the CLI. The
-  // badge + version still show (detection is the same), only the action is a
-  // command rather than an in-app install.
-  if (state.scoop) {
+  useEffect(() => {
+    let mounted = true;
+    let unlisten: (() => void) | undefined;
+    void onUpdateProgress((next) => {
+      if (mounted) setProgress(next);
+    })
+      .then((stop) => {
+        if (mounted) unlisten = stop;
+        else stop();
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
+  }, []);
+
+  // Defensive: the backend only emits show-modal after publishing an update.
+  if (!update) return null;
+
+  const installAction = state.policy.installAction;
+
+  // Externally managed installs still share discovery/badges, but the final
+  // action remains owned by the package manager described by the policy.
+  if (installAction.kind === "externalCommand") {
     return (
       <Backdrop onClose={onClose} focusEpoch={0}>
         <header className="update-modal-header">
-          <span className="update-modal-title">
-            {update ? "Update available" : "Update gitwink"}
-          </span>
-          {update && (
-            <span className="update-modal-version">v{update.version}</span>
-          )}
+          <span className="update-modal-title">{i18n._(m.available)}</span>
+          <span className="update-modal-version">v{update.version}</span>
         </header>
         <div className="update-modal-changelog">
-          This copy of gitwink was installed with Scoop, which manages its own
-          updates. Run <code>scoop update gitwink</code> in a terminal to get{" "}
-          {update ? `v${update.version}` : "the latest version"}.
+          {translate(i18n, m.managedExternally, {
+            provider: updateProviderLabel(i18n, installAction.provider),
+            command: installAction.command,
+            version: update.version,
+          })}
         </div>
         <div className="update-modal-actions">
           <button
@@ -47,19 +85,17 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
             className="update-btn update-btn-primary"
             onClick={onClose}
           >
-            Got it
+            {i18n._(m.gotIt)}
           </button>
         </div>
       </Backdrop>
     );
   }
 
-  // Defensive: backend only emits show-modal with an update or scoop=true.
-  if (!update) return null;
-
   async function install() {
     setInstalling(true);
     setError(null);
+    setProgress({ phase: "preparing", progress: 0 });
     try {
       await updateInstall();
       // On success the app relaunches before this resolves; reaching
@@ -71,8 +107,9 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
           ? e
           : e instanceof Error
             ? e.message
-            : "Update failed",
+            : i18n._(m.failed),
       );
+      setProgress(null);
       setInstalling(false);
     }
   }
@@ -93,13 +130,48 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
       focusEpoch={installing ? 1 : 0}
     >
       <header className="update-modal-header">
-        <span className="update-modal-title">Update available</span>
+        <span className="update-modal-title">
+          {installAction.kind === "inApp"
+            ? translate(i18n, m.inAppTitle, {
+                provider: updateProviderLabel(i18n, installAction.provider),
+              })
+            : i18n._(m.available)}
+        </span>
         <span className="update-modal-version">v{update.version}</span>
       </header>
       <div className="update-modal-changelog">
-        {update.notes.trim() || "No release notes provided for this version."}
+        {update.notes.trim() || i18n._(m.noNotes)}
       </div>
-      {error && <div className="update-modal-error">{error}</div>}
+      {installing && progress && (
+        <div className="update-modal-progress" aria-live="polite">
+          <div className="update-modal-progress-row">
+            <span>
+              {updateProgressLabel(
+                progress,
+                updateProviderLabel(i18n, installAction.provider),
+                i18n,
+              )}
+            </span>
+            {progress.phase === "downloading" && (
+              <span>{Math.round(progress.progress * 100)}%</span>
+            )}
+          </div>
+          <progress
+            max={1}
+            value={
+              progress.phase === "preparing" || progress.phase === "waiting"
+                ? undefined
+                : progress.progress
+            }
+            aria-label={i18n._(m.progress)}
+          />
+        </div>
+      )}
+      {error && (
+        <div className="update-modal-error" role="alert">
+          {error}
+        </div>
+      )}
       <div className="update-modal-actions">
         <button
           type="button"
@@ -107,27 +179,64 @@ export function UpdateModal({ state, onClose }: UpdateModalProps) {
           onClick={() => void install()}
           disabled={installing}
         >
-          {installing ? "Updating…" : "Update now"}
+          {installing
+            ? updateProgressLabel(
+                progress,
+                updateProviderLabel(i18n, installAction.provider),
+                i18n,
+              )
+            : i18n._(m.updateNow)}
         </button>
-        <button
-          type="button"
-          className="update-btn"
-          onClick={() => void later()}
-          disabled={installing}
-        >
-          Later
-        </button>
-        <button
-          type="button"
-          className="update-btn update-btn-quiet"
-          onClick={() => void skip()}
-          disabled={installing}
-        >
-          Skip v{update.version}
-        </button>
+        {canDeferUpdate(update) && (
+          <>
+            <button
+              type="button"
+              className="update-btn"
+              onClick={() => void later()}
+              disabled={installing}
+            >
+              {i18n._(m.later)}
+            </button>
+            <button
+              type="button"
+              className="update-btn update-btn-quiet"
+              onClick={() => void skip()}
+              disabled={installing}
+            >
+              {translate(i18n, m.skip, { version: update.version })}
+            </button>
+          </>
+        )}
       </div>
     </Backdrop>
   );
+}
+
+export function updateProgressLabel(
+  progress: UpdateProgress | null,
+  providerLabel = "update provider",
+  i18n?: I18n,
+): string {
+  switch (progress?.phase) {
+    case "waiting":
+      return i18n
+        ? translate(i18n, m.waiting, { provider: providerLabel })
+        : `Waiting for ${providerLabel}…`;
+    case "downloading":
+      return i18n ? i18n._(m.downloading) : "Downloading…";
+    case "installing":
+      return i18n ? i18n._(m.installing) : "Installing…";
+    case "restarting":
+      return i18n ? i18n._(m.restarting) : "Restarting…";
+    default:
+      return i18n ? i18n._(m.preparing) : "Preparing…";
+  }
+}
+
+export function canDeferUpdate(
+  update: Pick<AvailableUpdate, "mandatory">,
+): boolean {
+  return !update.mandatory;
 }
 
 interface BackdropProps {
@@ -153,6 +262,7 @@ export function modalTabDestination(
 }
 
 function Backdrop({ children, onClose, focusEpoch }: BackdropProps) {
+  const { i18n } = useLingui();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(
     typeof document !== "undefined" &&
@@ -236,7 +346,7 @@ function Backdrop({ children, onClose, focusEpoch }: BackdropProps) {
         className="update-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="gitwink update"
+        aria-label={i18n._(m.dialog)}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >

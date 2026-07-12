@@ -2,7 +2,6 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
   font-size: 13px;
   line-height: 1.45;
-  color-scheme: light dark;
 }
 
 * {
@@ -36,10 +35,9 @@ body,
   height: 100%;
   background: #fafafa;
   color: #1a1a1a;
-  /* The panel window is a fixed size (resizable: false) and panel-body
-   * owns its own vertical scroll — nothing should ever scroll at the
-   * document level. A chip dropdown that mis-anchors past the panel
-   * edge must clip, not spawn a scrollbar. Hard guard against both axes. */
+  /* panel-body owns its own vertical scroll at every native window size.
+   * A chip dropdown that mis-anchors past the panel edge must clip, not spawn
+   * document scrollbars. Hard guard against both axes during live resize. */
   overflow: hidden;
 }
 
@@ -100,6 +98,7 @@ body,
 
 .panel-filter-row-search {
   padding-top: 0;
+  gap: calc(5px * var(--ui-scale, 1));
 }
 
 .panel-chrome-status {
@@ -337,6 +336,17 @@ body,
   flex-shrink: 0;
 }
 
+.panel-status.error {
+  color: rgb(180, 55, 55);
+  opacity: 0.9;
+}
+
+@media (prefers-color-scheme: dark) {
+  .panel-status.error {
+    color: rgb(255, 145, 125);
+  }
+}
+
 /* ----- one-time auto-fetch disclosure banner ----- */
 
 .autofetch-notice {
@@ -407,6 +417,71 @@ body,
   .autofetch-notice-dismiss {
     border-color: rgba(255, 255, 255, 0.2);
     background: rgba(255, 255, 255, 0.08);
+  }
+}
+
+/* ----- explicit agent / CLI handoff status ----- */
+
+.control-handoff {
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--ui-scale, 1));
+  min-height: calc(28px * var(--ui-scale, 1));
+  padding: calc(5px * var(--ui-scale, 1)) calc(10px * var(--ui-scale, 1));
+  border-bottom: 1px solid rgba(84, 76, 215, 0.18);
+  background: rgba(94, 83, 230, 0.08);
+  color: rgba(47, 42, 135, 0.92);
+  font-size: calc(10.5px * var(--ui-scale, 1));
+  line-height: 1.35;
+}
+
+.control-handoff.error {
+  border-bottom-color: rgba(190, 55, 45, 0.20);
+  background: rgba(210, 65, 50, 0.08);
+  color: rgba(145, 35, 28, 0.94);
+}
+
+.control-handoff-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control-handoff-dismiss {
+  flex: none;
+  width: calc(20px * var(--ui-scale, 1));
+  height: calc(20px * var(--ui-scale, 1));
+  border: none;
+  border-radius: 5px;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.62;
+}
+
+.control-handoff-dismiss:hover {
+  background: rgba(84, 76, 215, 0.10);
+  opacity: 1;
+}
+
+@media (prefers-color-scheme: dark) {
+  .control-handoff {
+    border-bottom-color: rgba(155, 148, 255, 0.18);
+    background: rgba(120, 108, 255, 0.10);
+    color: rgba(210, 207, 255, 0.94);
+  }
+
+  .control-handoff.error {
+    border-bottom-color: rgba(255, 125, 110, 0.20);
+    background: rgba(235, 75, 60, 0.10);
+    color: rgba(255, 178, 166, 0.96);
+  }
+
+  .control-handoff-dismiss:hover {
+    background: rgba(255, 255, 255, 0.10);
   }
 }
 
@@ -1426,6 +1501,13 @@ body,
   font-size: 11px;
   opacity: 0.65;
 }
+.empty-drop-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
 .empty-drop-status {
   margin-top: 12px;
   font-size: 11px;
@@ -1466,15 +1548,28 @@ body,
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   user-select: none;
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.panel-footer-actions {
+  display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
 }
-.panel-footer-hint-text {
-  opacity: 0.4;
-  cursor: default;
+.panel-footer-or {
+  opacity: 0.35;
 }
 .panel-footer-hint-error {
+  max-width: min(100%, 620px);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.3;
+  text-align: center;
   color: rgba(180, 50, 50, 0.95);
 }
 
@@ -1499,10 +1594,61 @@ body,
   opacity: 1;
   background: rgba(0, 0, 0, 0.06);
 }
+.add-repo-btn:focus-visible,
+.paste-repo-btn:focus-visible {
+  outline: 2px solid rgba(75, 110, 220, 0.85);
+  outline-offset: 2px;
+}
+.paste-repo-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  opacity: 0.72;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+.paste-repo-btn:hover:not(:disabled) {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+}
+.paste-repo-btn:disabled {
+  cursor: wait;
+  opacity: 0.45;
+}
+.paste-repo-btn kbd {
+  min-width: 34px;
+  padding: 1px 4px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.035);
+  font: inherit;
+  font-size: 9px;
+  line-height: 1.25;
+  text-align: center;
+}
 .empty-drop-btn {
-  margin-top: 10px;
   padding: 6px 14px;
   font-size: 12px;
+}
+.empty-drop-paste-btn {
+  padding: 6px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  font-size: 12px;
+  opacity: 0.72;
+}
+.empty-drop-paste-btn kbd {
+  min-width: 40px;
+  font-size: 10px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1517,6 +1663,19 @@ body,
   }
   .add-repo-btn:hover {
     background: rgba(255, 255, 255, 0.10);
+  }
+  .paste-repo-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.10);
+  }
+  .paste-repo-btn {
+    border-color: rgba(255, 255, 255, 0.16);
+  }
+  .paste-repo-btn kbd {
+    border-color: rgba(255, 255, 255, 0.20);
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .empty-drop-paste-btn {
+    border-color: rgba(255, 255, 255, 0.16);
   }
 }
 
@@ -3501,8 +3660,30 @@ body,
   border-radius: 3px;
 }
 
+.update-modal-progress {
+  display: grid;
+  gap: 6px;
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.update-modal-progress-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.update-modal-progress progress {
+  width: 100%;
+  height: 6px;
+  accent-color: rgb(80, 130, 240);
+}
+
 .update-modal-error {
   font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
   color: rgba(190, 50, 50, 1);
   padding: 6px 8px;
   background: rgba(220, 80, 80, 0.12);
@@ -3563,6 +3744,10 @@ body,
     color: #ededed;
     border-color: rgba(255, 255, 255, 0.14);
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  }
+
+  .update-modal-progress {
+    color: rgba(255, 255, 255, 0.68);
   }
   .update-modal-version {
     color: rgba(140, 180, 255, 1);
@@ -3849,12 +4034,63 @@ body,
   overflow: hidden;
 }
 
-/* Search is the filter row's active mode, not a third header row. */
-.panel-filter-row .search-bar {
-  width: 100%;
+/* Search stays inside the filter row and composes with its live scope. */
+.panel-filter-row-search .search-bar {
+  flex: 1 1 calc(180px * var(--ui-scale, 1));
+  width: auto;
   min-width: 0;
   padding: 0;
   border-bottom: 0;
+}
+
+.search-scope-chips {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: calc(4px * var(--ui-scale, 1));
+  /* This branch renders only at an effective width >= 720px. Reserve the
+     scope share instead of letting WebView2 collapse it behind the growing
+     query input at non-100% display DPI. */
+  flex: 0 0 58%;
+  min-width: 0;
+}
+
+.search-scope-chips > * {
+  min-width: 0;
+}
+
+.search-scope-chips .chip-wrap[data-chip="repo"] {
+  flex: 1 1 calc(110px * var(--ui-scale, 1));
+  max-width: calc(170px * var(--ui-scale, 1));
+}
+
+.search-scope-chips .chip-wrap[data-chip="time"] {
+  flex: 0 0 auto;
+}
+
+.search-scope-chips .chip-wrap[data-chip="authors"] {
+  flex: 0 1 calc(130px * var(--ui-scale, 1));
+  max-width: calc(150px * var(--ui-scale, 1));
+}
+
+.panel-filter-row-search > .chip-wrap[data-chip="search-scope"] {
+  flex: 0 0 auto;
+  max-width: calc(110px * var(--ui-scale, 1));
+}
+
+.search-all-branches-badge {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: calc(105px * var(--ui-scale, 1));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: calc(5px * var(--ui-scale, 1))
+    calc(7px * var(--ui-scale, 1));
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: calc(14px * var(--ui-scale, 1));
+  font-size: calc(10px * var(--ui-scale, 1));
+  opacity: 0.58;
 }
 
 .search-bar-icon {
@@ -3909,6 +4145,18 @@ body,
   opacity: 0.52;
 }
 
+.search-bar-scope-assistive {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .search-bar-clear {
   display: flex;
   align-items: center;
@@ -3949,84 +4197,183 @@ body,
   .search-bar-scope {
     border-left-color: rgba(255, 255, 255, 0.12);
   }
-}
-
-@media (max-width: 460px) {
-  /* At maximum UI scale the action cluster otherwise steals nearly half the
-     banner's line width and turns a one-time disclosure into a wall of text.
-     Give the copy the full row, then keep the actions compact underneath. */
-  .autofetch-notice {
-    flex-direction: column;
-    gap: calc(4px * var(--ui-scale, 1));
-  }
-  .autofetch-notice-actions {
-    align-self: flex-end;
-  }
-  .panel-chrome-row,
-  .panel-filter-row {
-    padding-right: calc(7px * var(--ui-scale, 1));
-    padding-left: calc(7px * var(--ui-scale, 1));
-  }
-  .panel-chrome-row {
-    gap: calc(4px * var(--ui-scale, 1));
-  }
-  .panel-chrome-status {
-    gap: calc(2px * var(--ui-scale, 1));
-  }
-  /* Keep transient status announcements accessible without letting them
-     displace navigation/window controls in a 360–420px panel. */
-  .panel-status {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
-  .view-nav-btn {
-    padding-right: calc(4px * var(--ui-scale, 1));
-    padding-left: calc(4px * var(--ui-scale, 1));
-  }
-  .upstream-badge {
-    padding-right: calc(4px * var(--ui-scale, 1));
-    padding-left: calc(4px * var(--ui-scale, 1));
-  }
-  .header-chips {
-    gap: calc(3px * var(--ui-scale, 1));
-  }
-  .panel-filter-row .chip-slot-time {
-    flex: 0 1 auto;
-  }
-  .panel-filter-row .chip-slot-authors {
-    max-width: calc(92px * var(--ui-scale, 1));
-  }
-  .panel-filter-row .chip {
-    padding-right: calc(7px * var(--ui-scale, 1));
-    padding-left: calc(7px * var(--ui-scale, 1));
-  }
-  .search-bar-hint {
-    display: none;
-  }
-  .search-bar-scope {
-    flex: 0 1 calc(96px * var(--ui-scale, 1));
-    max-width: calc(96px * var(--ui-scale, 1));
+  .search-all-branches-badge {
+    border-color: rgba(255, 255, 255, 0.12);
   }
 }
 
-@media (max-width: 380px) {
-  .panel-chrome-row,
-  .panel-filter-row {
-    padding-right: calc(5px * var(--ui-scale, 1));
-    padding-left: calc(5px * var(--ui-scale, 1));
+/* Compact/regular search scope disclosure. It is a small navigator rather
+ * than three nested dropdowns, so one Esc always closes exactly one layer. */
+.search-scope-menu,
+.search-scope-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.search-scope-menu-title,
+.search-scope-page-header {
+  flex: none;
+  min-height: calc(30px * var(--ui-scale, 1));
+  display: flex;
+  align-items: center;
+  padding: calc(7px * var(--ui-scale, 1))
+    calc(10px * var(--ui-scale, 1));
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+  font-size: calc(11px * var(--ui-scale, 1));
+  font-weight: 650;
+}
+
+.search-scope-summary-row {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: calc(7px * var(--ui-scale, 1));
+  width: 100%;
+  min-height: calc(38px * var(--ui-scale, 1));
+  padding: calc(6px * var(--ui-scale, 1))
+    calc(10px * var(--ui-scale, 1));
+  border: 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.045);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.search-scope-summary-row:hover,
+.search-scope-repo-row:hover {
+  background: rgba(0, 0, 0, 0.045);
+}
+
+.search-scope-summary-kind {
+  font-size: calc(10px * var(--ui-scale, 1));
+  opacity: 0.58;
+}
+
+.search-scope-summary-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(11px * var(--ui-scale, 1));
+  font-weight: 600;
+}
+
+.search-scope-summary-chevron {
+  opacity: 0.45;
+  font-size: calc(16px * var(--ui-scale, 1));
+}
+
+.search-scope-branch-note {
+  padding: calc(7px * var(--ui-scale, 1))
+    calc(10px * var(--ui-scale, 1));
+  font-size: calc(9.5px * var(--ui-scale, 1));
+  line-height: 1.35;
+  opacity: 0.52;
+}
+
+.search-scope-page-header {
+  gap: calc(5px * var(--ui-scale, 1));
+  padding-left: calc(5px * var(--ui-scale, 1));
+}
+
+.search-scope-back {
+  flex: none;
+  width: calc(24px * var(--ui-scale, 1));
+  height: calc(24px * var(--ui-scale, 1));
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: calc(18px * var(--ui-scale, 1));
+  line-height: 1;
+  cursor: pointer;
+}
+
+.search-scope-back:hover {
+  background: rgba(0, 0, 0, 0.07);
+}
+
+.search-scope-repo-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 0 calc(6px * var(--ui-scale, 1));
+}
+
+.search-scope-repo-row.active {
+  background: rgba(80, 130, 240, 0.11);
+}
+
+.search-scope-repo-open {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.search-scope-repo-name,
+.search-scope-repo-path {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-scope-repo-name {
+  font-size: calc(11px * var(--ui-scale, 1));
+  font-weight: 600;
+}
+
+.search-scope-repo-path {
+  font-size: calc(8.5px * var(--ui-scale, 1));
+  opacity: 0.42;
+}
+
+.search-scope-check {
+  flex: none;
+  width: calc(24px * var(--ui-scale, 1));
+  height: calc(24px * var(--ui-scale, 1));
+  border: 0;
+  border-radius: calc(5px * var(--ui-scale, 1));
+  background: transparent;
+  color: rgba(80, 130, 240, 0.95);
+  cursor: pointer;
+}
+
+.search-scope-check:hover {
+  background: rgba(80, 130, 240, 0.1);
+}
+
+.search-scope-result-count {
+  flex: none;
+  min-width: calc(24px * var(--ui-scale, 1));
+  text-align: right;
+  font-size: calc(9px * var(--ui-scale, 1));
+  opacity: 0.45;
+}
+
+@media (prefers-color-scheme: dark) {
+  .search-scope-menu-title,
+  .search-scope-page-header {
+    border-bottom-color: rgba(255, 255, 255, 0.08);
   }
-  .panel-chrome-row {
-    gap: calc(3px * var(--ui-scale, 1));
+  .search-scope-summary-row {
+    border-bottom-color: rgba(255, 255, 255, 0.05);
   }
-  .search-bar-icon {
-    display: none;
+  .search-scope-summary-row:hover,
+  .search-scope-repo-row:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .search-scope-back:hover {
+    background: rgba(255, 255, 255, 0.09);
   }
 }
 

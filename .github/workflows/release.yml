@@ -83,7 +83,10 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'gitwink ${{ github.ref_name }}'
           releaseBody: ${{ steps.changelog.outputs.body }}
-          releaseDraft: false
+          # Matrix jobs upload into one draft. A separate gate validates the
+          # merged updater manifest before making the release public, so one
+          # failed platform can never leave a partial release marked Latest.
+          releaseDraft: true
           # rc/beta tags (v0.6.0-rc1) must publish as prereleases: GitHub
           # excludes those from /releases/latest, which is BOTH the in-app
           # updater endpoint and the README download link. Hardcoding false
@@ -91,13 +94,45 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
 
+  verify-update-manifest:
+    name: Verify update routes
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download merged updater manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release download "$GITHUB_REF_NAME" --pattern latest.json --output latest.json
+
+      - name: Verify installer-family routes
+        shell: bash
+        run: node tools/verify-update-manifest.mjs latest.json "${GITHUB_REF_NAME#v}"
+
+  finalize-release:
+    name: Publish verified release
+    needs: verify-update-manifest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+
   # Open a PR against microsoft/winget-pkgs with the bumped NSIS installer.
   # First-time submission was a manual wingetcreate run; this job keeps it
   # current on every tagged release. Skips if WINGET_TOKEN isn't set (e.g.
   # forks without the secret), so it never blocks a release.
   publish-winget:
     name: Update winget-pkgs manifest
-    needs: build
+    needs: finalize-release
     runs-on: ubuntu-latest
     if: ${{ !contains(github.ref_name, '-') }}  # skip prereleases like v0.4.0-rc1
     steps:

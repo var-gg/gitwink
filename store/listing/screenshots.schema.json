@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/var-gg/gitwink/blob/main/store/listing/screenshots.schema.json",
+  "title": "gitwink Microsoft Store desktop screenshots",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["productId", "locales"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "productId": {
+      "type": "string",
+      "pattern": "^[A-Z0-9]{10,20}$"
+    },
+    "locales": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z]{2,3}(?:-[a-z0-9]{2,8})+$"
+      },
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 10,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+\\.[pP][nN][gG]$"
+        }
+      }
+    }
+  }
+}

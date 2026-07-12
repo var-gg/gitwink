@@ -8,33 +8,36 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { open } from "@tauri-apps/plugin-dialog";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import { useLingui } from "@lingui/react/macro";
 
-import { AuthorsChip } from "./components/AuthorsChip";
-import { BranchChip } from "./components/BranchChip";
 import { ContextMenu, type MenuItem } from "./components/ContextMenu";
 import { PanelChromeRow } from "./components/header/PanelChromeRow";
-import { RepoChip } from "./components/RepoChip";
-import { SearchBar } from "./components/SearchBar";
+import { PanelFilterRow } from "./components/panel/PanelFilterRow";
+import {
+  EmptyDropPanel,
+  FirstRunTip,
+  PanelFooter,
+} from "./components/panel/PanelOnboarding";
+import {
+  PanelNotices,
+  type ControlNotice,
+} from "./components/panel/PanelNotices";
+import { PanelResizeHandles } from "./components/panel/PanelResizeHandles";
+import { SingleRepoView } from "./components/panel/SingleRepoView";
 import { SEARCH_RESULTS_LIST_ID } from "./components/searchAccessibility";
-import { Timeline } from "./components/Timeline";
 import {
   TimelineWindowed,
   type ExpansionControl,
   type SearchControl,
 } from "./components/TimelineWindowed";
-import {
-  TimeRangeChip,
-  WINDOW_DAY_PRESETS,
-} from "./components/TimeRangeChip";
+import { WINDOW_DAY_PRESETS } from "./components/TimeRangeChip";
 import {
   ackAutoFetchNotice,
   cancelFileHistory,
   currentUpstreamStatus,
   dismissPanel,
   excludeRepo,
-  explicitAddRepo,
   fetchRepoNow,
   fileHistory as fetchFileHistory,
   getBranchSelection,
@@ -43,7 +46,6 @@ import {
   getPinnedRepos,
   getScanState,
   listBranches,
-  listFilterFacets,
   listRepos,
   onFileHistoryOpen,
   onOrchestratorProgress,
@@ -53,16 +55,15 @@ import {
   onRepoStatus,
   onTimelineInvalidated,
   onUpdateIndicator,
-  onUpdateNone,
   onUpdateShowModal,
   repoCommits,
   releaseHistoryIndex,
   requestHistoryIndex,
   setBranchSelection as saveBranchSelection,
-  setPanelSticky,
   setPinnedRepos as savePinnedRepos,
   updateGetState,
   updateRefreshIndicator,
+  type ControlDelivery,
 } from "./lib/ipc";
 import {
   broadcastSettings,
@@ -80,6 +81,14 @@ import {
 } from "./lib/viewHistory";
 import { timelineSnapshotFilterKey } from "./lib/useTimelineWindow";
 import { isSearchResultCurrent } from "./lib/searchResolution";
+import { useContextualFacets } from "./hooks/useContextualFacets";
+import { usePanelViewportClass } from "./hooks/usePanelViewportClass";
+import { usePanelWindowState } from "./hooks/usePanelWindowState";
+import { useRepositoryIntake } from "./hooks/useRepositoryIntake";
+import { mergeAnchoredCommit } from "./lib/controlHandoff";
+import { useControlDelivery } from "./lib/useControlDelivery";
+import { shouldPresentUpdate } from "./lib/updatePolicy";
+import { useUpdateCheckNotice } from "./lib/useUpdateCheckNotice";
 import {
   filterRollingWindow,
   nextRollingWindowExpiry,
@@ -90,6 +99,17 @@ import {
 } from "./lib/repoCommitsReuse";
 import { UpdateModal } from "./components/UpdateModal";
 import { dismissContextMenus } from "./components/overlayLifecycle";
+import { panelMessages } from "./i18n/messages/panel";
+import {
+  combinedSearchScopeLabel,
+  historySearchScopeLabel,
+  repositorySearchScopeLabel,
+  authorSearchScopeLabel,
+} from "./components/panel/searchScopePresentation";
+import {
+  resolveSearchScope,
+  searchNeedsCompleteHistory,
+} from "./lib/searchScope";
 import type {
   AuthorTally,
   BranchInfo,
@@ -100,16 +120,18 @@ import type {
   UpstreamStatus,
   WindowDays,
 } from "./types";
-import "./styles.css";
 
 function visibleUpdateModalState(
   state: UpdateStatePayload,
 ): UpdateStatePayload | null {
-  return state.scoop || state.available != null ? state : null;
+  return shouldPresentUpdate(state) ? state : null;
 }
 
 function startDrag(e: React.PointerEvent<HTMLElement>) {
   if (e.button !== 0) return;
+  // Leave the second press available to the Windows title-bar double-click
+  // convention instead of starting another native drag operation.
+  if (e.detail > 1) return;
   const target = e.target as HTMLElement | null;
   // Don't start a drag if the press landed on a clickable control or
   // inside an open chip dropdown (incl. its scrollbars / inputs / pin
@@ -166,7 +188,6 @@ function windowCovering(current: WindowDays, commitTs: number): WindowDays {
 /** Cap on each direction of the view-history stack — deep enough to never bite
  *  in practice, bounded so a long session can't grow it without limit. */
 const VIEW_HISTORY_MAX = 50;
-const EMPTY_REPO_COUNTS = new Map<number, number>();
 
 /** Set-equality for the RepoChip's multi-selection ("all" or a path list). */
 function sameRepoSelection(
@@ -180,6 +201,7 @@ function sameRepoSelection(
 }
 
 function App() {
+  const { i18n } = useLingui();
   const [scanning, setScanning] = useState(false);
   const [commits, setCommits] = useState<CommitSummary[] | null>(null);
   const [repoCommitsCoverage, setRepoCommitsCoverage] = useState<{
@@ -202,25 +224,6 @@ function App() {
   const commitsRefsFpRef = useRef<string | null>(null);
   const [allRepos, dispatchRepoCatalog] = useReducer(repoCatalogReducer, []);
   const [pinnedRepos, setPinnedRepos] = useState<string[]>([]);
-  // All-repos filter facets — the windowed timeline keeps no full client-
-  // side commit array, so the AuthorsChip list + the RepoChip per-repo
-  // counts come from a backend facet.
-  const [authorsAll, setAuthorsAll] = useState<AuthorTally[]>([]);
-  const [repoCounts, setRepoCounts] = useState<Map<number, number>>(
-    () => new Map(),
-  );
-  const [authorsLoading, setAuthorsLoading] = useState(true);
-  const [repoCountsLoading, setRepoCountsLoading] = useState(true);
-  const [facetsError, setFacetsError] = useState(false);
-  const [facetRetryNonce, setFacetRetryNonce] = useState(0);
-  const [facetSnapshot, setFacetSnapshot] = useState<{
-    key: string;
-    generation: number;
-    since: number | null;
-  } | null>(null);
-  const appliedAuthorsFacetScopeRef = useRef<string | null>(null);
-  const appliedRepoFacetScopeRef = useRef<string | null>(null);
-
   const [windowDays, setWindowDays] = useState<WindowDays>(7);
   const [singleRepoWindowNow, setSingleRepoWindowNow] = useState(() =>
     Math.floor(Date.now() / 1000),
@@ -281,6 +284,13 @@ function App() {
   const [fileHistoryError, setFileHistoryError] = useState(false);
   const fileHistoryOperationRef = useRef(0);
 
+  // The exact target stays injected until the user navigates away, even when
+  // it sits outside the normal bounded single-repo snapshot.
+  const [anchoredCommit, setAnchoredCommit] =
+    useState<CommitSummary | null>(null);
+  const [controlNotice, setControlNotice] =
+    useState<ControlNotice | null>(null);
+
   // One-time disclosure: gitwink now fetches the open repo's remote on view.
   // Show it once while auto-fetch is on and unacknowledged — this is also the
   // upgrade-time heads-up for anyone who installed under the old no-network
@@ -296,11 +306,10 @@ function App() {
 
   // ----- commit search (the `/` summon) + warp -----
   // `searchInput` is the live keystrokes; `searchQuery` is its debounced
-  // mirror that actually drives the windowed query. While a non-empty
-  // query is active the timeline body becomes the result list and the
-  // time/author/branch chips are bypassed (they are view lenses — hiding
-  // the commit you're hunting behind "30d" is the frustration search
-  // exists to kill). The repo scope IS respected.
+  // mirror that actually drives the windowed query. Search is one more
+  // filter dimension: repository, author and time stay inherited/editable.
+  // Branch reachability is not in the shared cache, so single-repo search
+  // truthfully remains all-branches until that model exists.
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -348,6 +357,7 @@ function App() {
   const [warpAnchor, setWarpAnchor] = useState<{
     hash: string;
     nonce: number;
+    expand?: boolean;
   } | null>(null);
   const warpNonceRef = useRef(0);
   const searchControlRef = useRef<SearchControl | null>(null);
@@ -371,6 +381,8 @@ function App() {
     fileHistory: null,
     searchOpen: false,
     searchInput: "",
+    anchoredCommit: null,
+    anchorExpand: false,
   });
   viewRef.current = {
     repoPath: selectedRepoPath,
@@ -381,6 +393,8 @@ function App() {
     fileHistory,
     searchOpen,
     searchInput,
+    anchoredCommit,
+    anchorExpand: warpAnchor?.expand ?? false,
   };
   // One-shot branch selection for the NEXT repo change, consumed by the
   // branch-selection effect INSTEAD of the repo's disk-saved selection.
@@ -406,7 +420,7 @@ function App() {
   const searching = searchOpen && searchInput.trim().length > 0;
 
   const [openChip, setOpenChip] = useState<
-    "repo" | "time" | "authors" | "branch" | null
+    "repo" | "time" | "authors" | "branch" | "searchScope" | null
   >(null);
 
   // Right-click on the panel header (empty space / drag handle / icon /
@@ -422,14 +436,13 @@ function App() {
   // Reactive panel pin state — drives the header pin button glyph + title
   // and re-renders this component whenever the pin flag flips.
   const pinned = usePanelPinned();
+  const panelWindow = usePanelWindowState();
+  const panelViewport = usePanelViewportClass();
 
-  // Drop/paste add-repo flow: inline feedback only, no modal.
-  // `addError` clears itself after 4s so a typo'd path doesn't linger.
-  const [addError, setAddError] = useState<string | null>(null);
-
-  // True while the native folder picker is open. The picker steals OS
-  // focus, which would otherwise blur-dismiss the panel mid add-repo.
-  const [dialogOpen, setDialogOpen] = useState(false);
+  // A resize can swap the individual search chips for the compact scope
+  // editor (or vice versa). Retire an overlay anchored to the old layout so
+  // no invisible disclosure remains keyboard-open after that DOM is removed.
+  useEffect(() => setOpenChip(null), [panelViewport]);
 
   // Self-update modal — populated when the backend asks the panel to
   // surface it (tray "Update available" item / a manual check). null =
@@ -441,8 +454,7 @@ function App() {
   // Available-update version (or null) for the passive header-icon badge —
   // kept in sync with the tray dot via the `update://indicator` event.
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
-  // Transient "you're up to date" line after a manual check found nothing.
-  const [upToDate, setUpToDate] = useState(false);
+  const updateCheckNotice = useUpdateCheckNotice();
 
   // Open the update modal from the header badge — same path as the tray
   // "Update available" item.
@@ -463,6 +475,17 @@ function App() {
   }, [updateModal]);
 
   const singleMode = selectedRepoPath != null;
+  const emptyState = allRepos.length === 0 && !singleMode;
+  const {
+    addError,
+    browse: browseForRepo,
+    pasteFromClipboard,
+    pasteShortcut,
+    pasting,
+  } = useRepositoryIntake({
+    emptyState,
+    dispatchCatalog: dispatchRepoCatalog,
+  });
 
   // Resolve the multi-repo scope once for the timeline, search and contextual
   // facets. `[]` is an honest unresolved/empty scope; only an explicit
@@ -471,6 +494,20 @@ function App() {
     () => resolveRepoIds(selectedRepoPaths, allRepos),
     [selectedRepoPaths, allRepos],
   );
+  const {
+    authors: authorsAll,
+    repoCounts,
+    authorsLoading,
+    repoCountsLoading,
+    error: facetsError,
+    retry: retryFacets,
+    acceptSnapshot: acceptBrowseSnapshot,
+  } = useContextualFacets({
+    enabled: !singleMode,
+    repoIds,
+    selectedAuthors,
+    windowDays,
+  });
   // Search scope: single-repo mode searches that repo; all-repos mode follows
   // the RepoChip. An unresolved id is an empty scope, never permission to
   // silently widen to every repository.
@@ -479,12 +516,34 @@ function App() {
     const id = allRepos.find((r) => r.path === selectedRepoPath)?.id;
     return id != null && id > 0 ? [id] : [];
   }, [singleMode, repoIds, allRepos, selectedRepoPath]);
+  const resolvedSearchScope = useMemo(
+    () => resolveSearchScope(searchRepoIds, selectedAuthors, windowDays),
+    [searchRepoIds, selectedAuthors, windowDays],
+  );
+  const {
+    authors: searchAuthors,
+    repoCounts: searchRepoCounts,
+    authorsLoading: searchAuthorsLoading,
+    repoCountsLoading: searchRepoCountsLoading,
+    error: searchFacetsError,
+    retry: retrySearchFacets,
+    acceptSnapshot: acceptSearchSnapshot,
+  } = useContextualFacets({
+    enabled: searchOpen && searchQuery.trim().length > 0,
+    repoIds: resolvedSearchScope.repoIds,
+    selectedAuthors,
+    windowDays,
+    query: searchQuery || null,
+  });
   // Opening an empty search box must be free. Once a debounced query exists,
   // paint the rolling-cache result first and start progressive expansion a
   // beat later so the background writer cannot convoy the user's first COUNT
   // + page reads on SQLite.
-  const searchHistoryDemanded =
-    searchOpen && searchQuery.trim().length > 0;
+  const searchHistoryDemanded = searchNeedsCompleteHistory(
+    searchOpen,
+    searchQuery,
+    resolvedSearchScope.windowDays,
+  );
   const historyDemanded =
     searchHistoryDemanded || (!singleMode && windowDays === "all");
   const historyRepoIds = searchOpen ? searchRepoIds : repoIds;
@@ -589,7 +648,12 @@ function App() {
     historyIndexRetryNonce,
     searchHistoryDemanded,
   ]);
-  const searchFilterKey = timelineSnapshotFilterKey(searchRepoIds, null, null);
+  const searchFilterKey = timelineSnapshotFilterKey(
+    resolvedSearchScope.repoIds,
+    resolvedSearchScope.authors,
+    resolvedSearchScope.windowDays,
+    searchQuery || null,
+  );
   const searchResolutionEpoch = refreshNonce + historyRefreshNonce;
   const searchResolved =
     resolvedSearchEpoch === searchResolutionEpoch &&
@@ -600,33 +664,6 @@ function App() {
       searchFilterKey,
       resolvedSearchFilterKey,
     );
-  const facetFilterKey = useMemo(
-    () =>
-      timelineSnapshotFilterKey(
-        repoIds,
-        selectedAuthors === "all" ? null : selectedAuthors,
-        toWindowParam(windowDays),
-      ),
-    [repoIds, selectedAuthors, windowDays],
-  );
-  // Each contextual facet excludes its own dimension. Repo selection only
-  // invalidates AUTHORS; author selection only invalidates REPO COUNTS. Keep
-  // the unaffected dimension interactive during the other round trip.
-  const authorsFacetScopeKey = useMemo(
-    () => JSON.stringify([repoIds, toWindowParam(windowDays)]),
-    [repoIds, windowDays],
-  );
-  const repoFacetScopeKey = useMemo(
-    () => JSON.stringify([selectedAuthors, toWindowParam(windowDays)]),
-    [selectedAuthors, windowDays],
-  );
-  const acceptBrowseSnapshot = useCallback(
-    (generation: number, since: number | null, key: string) => {
-      setFacetSnapshot({ key, generation, since });
-    },
-    [],
-  );
-
   const clearResolvedSearchSnapshot = useCallback(() => {
     setResolvedSearchQuery(null);
     setResolvedSearchFilterKey(null);
@@ -645,7 +682,6 @@ function App() {
     let unTimelineInvalidated: UnlistenFn | undefined;
     let unFileHistory: UnlistenFn | undefined;
     let unUpdateModal: UnlistenFn | undefined;
-    let unUpdateNone: UnlistenFn | undefined;
     let unUpdateIndicator: UnlistenFn | undefined;
 
     (async () => {
@@ -734,6 +770,7 @@ function App() {
       // sees `fileHistory` and fetches the file's history instead.
       unFileHistory = await onFileHistoryOpen((p) => {
         if (!mounted) return;
+        setControlNotice(null);
         // Re-clicking 🕘 for the file already on screen is a refresh, not a
         // navigation — no dead history entry. refsNonce is what the
         // file-history effect keys on (refreshNonce deliberately isn't).
@@ -750,6 +787,8 @@ function App() {
         // opening a second file's history from within file-history mode).
         pushView();
         setSearchOpen(false);
+        setWarpAnchor(null);
+        setAnchoredCommit(null);
         setSelectedRepoPath(p.repoPath);
         setFileHistoryCoverage(null);
         setFileHistoryError(false);
@@ -764,12 +803,6 @@ function App() {
           const st = await updateGetState();
           if (mounted) setUpdateModal(visibleUpdateModalState(st));
         } catch {}
-      });
-      // A manual check found nothing — show a brief "up to date" line.
-      unUpdateNone = await onUpdateNone(() => {
-        if (!mounted) return;
-        setUpToDate(true);
-        window.setTimeout(() => setUpToDate(false), 3000);
       });
       // Header badge: mirror the tray's "update available" indicator. Register
       // the listener first, then ask the backend to re-emit the current gated
@@ -827,95 +860,10 @@ function App() {
       unTimelineInvalidated?.();
       unFileHistory?.();
       unUpdateModal?.();
-      unUpdateNone?.();
       unUpdateIndicator?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // ----- all-repos mode: contextual facets (authors + per-repo counts) -----
-  // The backend excludes each facet's own dimension: authors reflect the
-  // repo/time scope, while repo counts reflect author/time. This keeps every
-  // option needed to widen its own facet visible.
-  useEffect(() => {
-    if (singleMode) {
-      setAuthorsLoading(false);
-      setRepoCountsLoading(false);
-      setFacetsError(false);
-      return;
-    }
-    const authorsApplyKey = `${authorsFacetScopeKey}|${facetSnapshot?.generation ?? "pending"}`;
-    const repoCountsApplyKey = `${repoFacetScopeKey}|${facetSnapshot?.generation ?? "pending"}`;
-    const authorsStale =
-      appliedAuthorsFacetScopeRef.current !== authorsApplyKey;
-    const repoCountsStale =
-      appliedRepoFacetScopeRef.current !== repoCountsApplyKey;
-    // The visible timeline owns the snapshot. Until it adopts this filter
-    // key, keeping the prior scope selectable would be worse than a brief
-    // loading state: a user could select an author from the wrong repo set.
-    if (!facetSnapshot || facetSnapshot.key !== facetFilterKey) {
-      setAuthorsLoading(authorsStale);
-      setRepoCountsLoading(repoCountsStale);
-      setFacetsError(false);
-      return;
-    }
-    if (!authorsStale && !repoCountsStale) {
-      setAuthorsLoading(false);
-      setRepoCountsLoading(false);
-      setFacetsError(false);
-      return;
-    }
-    let cancelled = false;
-    setAuthorsLoading(authorsStale);
-    setRepoCountsLoading(repoCountsStale);
-    setFacetsError(false);
-    (async () => {
-      try {
-        const facets = await listFilterFacets(
-          {
-            since: facetSnapshot.since,
-            repoIds,
-            authors: selectedAuthors === "all" ? null : selectedAuthors,
-            viewGeneration: facetSnapshot.generation,
-          },
-          authorsStale,
-          repoCountsStale,
-        );
-        if (cancelled) return;
-        if (authorsStale) {
-          setAuthorsAll(facets.authors);
-          appliedAuthorsFacetScopeRef.current = authorsApplyKey;
-        }
-        if (repoCountsStale) {
-          setRepoCounts(new Map(facets.repos.map((r) => [r.repoId, r.count])));
-          appliedRepoFacetScopeRef.current = repoCountsApplyKey;
-        }
-        setFacetsError(false);
-      } catch {
-        if (cancelled) return;
-        if (authorsStale) setAuthorsAll([]);
-        if (repoCountsStale) setRepoCounts(new Map());
-        setFacetsError(true);
-      } finally {
-        if (!cancelled) {
-          setAuthorsLoading(false);
-          setRepoCountsLoading(false);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    singleMode,
-    facetFilterKey,
-    facetSnapshot,
-    repoIds,
-    selectedAuthors,
-    facetRetryNonce,
-    authorsFacetScopeKey,
-    repoFacetScopeKey,
-  ]);
 
   // ----- single-repo mode: saved branch SELECTION -----
   // On repo change, reset selectedBranches to "all" up front so the commits
@@ -999,6 +947,9 @@ function App() {
       // A filter tweak refines the current view (no new history entry) but
       // diverges from any forward history — drop it.
       setViewFwd([]);
+      setWarpAnchor(null);
+      setAnchoredCommit(null);
+      setControlNotice(null);
       // A manual choice wins over an in-flight saved-selection hydrate.
       branchHydrationEpochRef.current += 1;
       setSelectedBranches(sel);
@@ -1030,7 +981,18 @@ function App() {
     if (v.repoPath != null && v.repoPath !== selectedRepoPathRef.current) {
       pendingBranchesRef.current = v.branches;
     }
-    setWarpAnchor(null);
+    setAnchoredCommit(v.anchoredCommit);
+    if (v.anchoredCommit) {
+      warpNonceRef.current += 1;
+      setWarpAnchor({
+        hash: v.anchoredCommit.hash,
+        nonce: warpNonceRef.current,
+        expand: v.anchorExpand,
+      });
+    } else {
+      setWarpAnchor(null);
+    }
+    setControlNotice(null);
     setSelectedRepoPath(v.repoPath);
     setSelectedRepoPaths(v.repoPaths);
     setSelectedBranches(v.branches);
@@ -1087,11 +1049,92 @@ function App() {
       setWindowDays((cur) => windowCovering(cur, c.timestamp));
       setSearchOpen(false);
       setSearchCount(null);
+      setAnchoredCommit(c);
+      setControlNotice(null);
       warpNonceRef.current += 1;
-      setWarpAnchor({ hash: c.hash, nonce: warpNonceRef.current });
+      setWarpAnchor({
+        hash: c.hash,
+        nonce: warpNonceRef.current,
+        expand: false,
+      });
     },
     [pushView],
   );
+
+  const applyControlDelivery = useCallback((delivery: ControlDelivery) => {
+    const source = delivery.source.name || "an external tool";
+    if (delivery.status === "error") {
+      setControlNotice({
+        tone: "error",
+        source,
+        detail: delivery.error.message,
+      });
+      return;
+    }
+
+    if (delivery.target.kind === "commit") {
+      const { commit, presentation } = delivery.target;
+      const current = viewRef.current;
+      const alreadyLanded =
+        current.fileHistory == null &&
+        current.anchoredCommit?.hash === commit.hash &&
+        current.repoPath != null &&
+        sameCanonicalPath(current.repoPath, commit.repoPath);
+      if (!alreadyLanded) pushView();
+      setFileHistory(null);
+      if (!sameCanonicalPath(commit.repoPath, selectedRepoPathRef.current ?? "")) {
+        pendingBranchesRef.current = "all";
+      }
+      branchHydrationEpochRef.current += 1;
+      setSelectedRepoPath(commit.repoPath);
+      setSelectedBranches("all");
+      setSelectedAuthors("all");
+      setWindowDays((current) => windowCovering(current, commit.timestamp));
+      setSearchOpen(false);
+      setSearchCount(null);
+      setAnchoredCommit(commit);
+      setControlNotice({
+        tone: "ready",
+        source,
+        detail: `commit ${commit.shortHash}`,
+      });
+      warpNonceRef.current += 1;
+      setWarpAnchor({
+        hash: commit.hash,
+        nonce: warpNonceRef.current,
+        expand: presentation.expand,
+      });
+      return;
+    }
+
+    const { repoPath, filePath } = delivery.target;
+    const current = viewRef.current;
+    const alreadyOpen =
+      current.fileHistory != null &&
+      sameCanonicalPath(current.fileHistory.repoPath, repoPath) &&
+      current.fileHistory.filePath === filePath;
+    if (alreadyOpen) {
+      setRefsNonce((nonce) => nonce + 1);
+    } else {
+      pushView();
+      setSearchOpen(false);
+      setSearchCount(null);
+      setWarpAnchor(null);
+      setAnchoredCommit(null);
+      setSelectedRepoPath(repoPath);
+      setFileHistoryCoverage(null);
+      setFileHistoryError(false);
+      setFileHistory({ repoPath, filePath });
+      setRefreshNonce((nonce) => nonce + 1);
+    }
+    setControlNotice({
+      tone: "ready",
+      source,
+      detail: `history for ${filePath}`,
+    });
+  }, [pushView]);
+
+  useControlDelivery(applyControlDelivery);
 
   // Explicit fetch: await the backend one-shot, then bump refsNonce so the
   // upstream badge re-pulls (fetch-age → fresh, ↑↓ recomputed). The result
@@ -1393,125 +1436,6 @@ function App() {
     };
   }, [singleMode, selectedRepoPath, fileHistory, refsNonce]);
 
-  // Manual add via drag-drop / paste. Returns whether the add succeeded
-  // so the paste handler can clear the clipboard string only on success.
-  // On failure, sets addError to the backend's message ("Not a Git
-  // working tree" etc) for inline display.
-  const tryAddPath = useCallback(async (rawPath: string): Promise<boolean> => {
-    const trimmed = rawPath.trim();
-    if (!trimmed) return false;
-    try {
-      const repo = await explicitAddRepo(trimmed);
-      // Add the row directly from the return value. The
-      // timeline://repo-discovered event can race with listener
-      // registration, so a user-initiated add must not depend on it.
-      // The onRepoDiscovered listener dedups by path, so a later event
-      // for the same repo is harmless.
-      dispatchRepoCatalog({ type: "discovered", repo });
-      // Refresh so the new repo carries its real id — the windowed timeline
-      // filters by id, not path.
-      void listRepos()
-        .then((repos) => dispatchRepoCatalog({ type: "replace", repos }))
-        .catch(() => {});
-      setAddError(null);
-      return true;
-    } catch (err) {
-      setAddError(
-        typeof err === "string"
-          ? err
-          : err instanceof Error
-            ? err.message
-            : "Failed to add repo",
-      );
-      window.setTimeout(() => setAddError(null), 4000);
-      return false;
-    }
-  }, []);
-
-  // Panel "sticky" mode — resist blur-dismiss while the user is mid
-  // add-repo flow. Two cases: (1) the empty-state screen is up, so the
-  // user must reach another window to find a folder; (2) the native
-  // folder picker is open and has stolen focus. The backend blur
-  // handler skips hide while sticky.
-  const emptyState = allRepos.length === 0 && !singleMode;
-  const panelSticky = emptyState || dialogOpen;
-  useEffect(() => {
-    void setPanelSticky(panelSticky);
-  }, [panelSticky]);
-
-  // Add a repo via the native folder picker. Sets dialogOpen so the
-  // panel stays sticky; also pushes sticky=true synchronously before
-  // the picker opens, since the useEffect above races with the picker
-  // stealing focus.
-  const handleAddRepo = useCallback(async () => {
-    setDialogOpen(true);
-    await setPanelSticky(true);
-    try {
-      const selected = await open({
-        directory: true,
-        multiple: true,
-        title: "Add a Git repository",
-      });
-      if (selected) {
-        const list = Array.isArray(selected) ? selected : [selected];
-        for (const p of list) {
-          await tryAddPath(p);
-        }
-      }
-    } catch {
-      // Picker failed to open / plugin error — leave the footer hint
-      // and drop/paste paths in place, nothing else to surface.
-    } finally {
-      setDialogOpen(false);
-    }
-  }, [tryAddPath]);
-
-  // Tauri drag-drop. Fires on this window's drop zone (the whole panel).
-  // We listen for the "drop" variant only — "hover"/"cancel" are just
-  // visual cues we'd opt into later. Multi-file drops add each in turn.
-  useEffect(() => {
-    let un: UnlistenFn | undefined;
-    (async () => {
-      type DragDrop = { type: string; paths?: string[] };
-      un = await getCurrentWindow().listen<DragDrop>("tauri://drag-drop", (e) => {
-        if (e.payload.type !== "drop") return;
-        const paths = e.payload.paths ?? [];
-        for (const p of paths) {
-          void tryAddPath(p);
-        }
-      });
-    })();
-    return () => un?.();
-  }, [tryAddPath]);
-
-  // Paste: only act when the user has clearly pasted a path (starts with
-  // a drive letter, slash, or tilde) AND isn't typing into an input/
-  // textarea/contenteditable. This way chip search inputs keep working
-  // normally — paste only adds repos when there's no other use for it.
-  useEffect(() => {
-    function onPaste(e: ClipboardEvent) {
-      const target = e.target as HTMLElement | null;
-      if (target) {
-        const tag = target.tagName;
-        if (
-          tag === "INPUT" ||
-          tag === "TEXTAREA" ||
-          target.getAttribute("contenteditable") === "true"
-        ) {
-          return;
-        }
-      }
-      const text = e.clipboardData?.getData("text/plain")?.trim() ?? "";
-      if (!text) return;
-      // Heuristic: looks like a Windows drive, POSIX absolute, or home-rel path.
-      if (!/^([a-zA-Z]:[\\\/]|\/|~[\\\/])/.test(text)) return;
-      e.preventDefault();
-      void tryAddPath(text);
-    }
-    window.addEventListener("paste", onPaste);
-    return () => window.removeEventListener("paste", onPaste);
-  }, [tryAddPath]);
-
   // ----- `/` (or Ctrl+F): summon the commit search bar -----
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -1588,6 +1512,8 @@ function App() {
       // (and retire any warp anchor so a later revisit can't replay it).
       if (singleMode) {
         setWarpAnchor(null);
+        setAnchoredCommit(null);
+        setControlNotice(null);
         setSelectedRepoPath(null);
         e.preventDefault();
         return;
@@ -1610,6 +1536,17 @@ function App() {
     goForward,
   ]);
 
+  const singleRepoCommitsWithAnchor = useMemo(
+    () =>
+      mergeAnchoredCommit(
+        commits,
+        anchoredCommit,
+        selectedRepoPath,
+        fileHistory != null,
+      ),
+    [commits, anchoredCommit, selectedRepoPath, fileHistory],
+  );
+
   // A ref-stable re-summon deliberately skips the expensive Git walk, but a
   // rolling window still moves. Prune the already-loaded rows locally at the
   // exact next expiry second; refs cannot add rows while their fingerprint is
@@ -1619,13 +1556,17 @@ function App() {
       !singleMode ||
       fileHistory != null ||
       windowDays === "all" ||
-      commits == null
+      singleRepoCommitsWithAnchor == null
     ) {
       return;
     }
     const now = Math.floor(Date.now() / 1000);
     setSingleRepoWindowNow(now);
-    const nextExpiry = nextRollingWindowExpiry(commits, windowDays, now);
+    const nextExpiry = nextRollingWindowExpiry(
+      singleRepoCommitsWithAnchor,
+      windowDays,
+      now,
+    );
     if (nextExpiry == null) return;
     const delay = Math.max(
       100,
@@ -1640,15 +1581,26 @@ function App() {
     singleMode,
     fileHistory,
     windowDays,
-    commits,
+    singleRepoCommitsWithAnchor,
     refreshNonce,
     singleRepoWindowNow,
   ]);
 
   const timeScopedSingleRepoCommits = useMemo(() => {
-    if (!commits || fileHistory != null) return commits;
-    return filterRollingWindow(commits, windowDays, singleRepoWindowNow);
-  }, [commits, fileHistory, windowDays, singleRepoWindowNow]);
+    if (!singleRepoCommitsWithAnchor || fileHistory != null) {
+      return singleRepoCommitsWithAnchor;
+    }
+    return filterRollingWindow(
+      singleRepoCommitsWithAnchor,
+      windowDays,
+      singleRepoWindowNow,
+    );
+  }, [
+    singleRepoCommitsWithAnchor,
+    fileHistory,
+    windowDays,
+    singleRepoWindowNow,
+  ]);
 
   // Single-repo mode tallies authors from its (bounded) visible commits;
   // all-repos mode uses the backend facet (`authorsAll`).
@@ -1672,6 +1624,17 @@ function App() {
       .sort((a, b) => b.lastActivity - a.lastActivity);
   }, [timeScopedSingleRepoCommits]);
   const authors = singleMode ? authorsSingle : authorsAll;
+  const searchFacetsActive = searchOpen && searchQuery.trim().length > 0;
+  const filterRowAuthors = searchFacetsActive ? searchAuthors : authors;
+  const filterRowAuthorsLoading = searchFacetsActive
+    ? searchAuthorsLoading
+    : authorsLoading;
+  const filterRowRepoCounts = searchFacetsActive
+    ? searchRepoCounts
+    : repoCounts;
+  const filterRowRepoCountsLoading = searchFacetsActive
+    ? searchRepoCountsLoading
+    : repoCountsLoading;
   const branchCatalogIsCurrent =
     branchesRepoPathRef.current === selectedRepoPath;
   const visibleBranches = branchCatalogIsCurrent ? branches : [];
@@ -1700,20 +1663,42 @@ function App() {
     [allRepos],
   );
 
-  // A human label for the search's repo scope, derived from the SAME resolved
-  // id set the search actually uses (searchRepoIds) — never the raw chip
-  // selection — so a zero-result miss names exactly what was searched and the
-  // count can't drift from reality. null means the explicit all-repos state;
-  // an unresolved narrow scope gets its own loading label instead.
-  const searchScopeLabel = useMemo<string | null>(() => {
-    if (searchRepoIds == null) return null;
-    if (searchRepoIds.length === 0) return "selected repo scope (loading)";
-    if (searchRepoIds.length === 1) {
-      const id = searchRepoIds[0];
-      return allRepos.find((r) => r.id === id)?.name ?? "1 repo";
-    }
-    return `${searchRepoIds.length} repos`;
-  }, [searchRepoIds, allRepos]);
+  // The visible label is assembled from the exact values passed to the cache
+  // query. It is also the empty-state scope, so no hidden author/time widening
+  // can be mistaken for a result in the user's current view.
+  const searchScopeLabel = useMemo(() => {
+    const repositories = repositorySearchScopeLabel(
+      i18n,
+      resolvedSearchScope.repoIds,
+      allRepos,
+    );
+    const authors = authorSearchScopeLabel(i18n, selectedAuthors);
+    const history = historySearchScopeLabel(
+      i18n,
+      windowDays,
+      searchHistoryDemanded,
+      historyIndexError,
+      historyIndexStatus,
+    );
+    return combinedSearchScopeLabel(
+      i18n,
+      repositories,
+      history,
+      authors,
+      singleMode,
+    );
+  }, [
+    i18n,
+    i18n.locale,
+    resolvedSearchScope.repoIds,
+    allRepos,
+    selectedAuthors,
+    windowDays,
+    searchHistoryDemanded,
+    historyIndexError,
+    historyIndexStatus,
+    singleMode,
+  ]);
 
   // Only offer "Search all repos" when widening would genuinely broaden the
   // scope — i.e. more usable repos exist than the search currently covers.
@@ -1728,6 +1713,9 @@ function App() {
   const widenSearchScope = useCallback(() => {
     pushView();
     setFileHistory(null);
+    setWarpAnchor(null);
+    setAnchoredCommit(null);
+    setControlNotice(null);
     setSelectedRepoPath(null);
     setSelectedRepoPaths("all");
   }, [pushView]);
@@ -1736,12 +1724,60 @@ function App() {
   // entry, but they diverge from any forward history, so drop it.
   const changeWindowDays = useCallback((v: WindowDays) => {
     setViewFwd([]);
+    setWarpAnchor(null);
+    setAnchoredCommit(null);
+    setControlNotice(null);
     setWindowDays(v);
-  }, []);
+  }, [i18n]);
   const changeAuthors = useCallback((v: string[] | "all") => {
     setViewFwd([]);
+    setWarpAnchor(null);
+    setAnchoredCommit(null);
+    setControlNotice(null);
     setSelectedAuthors(v);
   }, []);
+  const searchWidenActions = useMemo(() => {
+    const actions: {
+      id: string;
+      label: string;
+      title: string;
+      onActivate: () => void;
+    }[] = [];
+    if (windowDays !== "all") {
+      actions.push({
+        id: "history",
+        label: i18n._(panelMessages.searchAllHistory),
+        title: i18n._(panelMessages.searchAllHistoryTitle),
+        onActivate: () => changeWindowDays("all"),
+      });
+    }
+    if (selectedAuthors !== "all") {
+      actions.push({
+        id: "authors",
+        label: i18n._(panelMessages.searchAllAuthors),
+        title: i18n._(panelMessages.searchAllAuthorsTitle),
+        onActivate: () => changeAuthors("all"),
+      });
+    }
+    if (canWidenSearch) {
+      actions.push({
+        id: "repositories",
+        label: i18n._(panelMessages.searchAllRepos),
+        title: i18n._(panelMessages.searchAllReposTitle),
+        onActivate: widenSearchScope,
+      });
+    }
+    return actions;
+  }, [
+    windowDays,
+    selectedAuthors,
+    canWidenSearch,
+    i18n,
+    i18n.locale,
+    changeWindowDays,
+    changeAuthors,
+    widenSearchScope,
+  ]);
   // Picking a repo IS a navigation — record the view we're leaving (and leave
   // any file-history scope). A manual pick also retires the warp anchor:
   // without this, revisiting the warped repo later would scroll-jump and
@@ -1759,6 +1795,8 @@ function App() {
       pushView();
       setFileHistory(null);
       setWarpAnchor(null);
+      setAnchoredCommit(null);
+      setControlNotice(null);
       setSelectedRepoPath(p);
     },
     [pushView],
@@ -1774,6 +1812,8 @@ function App() {
       pushView();
       setFileHistory(null);
       setWarpAnchor(null);
+      setAnchoredCommit(null);
+      setControlNotice(null);
       setSelectedRepoPaths(ps);
     },
     [pushView],
@@ -1790,6 +1830,8 @@ function App() {
     pushView();
     setFileHistory(null);
     setWarpAnchor(null);
+    setAnchoredCommit(null);
+    setControlNotice(null);
     setSelectedRepoPath(null);
     setSelectedRepoPaths("all");
   }, [pushView]);
@@ -1817,6 +1859,8 @@ function App() {
     const current = viewRef.current;
     if (current.repoPath === path) {
       setWarpAnchor(null);
+      setAnchoredCommit(null);
+      setControlNotice(null);
       setSelectedRepoPath(null);
     }
     if (current.fileHistory?.repoPath === path) {
@@ -1830,41 +1874,16 @@ function App() {
     setViewFwd((views) => pruneRepoFromViewHistory(views, path));
   }, []);
 
-  // The visible catalog is the single source of truth for the chip count.
-  // Scan progress remains a separate presentation state and can never skew it.
-  const repoCount = allRepos.length;
-
-  let completeHistoryScopeLabel = "all history";
-  if (historyDemanded) {
-    if (historyIndexError) {
-      completeHistoryScopeLabel = "currently indexed history";
-    } else if (historyIndexStatus == null) {
-      completeHistoryScopeLabel = "preparing history index";
-    } else if (!historyIndexStatus.allComplete) {
-      completeHistoryScopeLabel = historyIndexStatus.settled
-        ? `indexed history (${historyIndexStatus.publishedRepos}/${historyIndexStatus.totalRepos} repos)`
-        : `indexing history (${historyIndexStatus.publishedRepos}/${historyIndexStatus.totalRepos} repos)`;
-    }
-  }
-
-  let fileHistoryScopeLabel = "all history";
-  if (fileHistoryError) fileHistoryScopeLabel = "history unavailable";
-  else if (fileHistoryCoverage == null) fileHistoryScopeLabel = "scanning…";
-  else if (fileHistoryCoverage.truncated === "match_limit") {
-    fileHistoryScopeLabel = `latest ${(commits?.length ?? 0).toLocaleString()} changes`;
-  } else if (fileHistoryCoverage.truncated === "scan_limit") {
-    fileHistoryScopeLabel = `${fileHistoryCoverage.commitsScanned.toLocaleString()} commits scanned`;
-  } else if (fileHistoryCoverage.truncated === "incomplete") {
-    fileHistoryScopeLabel = "partial history";
-  } else if (fileHistoryCoverage.truncated === "shallow_boundary") {
-    fileHistoryScopeLabel = "available clone history";
-  }
-  const fileHistoryScopeTitle = fileHistoryCoverage
-    ? `${fileHistoryScopeLabel}; ${fileHistoryCoverage.remoteRefsIncluded.toLocaleString()} remote-tracking refs included; renames are not followed yet`
-    : fileHistoryScopeLabel;
-
   return (
-    <main className={"panel" + (singleMode ? " single-mode" : "")}>
+    <main
+      className={
+        "panel panel-viewport-" +
+        panelViewport +
+        (singleMode ? " single-mode" : "")
+      }
+      data-panel-viewport={panelViewport}
+    >
+      <PanelResizeHandles maximized={panelWindow.maximized} />
       <header
         className="panel-header"
         onPointerDown={startDrag}
@@ -1881,7 +1900,7 @@ function App() {
             y: e.clientY,
             items: [
               {
-                label: "Settings…",
+                label: i18n._(panelMessages.settingsMenu),
                 onClick: () => void invoke("open_settings_window"),
               },
             ],
@@ -1896,7 +1915,7 @@ function App() {
           onBack={goBack}
           onForward={goForward}
           scanning={scanning}
-          upToDate={upToDate && !scanning}
+          updateCheckNotice={updateCheckNotice}
           upstream={upstream}
           showRepoSync={singleMode && !fileHistory && !searchOpen}
           fetchNow={fetchNow}
@@ -1905,228 +1924,102 @@ function App() {
           onToggleSearch={() => (searchOpen ? closeSearch() : openSearch())}
           pinned={pinned}
           onTogglePinned={() => void togglePanelPinned()}
+          maximized={panelWindow.maximized}
+          maximizeBusy={panelWindow.busy}
+          chromeDoubleClickMaximize={
+            panelWindow.chromeDoubleClickMaximize
+          }
+          onToggleMaximized={() => void panelWindow.toggleMaximized()}
           onDismiss={() => void dismissPanel()}
         />
 
-        <div
-          className={
-            "panel-filter-row" + (searchOpen ? " panel-filter-row-search" : "")
+        <PanelFilterRow
+          searchOpen={searchOpen}
+          searchInput={searchInput}
+          searching={searching}
+          searchResolved={searchResolved}
+          searchCount={searchCount}
+          searchFocusNonce={searchFocusNonce}
+          searchActiveDescendant={searchActiveDescendant}
+          searchScopeLabel={searchScopeLabel}
+          compactSearchScope={
+            panelViewport === "compact" || panelViewport === "regular"
           }
-          data-no-drag
-        >
-          {searchOpen ? (
-            <SearchBar
-              value={searchInput}
-              count={searching && searchResolved ? searchCount : null}
-              focusNonce={searchFocusNonce}
-              resultsListId={SEARCH_RESULTS_LIST_ID}
-              resultsAvailable={
-                searching &&
-                searchResolved &&
-                searchCount != null &&
-                searchCount > 0
-              }
-              resultsBusy={searching && !searchResolved}
-              activeDescendant={
-                searchResolved ? searchActiveDescendant : null
-              }
-              scopeLabel={
-                searchInput.trim() === ""
-                  ? `Type to search ${searchScopeLabel ?? "all repos"}`
-                  : `${searchScopeLabel ?? "All repos"} · ${completeHistoryScopeLabel} · all authors${singleMode ? " · all branches" : ""}`
-              }
-              onChange={changeSearchInput}
-              onClose={closeSearch}
-              onMove={(d) => {
-                if (searchResolved) searchControlRef.current?.moveSelection(d);
-              }}
-              onActivate={activateSearchSelection}
-            />
-          ) : (
-            <div className="header-chips">
-              <RepoChip
-                open={openChip === "repo"}
-                onToggle={() =>
-                  setOpenChip(openChip === "repo" ? null : "repo")
-                }
-                onClose={() => setOpenChip(null)}
-                repos={allRepos}
-                repoCounts={singleMode ? EMPTY_REPO_COUNTS : repoCounts}
-                loading={!singleMode && repoCountsLoading}
-                pinned={pinnedRepos}
-                selectedPath={selectedRepoPath}
-                selectedPaths={selectedRepoPaths}
-                onSelect={changeRepoPath}
-                onSelectMulti={changeRepoPaths}
-                onSelectAll={resetRepoScope}
-                onTogglePin={togglePin}
-                onExclude={handleExcludeRepo}
-                totalRepoCount={repoCount}
-              />
-
-              {fileHistory ? (
-                <button
-                  type="button"
-                  className="filehist-chip"
-                  onClick={exitFileHistory}
-                  title={`History of ${fileHistory.filePath}: ${fileHistoryScopeTitle} — click to exit (Esc)`}
-                >
-                  <span className="filehist-chip-icon" aria-hidden="true">
-                    🕘
-                  </span>
-                  <span className="filehist-chip-name">
-                    {fileHistory.filePath.split("/").pop()}
-                  </span>
-                  <span className="filehist-chip-scope">
-                    {fileHistoryScopeLabel}
-                  </span>
-                  <span className="filehist-chip-x" aria-hidden="true">
-                    ✕
-                  </span>
-                </button>
-              ) : (
-                <>
-                  {singleMode && (
-                    <span className="chip-slot chip-slot-primary">
-                      <BranchChip
-                        open={openChip === "branch"}
-                        onToggle={() =>
-                          setOpenChip(openChip === "branch" ? null : "branch")
-                        }
-                        onClose={() => setOpenChip(null)}
-                        repoPath={selectedRepoPath ?? ""}
-                        branches={visibleBranches}
-                        loading={visibleBranchesLoading}
-                        selected={selectedBranches}
-                        onChange={handleBranchChange}
-                      />
-                    </span>
-                  )}
-                  <span className="chip-slot chip-slot-time">
-                    <TimeRangeChip
-                      open={openChip === "time"}
-                      onToggle={() =>
-                        setOpenChip(openChip === "time" ? null : "time")
-                      }
-                      onClose={() => setOpenChip(null)}
-                      value={windowDays}
-                      onChange={changeWindowDays}
-                    />
-                  </span>
-                  <span className="chip-slot chip-slot-authors">
-                    <AuthorsChip
-                      open={openChip === "authors"}
-                      onToggle={() =>
-                        setOpenChip(openChip === "authors" ? null : "authors")
-                      }
-                      onClose={() => setOpenChip(null)}
-                      authors={authors}
-                      loading={!singleMode && authorsLoading}
-                      selected={selectedAuthors}
-                      onChange={changeAuthors}
-                    />
-                  </span>
-                </>
-              )}
-            </div>
-          )}
-        </div>
+          searchControlRef={searchControlRef}
+          onSearchChange={changeSearchInput}
+          onCloseSearch={closeSearch}
+          onActivateSearch={activateSearchSelection}
+          openChip={openChip}
+          onOpenChip={setOpenChip}
+          repos={allRepos}
+          repoCounts={filterRowRepoCounts}
+          repoCountsLoading={filterRowRepoCountsLoading}
+          pinnedRepos={pinnedRepos}
+          selectedRepoPath={selectedRepoPath}
+          selectedRepoPaths={selectedRepoPaths}
+          onSelectRepo={changeRepoPath}
+          onSelectRepos={changeRepoPaths}
+          onSelectAllRepos={resetRepoScope}
+          onToggleRepoPin={togglePin}
+          onExcludeRepo={handleExcludeRepo}
+          fileHistory={fileHistory}
+          fileHistoryCoverage={fileHistoryCoverage}
+          fileHistoryError={fileHistoryError}
+          fileHistoryMatchCount={commits?.length ?? 0}
+          onExitFileHistory={exitFileHistory}
+          singleMode={singleMode}
+          branches={visibleBranches}
+          branchesLoading={visibleBranchesLoading}
+          selectedBranches={selectedBranches}
+          onBranchesChange={handleBranchChange}
+          windowDays={windowDays}
+          onWindowDaysChange={changeWindowDays}
+          authors={filterRowAuthors}
+          authorsLoading={filterRowAuthorsLoading}
+          selectedAuthors={selectedAuthors}
+          onAuthorsChange={changeAuthors}
+        />
       </header>
-      {!singleMode && !searchOpen && facetsError && (
-        <div className="facet-error-notice" role="status">
-          <span>Filter counts couldn't be refreshed.</span>
-          <button
-            type="button"
-            className="facet-error-retry"
-            onClick={() => setFacetRetryNonce((nonce) => nonce + 1)}
-          >
-            Retry
-          </button>
-        </div>
-      )}
-      {historyDemanded &&
-        (historyIndexError || !historyIndexStatus?.allComplete) && (
-          <div className="history-index-notice" role="status" aria-live="polite">
-            <span className="history-index-notice-text">
-              {historyIndexError
-                ? "Complete-history indexing paused. Results stay limited to commits already indexed."
-                : historyIndexStatus == null
-                  ? "Preparing the complete history index…"
-                  : historyIndexStatus.settled
-                    ? `Complete history is available for ${historyIndexStatus.publishedRepos}/${historyIndexStatus.totalRepos} repositories${historyIndexStatus.failedRepos > 0 ? `; ${historyIndexStatus.failedRepos} could not be read` : ""}${historyIndexStatus.unavailableRepos > 0 ? `; ${historyIndexStatus.unavailableRepos} are offline` : ""}.`
-                    : `Indexing complete history · ${historyIndexStatus.publishedRepos}/${historyIndexStatus.totalRepos} repositories available · ${historyIndexStatus.commitsScanned.toLocaleString()} commits scanned.`}
-            </span>
-            {(historyIndexError ||
-              (historyIndexStatus?.settled &&
-                !historyIndexStatus.allComplete)) && (
-              <button
-                type="button"
-                className="history-index-retry"
-                onClick={() =>
-                  setHistoryIndexRetryNonce((nonce) => nonce + 1)
-                }
-              >
-                Retry
-              </button>
-            )}
-          </div>
-        )}
-      {showAutoFetchNotice && (
-        <div className="autofetch-notice" role="status">
-          <span className="autofetch-notice-text">
-            gitwink now fetches the open repo from <code>origin</code> when you
-            view it, so a teammate's pushed commits show up. It only updates the
-            remote-tracking mirror — it never merges, pushes, or changes your
-            repo.
-          </span>
-          <span className="autofetch-notice-actions">
-            <button
-              type="button"
-              className="autofetch-notice-link"
-              onClick={() => void invoke("open_settings_window")}
-            >
-              Settings
-            </button>
-            <button
-              type="button"
-              className="autofetch-notice-dismiss"
-              onClick={dismissAutoFetchNotice}
-            >
-              Got it
-            </button>
-          </span>
-        </div>
-      )}
+      <PanelNotices
+        showFacetError={
+          searchFacetsActive
+            ? searchFacetsError
+            : !singleMode && facetsError
+        }
+        onRetryFacets={
+          searchFacetsActive ? retrySearchFacets : retryFacets
+        }
+        historyDemanded={historyDemanded}
+        historyIndexError={historyIndexError}
+        historyIndexStatus={historyIndexStatus}
+        onRetryHistoryIndex={() =>
+          setHistoryIndexRetryNonce((nonce) => nonce + 1)
+        }
+        showAutoFetchNotice={showAutoFetchNotice}
+        onOpenSettings={() => void invoke("open_settings_window")}
+        onDismissAutoFetchNotice={dismissAutoFetchNotice}
+        controlNotice={controlNotice}
+        onDismissControlNotice={() => setControlNotice(null)}
+      />
       <section className="panel-body">
         {!firstRunTipSeen && !searching && !fileHistory && allRepos.length > 0 && (
-          <div className="firstrun-tip">
-            <span className="firstrun-tip-text">
-              <kbd>/</kbd> search · click a commit to expand · the 🕘 on a file
-              opens its history · right-click to copy for AI
-            </span>
-            <button
-              type="button"
-              className="firstrun-tip-dismiss"
-              aria-label="Dismiss tip"
-              title="Got it"
-              onClick={dismissFirstRunTip}
-            >
-              ✕
-            </button>
-          </div>
+          <FirstRunTip onDismiss={dismissFirstRunTip} />
         )}
         {allRepos.length === 0 && !singleMode ? (
           <EmptyDropPanel
             scanning={scanning}
             addError={addError}
-            onBrowse={() => void handleAddRepo()}
+            onBrowse={() => void browseForRepo()}
+            onPaste={() => void pasteFromClipboard()}
+            pasteShortcut={pasteShortcut}
+            pasting={pasting}
           />
         ) : (
           <>
             {searching && (
               // Active search: the timeline body IS the result list — the
               // same windowed machinery with the query as one more filter
-              // (time/author bypassed, repo scope respected). Enter / ↗
+              // intersected with repository, author and time. Enter / ↗
               // warps into the commit's single-repo history.
               <div
                 className={
@@ -2138,9 +2031,9 @@ function App() {
                 {searchQuery.trim().length > 0 && (
                   <TimelineWindowed
                     key="search-results"
-                    repoIds={searchRepoIds}
-                    authors={null}
-                    windowDays={null}
+                    repoIds={resolvedSearchScope.repoIds}
+                    authors={resolvedSearchScope.authors}
+                    windowDays={resolvedSearchScope.windowDays}
                     refreshNonce={refreshNonce + historyRefreshNonce}
                     query={searchQuery}
                     skipRefill
@@ -2150,202 +2043,47 @@ function App() {
                     onResultCount={setSearchCount}
                     resultsListId={SEARCH_RESULTS_LIST_ID}
                     onActiveDescendant={setSearchActiveDescendant}
+                    onSnapshotGeneration={acceptSearchSnapshot}
                     onResolvedQuery={acceptResolvedSearchSnapshot}
                     onResolutionPending={clearResolvedSearchSnapshot}
                     onSelectRepo={changeRepoPath}
                     searchScopeLabel={searchScopeLabel}
-                    onWidenSearch={canWidenSearch ? widenSearchScope : undefined}
+                    searchWidenActions={searchWidenActions}
                     expansionControlRef={expansionControlRef}
                     inactive={!searchResolved}
                   />
                 )}
                 {!searchResolved && (
                   <div className="search-resolving-cover" role="status">
-                    Searching…
+                    {i18n._(panelMessages.searching)}
                   </div>
                 )}
               </div>
             )}
             {!searching && singleMode && (
-          filteredCommits == null ? (
-            <p className="panel-empty">
-              {fileHistory ? "Scanning file history…" : "Loading commits…"}
-            </p>
-          ) : commitsError ? (
-            // The repo itself couldn't be opened — say so instead of showing
-            // an empty (or worse, a stale) timeline under its name.
-            <div className="panel-empty">
-              <p className="panel-empty-line">
-                Couldn't open this repo — it may have moved or be on a
-                disconnected drive.
-              </p>
-              <p className="panel-empty-actions">
-                <button
-                  type="button"
-                  className="panel-empty-action"
-                  onClick={resetRepoScope}
-                >
-                  Back to all repos
-                </button>
-              </p>
-            </div>
-          ) : fileHistory && fileHistoryError ? (
-            <div className="panel-empty">
-              <p className="panel-empty-line">
-                Couldn't read this file's history — the repository may be
-                unavailable or changing on disk.
-              </p>
-              <p className="panel-empty-actions">
-                <button
-                  type="button"
-                  className="panel-empty-action"
-                  onClick={() => setRefsNonce((nonce) => nonce + 1)}
-                >
-                  Retry
-                </button>
-                <button
-                  type="button"
-                  className="panel-empty-action"
-                  onClick={exitFileHistory}
-                >
-                  Exit file history
-                </button>
-              </p>
-            </div>
-          ) : filteredCommits.length === 0 ? (
-            fileHistory ? (
-              // File-history mode owns its empty state — the time/author/
-              // branch buttons below would be dead ends here. Name the file
-              // and offer the one real way out.
-              <div className="panel-empty">
-                <p className="panel-empty-line">
-                  {fileHistoryCoverage?.truncated === "scan_limit" ||
-                  fileHistoryCoverage?.truncated === "incomplete"
-                    ? "No change found in the readable history for "
-                    : "No history found for "}
-                  <code className="panel-empty-file">
-                    {fileHistory.filePath.split("/").pop()}
-                  </code>
-                  {fileHistoryCoverage?.truncated === "scan_limit"
-                    ? ` — older commits remain beyond the ${fileHistoryCoverage.commitsScanned.toLocaleString()}-commit safety limit.`
-                    : fileHistoryCoverage?.truncated === "incomplete"
-                      ? " — some Git objects couldn't be read, so the result is incomplete."
-                      : fileHistoryCoverage?.truncated === "shallow_boundary"
-                        ? " in the history available in this shallow clone; earlier history isn't present locally."
-                        : " in this repo."}
-                </p>
-                <p className="panel-empty-sub">Renames aren't followed yet.</p>
-                <p className="panel-empty-actions">
-                  <button
-                    type="button"
-                    className="panel-empty-action"
-                    onClick={exitFileHistory}
-                  >
-                    Exit file history
-                  </button>
-                </p>
-              </div>
-            ) : (
-            // Filter-aware empty state — name the filter hiding the
-            // commits and offer the one-click way out, instead of making
-            // the user debug the time/author/branch filter stack.
-            <div className="panel-empty">
-              <p className="panel-empty-line">
-                {repoCommitsCoverage?.truncated
-                  ? `No matching commits in the latest ${repoCommitsCoverage.limit.toLocaleString()} loaded for this scope. Older commits haven't been checked.`
-                  : repoCommitsCoverage?.incomplete
-                    ? "No matching commits in the history that could be read completely."
-                    : repoCommitsCoverage?.shallow
-                    ? "No matching commits in the history available in this shallow clone."
-                    : windowDays !== "all"
-                      ? windowDays === 1
-                        ? "No commits in the last 24 hours."
-                        : `No commits in the last ${windowDays} days.`
-                      : "No commits match."}
-                {selectedAuthors !== "all" &&
-                  ` Filtered to ${selectedAuthors.length} author${selectedAuthors.length === 1 ? "" : "s"}.`}
-                {selectedBranches !== "all" &&
-                  ` Filtered to ${selectedBranches.length} branch${selectedBranches.length === 1 ? "" : "es"}.`}
-              </p>
-              <p className="panel-empty-actions">
-                {windowDays !== "all" && (
-                  <button
-                    type="button"
-                    className="panel-empty-action"
-                    onClick={() => changeWindowDays("all")}
-                  >
-                    Show all time
-                  </button>
-                )}
-                {selectedAuthors !== "all" && (
-                  <button
-                    type="button"
-                    className="panel-empty-action"
-                    onClick={() => changeAuthors("all")}
-                  >
-                    Clear author filter
-                  </button>
-                )}
-                {selectedBranches !== "all" && (
-                  <button
-                    type="button"
-                    className="panel-empty-action"
-                    onClick={() => handleBranchChange("all")}
-                  >
-                    All branches
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="panel-empty-action"
-                  onClick={openSearch}
-                  title="Search commits — message, author, SHA (/)"
-                >
-                  Search commits
-                </button>
-              </p>
-            </div>
-            )
-          ) : (
-            <>
-              {!fileHistory &&
-                (repoCommitsCoverage?.truncated ||
-                  repoCommitsCoverage?.incomplete ||
-                  repoCommitsCoverage?.shallow) && (
-                <div className="history-coverage" role="status">
-                  {repoCommitsCoverage.truncated
-                    ? selectedAuthors === "all"
-                      ? `Showing the latest ${repoCommitsCoverage.limit.toLocaleString()} commits in this scope. Older commits haven't been loaded.`
-                      : `Author results are limited to the latest ${repoCommitsCoverage.limit.toLocaleString()} loaded commits. Older author matches haven't been checked.`
-                    : repoCommitsCoverage.incomplete
-                      ? "Some refs or Git objects couldn't be read, so this repository history may be incomplete."
-                      : "This is a shallow clone. History before its local boundary isn't available."}
-                </div>
-              )}
-              {fileHistory && fileHistoryCoverage?.truncated && (
-                <div className="filehist-coverage" role="status">
-                  {fileHistoryCoverage.truncated === "match_limit"
-                    ? `Showing the latest ${(commits?.length ?? 0).toLocaleString()} file changes. Older changes also exist.`
-                    : fileHistoryCoverage.truncated === "scan_limit"
-                      ? `Scanned ${fileHistoryCoverage.commitsScanned.toLocaleString()} commits. Older history remains outside the safety limit.`
-                      : fileHistoryCoverage.truncated === "shallow_boundary"
-                        ? "Showing all file history available in this shallow clone; earlier history isn't present locally."
-                        : "Some Git objects couldn't be read, so this file history may be incomplete."}
-                  {" "}Renames aren't followed yet.
-                </div>
-              )}
-              <Timeline
-                key={`single:${selectedRepoPath}`}
-                commits={filteredCommits}
-                allCommits={commits ?? undefined}
+              <SingleRepoView
+                filteredCommits={filteredCommits}
+                allCommits={singleRepoCommitsWithAnchor}
+                commitsError={commitsError}
+                repoCoverage={repoCommitsCoverage}
+                fileHistory={fileHistory}
+                fileHistoryCoverage={fileHistoryCoverage}
+                fileHistoryError={fileHistoryError}
                 branches={branches}
-                resetKey={`${fileHistory ? `file:${fileHistory.filePath}` : ""}${JSON.stringify(selectedBranches)}|${windowDays}|${JSON.stringify(selectedAuthors)}`}
+                selectedRepoPath={selectedRepoPath}
+                selectedAuthors={selectedAuthors}
+                selectedBranches={selectedBranches}
+                windowDays={windowDays}
                 anchor={warpAnchor}
-                linear={fileHistory != null}
                 expansionControlRef={expansionControlRef}
+                onBackToAllRepos={resetRepoScope}
+                onRetryFileHistory={() => setRefsNonce((nonce) => nonce + 1)}
+                onExitFileHistory={exitFileHistory}
+                onShowAllTime={() => changeWindowDays("all")}
+                onClearAuthors={() => changeAuthors("all")}
+                onAllBranches={() => handleBranchChange("all")}
+                onOpenSearch={openSearch}
               />
-            </>
-          )
             )}
             {/* The browse all-repos timeline stays MOUNTED while search or
                 single-repo mode sits on top: hiding instead of unmounting
@@ -2382,22 +2120,13 @@ function App() {
           </>
         )}
         {allRepos.length > 0 && (
-          <div className="panel-footer-hint">
-            <button
-              type="button"
-              className="add-repo-btn"
-              onClick={() => void handleAddRepo()}
-            >
-              + Add repo…
-            </button>
-            <span
-              className="panel-footer-hint-text"
-              title="Copy a repo folder's path in your file manager, then paste it here"
-            >
-              or paste a path
-            </span>
-            {addError && <span className="panel-footer-hint-error"> · {addError}</span>}
-          </div>
+          <PanelFooter
+            addError={addError}
+            onAddRepo={() => void browseForRepo()}
+            onPaste={() => void pasteFromClipboard()}
+            pasteShortcut={pasteShortcut}
+            pasting={pasting}
+          />
         )}
       </section>
       {updateModal && (
@@ -2415,43 +2144,6 @@ function App() {
         />
       )}
     </main>
-  );
-}
-
-interface EmptyDropPanelProps {
-  scanning: boolean;
-  addError: string | null;
-  onBrowse: () => void;
-}
-
-/** First-paint state for a fresh PC where no repos are cached AND the
- * background scan hasn't found anything yet (no VS Code recents, no
- * git config hints, etc). Shows a big drop target as the *primary* UI
- * rather than a blank "Scanning…" screen — the explicit-add path is a
- * first-class flow, not a hidden escape hatch. The panel is sticky
- * (resists blur-dismiss) while this screen is up, so the user can
- * reach a file-manager window to drag a folder back without the panel
- * closing. */
-function EmptyDropPanel({ scanning, addError, onBrowse }: EmptyDropPanelProps) {
-  return (
-    <div className="empty-drop">
-      <div className="empty-drop-icon" aria-hidden="true">
-        📂
-      </div>
-      <div className="empty-drop-title">Drop a repo folder here</div>
-      <div className="empty-drop-sub">or paste a path (Ctrl+V / Cmd+V)</div>
-      <button
-        type="button"
-        className="add-repo-btn empty-drop-btn"
-        onClick={onBrowse}
-      >
-        Browse for a folder…
-      </button>
-      {scanning && (
-        <div className="empty-drop-status">Scanning for repos…</div>
-      )}
-      {addError && <div className="empty-drop-error">{addError}</div>}
-    </div>
   );
 }
 

@@ -1,0 +1,1958 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: 2026-07-12 01:56+0900\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: en\n"
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Plural-Forms: \n"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.allBranchesSuffix"
+msgstr " · all branches"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.authorsFiltered"
+msgstr " Filtered to {count, plural, one {# author} other {# authors}}."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.branchesFiltered"
+msgstr " Filtered to {count, plural, one {# branch} other {# branches}}."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.historyOffline"
+msgstr "; {count} are offline"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.historyFailed"
+msgstr "; {count} could not be read"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.deleted"
+msgstr "(deleted)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.fileDidNotExist"
+msgstr "(file did not exist)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.noSummary"
+msgstr "(no summary)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.defaultOn"
+msgstr "(on by default)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.upstream.divergedAria"
+msgstr "{ahead} ahead, {behind} behind {upstream}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.unavailableRemove"
+msgstr "{author} has no commits in the current scope. Select to remove this filter."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.unavailableSuffix"
+msgstr "{branch} · unavailable"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.count"
+msgstr "{count, plural, one {# author} other {# authors}}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.countUnavailable"
+msgstr "{count, plural, one {# author} other {# authors}} · {unavailable} unavailable"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.count"
+msgstr "{count, plural, one {# branch} other {# branches}}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.countUnavailable"
+msgstr "{count, plural, one {# branch} other {# branches}} · {unavailable} unavailable"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.matchCount"
+msgstr "{count, plural, one {# match} other {# matches}}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.count"
+msgstr "{count, plural, one {# repository} other {# repositories}}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.repoCount"
+msgstr "{count, plural, one {# repository} other {# repositories}}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.commitsScanned"
+msgstr "{count} commits scanned"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "time.daysAgo"
+msgstr "{count}d ago"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "time.hoursAgo"
+msgstr "{count}h ago"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "time.minutesAgo"
+msgstr "{count}m ago"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.upstream.syncedTitle"
+msgstr "{local} is in sync with {upstream}.\n"
+"{fetch}. Reflects your last fetch."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.upstream.divergedTitle"
+msgstr "{local} vs {upstream}: {ahead} ahead, {behind} behind.\n"
+"{fetch}. Reflects your last fetch."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.marker.new"
+msgstr "{marker} (new)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.missingTitle"
+msgstr "{path} — moved or deleted on disk. Drop the new path on the panel to relink, or select exclude."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.repoFilterTitle"
+msgstr "{path} (select to filter)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.inAppTitle"
+msgstr "{provider} update"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.unavailableRemove"
+msgstr "{ref} no longer exists. Select to remove this filter."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.restoredAnnouncement"
+msgstr "{repo} restored."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.replacedAnnouncement"
+msgstr "{repo} was replaced with the repository currently in its folder."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.missingAria"
+msgstr "{repo}, repository missing at {path}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.scope"
+msgstr "{scope} · {history} · all authors{branches}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.refs"
+msgstr "{scope}; {count} remote-tracking refs included; renames are not followed yet"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.new.count"
+msgstr "↑ {count, plural, one {# new commit} other {# new commits}}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.keyboardHint"
+msgstr "↑↓ select · Enter jumps to history · click a row to preview · Esc closes"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.addRepo"
+msgstr "+ Add repo…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.updateFailed"
+msgstr "⚠ Update check failed"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.updateCurrent"
+msgstr "✓ Up to date"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.pinned"
+msgstr "📌 Pinned"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.showFileHistoryDecorated"
+msgstr "🕘 Show file history"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sortName"
+msgstr "A–Z"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.addRepo.dialogTitle"
+msgstr "Add a Git repository"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.addToMulti"
+msgstr "Add to multi-repository filter"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.afterAlt"
+msgstr "after"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.after"
+msgstr "After"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.all"
+msgstr "All authors"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.all"
+msgstr "All branches"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.allBranches"
+msgstr "All branches"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.allCount"
+msgstr "All branches ({count})"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.scope.historyAll"
+msgstr "all history"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.scope.allRepos"
+msgstr "all repositories"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.all"
+msgstr "All repositories"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.allCount"
+msgstr "All repositories ({count})"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.time.all"
+msgstr "All time"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sortNameTitle"
+msgstr "Alphabetical"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.busy"
+msgstr "Another fetch is running"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.busyTitle"
+msgstr "Another fetch is running—try again in a moment"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.label"
+msgstr "App language"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.title"
+msgstr "Appearance"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.hint"
+msgstr "Applies immediately to every gitwink window and the tray. Unsupported system languages use English."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.coverageAuthorLimited"
+msgstr "Author results are limited to the latest {limit} loaded commits. Older author matches haven't been checked."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeAuthors"
+msgstr "Authors"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.autoFetch.title"
+msgstr "Auto-fetch"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.automatic"
+msgstr "Automatic checks"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.cloneHistory"
+msgstr "available clone history"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.back"
+msgstr "Back"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.backTitle"
+msgstr "Back (Alt+←)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.backToAll"
+msgstr "Back to all repositories"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.backToAllRepos"
+msgstr "Back to all repositories"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeBack"
+msgstr "Back to search scope"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.beforeAlt"
+msgstr "before"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.before"
+msgstr "Before"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.binaryFile"
+msgstr "Binary file"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.empty.browseFolder"
+msgstr "Browse for a folder…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.fontPlaceholder"
+msgstr "Built-in monospace"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "common.cancel"
+msgstr "Cancel"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.cancelReplaceAria"
+msgstr "Cancel replacing {repo}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.automaticHint"
+msgstr "Check {provider} at startup and every 24 hours. A tray dot appears when an update is ready."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.updateChecking"
+msgstr "Checking updates…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.policyExternal"
+msgstr "Checks use {checkProvider}. {installProvider} owns installation."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.policyInApp"
+msgstr "Checks use {checkProvider}. Updates install in-app through {installProvider}."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.clearAuthorFilter"
+msgstr "Clear author filter"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.clear"
+msgstr "Clear filter"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.clear"
+msgstr "Clear repository filter"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.clear"
+msgstr "Clear search"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.closeTitle"
+msgstr "Close (Esc)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.closeTitle"
+msgstr "Close (Esc)—closes the diff window too"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.close"
+msgstr "Close commit search"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.close"
+msgstr "Close find"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.closePanel"
+msgstr "Close panel"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.marker.commit"
+msgstr "Commit"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.anchor.older"
+msgstr "Commit {hash} is older than the {count} commits loaded here."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.results"
+msgstr "Commit search results"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.countTitle"
+msgstr "Commits in the current repository and time scope"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.matchingCommitCounts"
+msgstr "Commits matching the current author and time filters"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.historyAvailable"
+msgstr "Complete history is available for {published}/{total} repositories{failed}{offline}."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.historyPaused"
+msgstr "Complete-history indexing paused. Results stay limited to commits already indexed."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.confirmReplace"
+msgstr "Confirm replace"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.confirmReplaceAria"
+msgstr "Confirm replacing {oldRepo} with {newRepo}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "common.contextMenu"
+msgstr "Context menu"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.sizeHint"
+msgstr "Controls readability independently from information space. The normal panel follows this scale while preserving your chosen workspace size."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.copy.copied"
+msgstr "Copied ✓"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.copy.copiedAi"
+msgstr "Copied as AI context ✓"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copy"
+msgstr "Copy"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyAiContext"
+msgstr "Copy as AI context"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.copy.ai"
+msgstr "Copy as AI context"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.copy.aiTitle"
+msgstr "Copy as AI context (c)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyCommitMessage"
+msgstr "Copy commit message"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.copy.failed"
+msgstr "Copy failed"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.copy.failedTry"
+msgstr "Copy failed—try again"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyFileDiff"
+msgstr "Copy file diff"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyFilePath"
+msgstr "Copy file path"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyFullHash"
+msgstr "Copy full hash"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyShortHash"
+msgstr "Copy short hash"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyWithReference"
+msgstr "Copy with reference"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.excludeFailed"
+msgstr "Couldn't exclude repository: {error}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.inspectError"
+msgstr "Couldn't inspect {repo}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.loadError"
+msgstr "Couldn't load excluded repositories"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.loadFailed"
+msgstr "Couldn't load the timeline."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.loadFailedTitle"
+msgstr "Couldn't load this commit's files"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.loadFailed"
+msgstr "Couldn't load this commit's files."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.loadFailed"
+msgstr "Couldn't load this diff"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.repoUnavailable"
+msgstr "Couldn't open this repository—it may have moved or be on a disconnected drive."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteReadFailed"
+msgstr "Couldn't read the clipboard."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileHistoryUnavailable"
+msgstr "Couldn't read this file's history—the repository may be unavailable or changing on disk."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.restoreError"
+msgstr "Couldn't restore {repo}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.replaceError"
+msgstr "Couldn't use the current {repo} repository"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sortCount"
+msgstr "Count"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.countUnavailableTitle"
+msgstr "Count unavailable after {count} retries. Close and reopen this list to retry."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.scope.historyIndexed"
+msgstr "currently indexed history"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.context.default"
+msgstr "Default—3 lines of context around each change"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.context"
+msgstr "Diff context"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.minimap.overview"
+msgstr "Diff overview—click or drag to jump to a change"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.fontHint"
+msgstr "Diff view font. Empty uses the built-in monospace stack. Any installed font works, but monospace is recommended for aligned gutters and line numbers."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "common.dismiss"
+msgstr "Dismiss"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.control.dismiss"
+msgstr "Dismiss external request status"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.firstRun.dismiss"
+msgstr "Dismiss tip"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.downloading"
+msgstr "Downloading…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.columns.resizeTitle"
+msgstr "Drag to resize · double-click to reset"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.empty.dropTitle"
+msgstr "Drop a repository folder here"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.english"
+msgstr "English"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.error"
+msgstr "Error: {error}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.excludeAria"
+msgstr "Exclude {repo} from gitwink"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.exclude"
+msgstr "Exclude from gitwink"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.excludeTitle"
+msgstr "Exclude from gitwink (restore later in Settings)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.excludedAt"
+msgstr "Excluded {when}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.intro"
+msgstr "Excluded repositories are ignored by discovery and removed from the panel, but their folders, pin state, and branch preferences remain intact."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.exitFileHistory"
+msgstr "Exit file history"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.context.expanded"
+msgstr "Expanded—25 lines of context"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.addRepo.failed"
+msgstr "Failed to add repository"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.failed"
+msgstr "Fetch failed"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.failedTitle"
+msgstr "Fetch failed (offline, no origin, or another fetch in flight)—counts reflect the last successful fetch"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.autoFetch.label"
+msgstr "Fetch on panel open"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.now"
+msgstr "Fetch origin now"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.nowTitle"
+msgstr "Fetch origin now—refresh from the remote (read-only; never merges or pushes)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.currentTitle"
+msgstr "Fetched ✓—origin refs are current"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.current"
+msgstr "Fetched—origin refs are current"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.fetching"
+msgstr "Fetching origin"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.fetchingTitle"
+msgstr "Fetching origin…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.context.tooLarge"
+msgstr "File too large for full context"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.facetsError"
+msgstr "Filter counts couldn't be refreshed."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.filterTimelineTo"
+msgstr "Filter timeline to {repo}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.aria"
+msgstr "Find in diff"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.placeholder"
+msgstr "Find in diff…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.folderCheckedOnRestore"
+msgstr "Folder availability is checked on restore"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.folderAvailable"
+msgstr "Folder available"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.folderUnavailable"
+msgstr "Folder unavailable—restores as missing until it returns"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.system"
+msgstr "Follow system"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.font"
+msgstr "Font"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.forward"
+msgstr "Forward"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.forwardTitle"
+msgstr "Forward (Alt+→)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.context.full"
+msgstr "Full"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.lfsFile"
+msgstr "Git LFS file"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.provider.gitwink"
+msgstr "gitwink"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.binaryUnsupported"
+msgstr "gitwink doesn't render diffs for non-image binaries yet."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.autoFetchDisclosure"
+msgstr "gitwink now fetches the open repository from origin when you view it, so a teammate's pushed commits appear. It updates only the remote-tracking mirror—it never merges, pushes, or changes your repository."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.dialog"
+msgstr "gitwink update"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+#: src/i18n/messages/updates.ts
+msgid "common.gotIt"
+msgstr "Got it"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.title"
+msgstr "History of {path}: {scope}—click to exit (Esc)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.unavailable"
+msgstr "history unavailable"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.upstream.syncedAria"
+msgstr "In sync with {upstream}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.scope.historyIndexedCount"
+msgstr "indexed history ({published}/{total} repositories)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.historyIndexing"
+msgstr "Indexing complete history · {published}/{total} repositories available · {commits} commits scanned."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.scope.historyIndexingCount"
+msgstr "indexing history ({published}/{total} repositories)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.inspecting"
+msgstr "Inspecting…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.installing"
+msgstr "Installing…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.japanese"
+msgstr "Japanese"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.jumpToHistory"
+msgstr "jump to history"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.new.jumpLatest"
+msgstr "Jump to the latest commits"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.jumpToCommit"
+msgstr "Jump to this commit in its repository history (Enter)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "time.justNow"
+msgstr "just now"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.excludeDescription"
+msgstr "Keeps the folder and preferences. Restore later in Settings."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.korean"
+msgstr "Korean"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.title"
+msgstr "Language"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.time.lastDays"
+msgstr "Last {count} days"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.time.last24Hours"
+msgstr "Last 24 hours"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.lastActivity"
+msgstr "Last activity: {date}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.upstream.lastFetch"
+msgstr "Last fetch: {age}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.later"
+msgstr "Later"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.latestChanges"
+msgstr "latest {count} changes"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.loading"
+msgstr "Loading branches…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.loadingCommits"
+msgstr "Loading commits…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.loading"
+msgstr "Loading diff…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.loading"
+msgstr "Loading files…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.loading"
+msgstr "Loading image…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "common.loading"
+msgstr "Loading…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.loading"
+msgstr "Loading…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.local"
+msgstr "Local"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.manual"
+msgstr "Manual only"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.maximizeTitle"
+msgstr "Maximize for deep review"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.maximizePanel"
+msgstr "Maximize panel"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.marker.merge"
+msgstr "Merge commit"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.provider.microsoftStore"
+msgstr "Microsoft Store"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.missing"
+msgstr "missing"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.missing"
+msgstr "missing"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sortCountTitle"
+msgstr "Most commits first"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sortRecentTitle"
+msgstr "Most recent activity first"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.multiRepoOnly"
+msgstr "Multi-select is available in all-repositories mode"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.shortcut.modifierError"
+msgstr "Need at least one modifier (Ctrl / Alt / Shift) + a key."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.minimap.newViewport"
+msgstr "New (after) viewport"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.next"
+msgstr "Next match"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.nextTitle"
+msgstr "Next match (Enter)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.none"
+msgstr "No authors"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.noMatch"
+msgstr "No authors match."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.manualHint"
+msgstr "No background checks; use the tray “Check for updates” entry."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.none"
+msgstr "No branches"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.noMatch"
+msgstr "No branches match."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileEmptyScanLimit"
+msgstr "No change found for {file} in readable history. Older commits remain beyond the {count}-commit safety limit."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileEmptyIncomplete"
+msgstr "No change found for {file} in readable history. Some Git objects couldn't be read, so the result is incomplete."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.noCommitsDays"
+msgstr "No commits in the last {days} days."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.noCommits24h"
+msgstr "No commits in the last 24 hours."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.noCommits"
+msgstr "No commits match."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.empty"
+msgstr "No excluded repositories."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.upstream.noFetch"
+msgstr "No fetch recorded yet"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.noChanges"
+msgstr "No file changes."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileEmpty"
+msgstr "No history found for {file} in this repository."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileEmptyShallow"
+msgstr "No history found for {file} in this shallow clone; earlier history isn't present locally."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.noMatchesScope"
+msgstr "No matches in {scope}."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.noMatchesScanned"
+msgstr "No matches in scanned history."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.noMatchShallow"
+msgstr "No matching commits in the history available in this shallow clone."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.noMatchIncomplete"
+msgstr "No matching commits in the history that could be read completely."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.noMatchLimited"
+msgstr "No matching commits in the latest {limit} loaded for this scope. Older commits haven't been checked."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.noNotes"
+msgstr "No release notes were provided for this version."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.noMatch"
+msgstr "No repositories match."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.text.none"
+msgstr "No textual diff."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.off"
+msgstr "Off"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.minimap.oldViewport"
+msgstr "Old (before) viewport"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.only"
+msgstr "only"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.openAria"
+msgstr "Open {repo} at {path}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.openFile.action"
+msgstr "Open settings.json"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.control.opened"
+msgstr "Opened by {source}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.openFile.hint"
+msgstr "Opens the raw configuration in your default editor. Most options above are mirrored here; auto-managed window positions and repository state should not need hand edits."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.or"
+msgstr "or"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.empty.pastePath"
+msgstr "or copy its path from your file manager"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.shortcut.panelHotkey"
+msgstr "Panel hotkey"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelSize"
+msgstr "Panel size"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.partial"
+msgstr "partial history"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteShort"
+msgstr "Paste path"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteTitle"
+msgstr "Paste repository paths from the clipboard ({shortcut})"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteBusy"
+msgstr "Pasting…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.pickFile"
+msgstr "Pick a file."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.pin"
+msgstr "Pin"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.pinAria"
+msgstr "Pin {repo}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.pinPanel"
+msgstr "Pin panel"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.pinTitle"
+msgstr "Pin—keep open while clicking elsewhere; not always-on-top. Summon via tray or hotkey."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.scope.historyPreparing"
+msgstr "preparing history index"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.historyPreparing"
+msgstr "Preparing the complete history index…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.preparing"
+msgstr "Preparing…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.shortcut.recording"
+msgstr "Press a shortcut… (Esc to cancel)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.previous"
+msgstr "Previous match"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.previousTitle"
+msgstr "Previous match (Shift+Enter)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.minimap.realign"
+msgstr "Re-align the two sides"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allReposTitle"
+msgstr "Re-run this search across every repository"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allAuthorsTitle"
+msgstr "Re-run this search without the author filter"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allHistoryTitle"
+msgstr "Re-run this search without the time filter"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.reachableCommits"
+msgstr "Reachable commits across all time (independent of the time filter)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sortRecent"
+msgstr "Recent"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.remoteTracking"
+msgstr "Remote tracking"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.remoteTip"
+msgstr "Remote-tracking ref at this commit (read-only, from your last Git fetch)."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.remoteTrackingTitle"
+msgstr "Remote-tracking refs are read locally—refreshed by your IDE or CLI, or by gitwink auto-fetch when the panel opens (Settings → Auto-fetch)."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.remoteTips"
+msgstr "Remote-tracking refs at this commit (read-only, from your last Git fetch). {count} more."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.renamedFrom"
+msgstr "Renamed from {path}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.renamesNotFollowed"
+msgstr "Renames aren't followed yet."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.replacing"
+msgstr "Replacing…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeRepositories"
+msgstr "Repositories"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.title"
+msgstr "Repositories"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.control.failed"
+msgstr "Request from {source} failed"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.shortcut.help"
+msgstr "Required: at least one modifier (Ctrl / Alt / Shift) + a key. OS-reserved combos (Alt+Tab, Win+L, etc.) cannot be captured and won't react."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelReset"
+msgstr "Reset layout"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelSizeHint"
+msgstr "Resize any edge for an exact size, choose Wide for file paths, or reset size and placement. Maximizing remains a temporary review mode."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.columns.resize"
+msgstr "Resize old/new columns"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.restarting"
+msgstr "Restarting…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.restore"
+msgstr "Restore"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.restoreAria"
+msgstr "Restore {repo}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.restorePanel"
+msgstr "Restore panel"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.restoreTitle"
+msgstr "Restore previous panel size"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.restoring"
+msgstr "Restoring…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "common.retry"
+msgstr "Retry"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.replacementWarning"
+msgstr "Reviewed: {repo}. Confirmation remains valid only while this exact repository and exclusion lifecycle are unchanged. This forgets gitwink's old cache, pin, and branch choices for this path, then registers the Git repository currently in the folder. The folder itself is never changed."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileCoverageScanned"
+msgstr "Scanned {count} commits. Older history remains outside the safety limit."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.loadingFileHistory"
+msgstr "Scanning file history…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.empty.scanningRepos"
+msgstr "Scanning for repositories…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.scanning"
+msgstr "scanning…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.scanning"
+msgstr "Scanning…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.provider.scoop"
+msgstr "Scoop"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeButton"
+msgstr "Scope"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeButtonCount"
+msgstr "Scope · {count}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.sync.off"
+msgstr "Scroll sync off—sides scroll independently. Select to lock them together."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.sync.on"
+msgstr "Scroll sync on—old and new move together. Select to unlock independent scrolling."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.firstRun.tip"
+msgstr "search · click a commit to expand · the history button on a file opens its history · right-click to copy for AI"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allAuthors"
+msgstr "Search all authors"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allHistory"
+msgstr "Search all history"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allRepos"
+msgstr "Search all repositories"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.searchAria"
+msgstr "Search authors"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.searchPlaceholder"
+msgstr "Search authors…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.searchAria"
+msgstr "Search branches"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.searchPlaceholder"
+msgstr "Search branches…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.aria"
+msgstr "Search commits"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.commits"
+msgstr "Search commits"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.commitsTitle"
+msgstr "Search commits—message, author, SHA (/) "
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.placeholder"
+msgstr "Search commits—message, author, SHA prefix…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.allBranchesNote"
+msgstr "Search includes all branches in this repository."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.searchAria"
+msgstr "Search repositories"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.searchPlaceholder"
+msgstr "Search repositories…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeTitle"
+msgstr "Search scope"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scope"
+msgstr "Search scope: {scope}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.searching"
+msgstr "Searching…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.unavailable"
+msgstr "Selected · unavailable in this scope"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.unavailable"
+msgstr "Selected · unavailable refs"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.unavailableTitle"
+msgstr "Selected authors with no commits in the current repository, branch, and time scope"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.unavailableTitle"
+msgstr "Selected refs that no longer exist in this repository"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.selectedRepoScopeLoading"
+msgstr "selected repository scope (loading)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+#: src/i18n/messages/settings.ts
+msgid "settings.title"
+msgstr "Settings"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "settings.openMenu"
+msgstr "Settings…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.shortcut.title"
+msgstr "Shortcut"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.showAllTime"
+msgstr "Show all time"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.showFileHistory"
+msgstr "Show file history"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.showHistory"
+msgstr "Show history of {file}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.showOnly"
+msgstr "Show only {author}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.showHistoryInPanel"
+msgstr "Show this file's history in the panel"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.showing"
+msgstr "Showing {shown} of {total} changed files"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileCoverageShallow"
+msgstr "Showing all file history available in this shallow clone; earlier history isn't present locally."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileCoverageMatches"
+msgstr "Showing the latest {count} file changes. Older changes also exist."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.coverageLimited"
+msgstr "Showing the latest {limit} commits in this scope. Older commits haven't been loaded."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.skip"
+msgstr "Skip v{version}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileCoverageIncomplete"
+msgstr "Some Git objects couldn't be read, so this file history may be incomplete."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.coverageIncomplete"
+msgstr "Some refs or Git objects couldn't be read, so this repository history may be incomplete."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.sort"
+msgstr "Sort"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sort"
+msgstr "Sort authors"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.sync"
+msgstr "Sync"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.marker.tagged"
+msgstr "Tagged commit"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.lfsHint"
+msgstr "The actual image is stored in Git LFS. gitwink doesn't fetch LFS objects yet, so there's nothing to preview."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteNoPath"
+msgstr "The clipboard does not contain an absolute repository path."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.cannotShow"
+msgstr "The diff can't be shown."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.confirmationExpired"
+msgstr "The repository changed after you reviewed it. Review the current repository again before confirming."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.identityMismatch"
+msgstr "This folder now contains a different Git repository. Review the replacement details before confirming."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.unsupported"
+msgstr "This installation does not support checks inside gitwink."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.managedExternally"
+msgstr "This installation is managed by {provider}, which owns the final update step. Run {command} in a terminal to get v{version}."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.coverageShallow"
+msgstr "This is a shallow clone. History before its local boundary isn't available."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeTime"
+msgstr "Time range"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.typeToSearch"
+msgstr "Type to search {scope}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.size"
+msgstr "UI scale"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.unpin"
+msgstr "Unpin"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.unpinAria"
+msgstr "Unpin {repo}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.unpinPanel"
+msgstr "Unpin panel"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.unpinTitle"
+msgstr "Unpin—return to glance mode (auto-hides on blur, always-on-top)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.available"
+msgstr "Update available"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.updateAvailableTitle"
+msgstr "Update available—v{version} · click to update"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.failed"
+msgstr "Update failed"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.updateAria"
+msgstr "Update gitwink to version {version}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.now"
+msgstr "Update now"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.progress"
+msgstr "Update progress"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.offHint"
+msgstr "Updater fully disabled. The tray hides “Check for updates.”"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.title"
+msgstr "Updates"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.updating"
+msgstr "Updating authors…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.updatingCommitCountAria"
+msgstr "Updating commit count"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.updatingCommitCounts"
+msgstr "Updating commits for the current author and time filters"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.inspect"
+msgstr "Use current repo…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.useCurrentAria"
+msgstr "Use the current repository in {repo}'s folder"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.provider.githubReleases"
+msgstr "verified gitwink releases on GitHub"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.viewHistory"
+msgstr "View history"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.waiting"
+msgstr "Waiting for {provider}…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.waitingForFile"
+msgstr "Waiting for a file…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.autoFetch.hint"
+msgstr "When viewing one repository, gitwink quietly runs git fetch origin as the panel opens so a teammate's newly pushed commit appears. It only updates the remote-tracking mirror—never local branches, tags, or the working tree. It never blocks the panel, stays silent when authentication or the network is unavailable, and skips recently fetched repositories. The all-repositories view never fetches. gitwink never merges, pushes, or rewrites your work."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.context.fullTitle"
+msgstr "Whole file, with changes highlighted"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelWide"
+msgstr "Wide"

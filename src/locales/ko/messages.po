@@ -1,0 +1,1958 @@
+msgid ""
+msgstr ""
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: ko\n"
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Plural-Forms: \n"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.allBranchesSuffix"
+msgstr " · 모든 브랜치"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.authorsFiltered"
+msgstr " 작성자 {count}명으로 필터링했습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.branchesFiltered"
+msgstr " 브랜치 {count}개로 필터링했습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.historyOffline"
+msgstr "; {count}개는 오프라인"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.historyFailed"
+msgstr "; {count}개는 읽지 못함"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.deleted"
+msgstr "(삭제됨)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.fileDidNotExist"
+msgstr "(이전 파일 없음)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.noSummary"
+msgstr "(요약 없음)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.defaultOn"
+msgstr "(기본값: 켜짐)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.upstream.divergedAria"
+msgstr "{upstream}보다 {ahead}개 앞섬, {behind}개 뒤처짐"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.unavailableRemove"
+msgstr "{author}의 커밋이 현재 범위에 없습니다. 선택하면 이 필터를 제거합니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.unavailableSuffix"
+msgstr "{branch} · 사용 불가"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.count"
+msgstr "작성자 {count}명"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.countUnavailable"
+msgstr "작성자 {count}명 · {unavailable}명 사용 불가"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.count"
+msgstr "브랜치 {count}개"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.countUnavailable"
+msgstr "브랜치 {count}개 · {unavailable}개 사용 불가"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.matchCount"
+msgstr "{count}개 일치"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.count"
+msgstr "저장소 {count}개"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.repoCount"
+msgstr "저장소 {count}개"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.commitsScanned"
+msgstr "커밋 {count}개 확인"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "time.daysAgo"
+msgstr "{count}일 전"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "time.hoursAgo"
+msgstr "{count}시간 전"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "time.minutesAgo"
+msgstr "{count}분 전"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.upstream.syncedTitle"
+msgstr "{local}이(가) {upstream}과(와) 동기화되었습니다.\n"
+"{fetch}. 마지막 fetch 기준입니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.upstream.divergedTitle"
+msgstr "{local}과(와) {upstream} 비교: {ahead}개 앞섬, {behind}개 뒤처짐.\n"
+"{fetch}. 마지막 fetch 기준입니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.marker.new"
+msgstr "{marker} (새 항목)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.missingTitle"
+msgstr "{path} — 디스크에서 이동되었거나 삭제되었습니다. 새 경로를 패널에 놓아 다시 연결하거나 제외를 선택하세요."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.repoFilterTitle"
+msgstr "{path} (선택하여 필터링)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.inAppTitle"
+msgstr "{provider} 업데이트"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.unavailableRemove"
+msgstr "{ref}이(가) 더 이상 존재하지 않습니다. 선택하면 이 필터를 제거합니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.restoredAnnouncement"
+msgstr "{repo} 저장소를 복원했습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.replacedAnnouncement"
+msgstr "{repo} 폴더에 현재 있는 저장소로 교체했습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.missingAria"
+msgstr "{repo}, {path}에서 저장소를 찾을 수 없음"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.scope"
+msgstr "{scope} · {history} · {authors}{branches}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.refs"
+msgstr "{scope}; 원격 추적 ref {count}개 포함; 이름 변경은 아직 추적하지 않음"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.new.count"
+msgstr "↑ 새 커밋 {count}개"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.keyboardHint"
+msgstr "↑↓ 선택 · Enter로 히스토리 이동 · 행을 클릭해 미리보기 · Esc로 닫기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.addRepo"
+msgstr "+ 저장소 추가…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.updateFailed"
+msgstr "⚠ 업데이트 확인 실패"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.updateCurrent"
+msgstr "✓ 최신 버전"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.pinned"
+msgstr "📌 고정됨"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.showFileHistoryDecorated"
+msgstr "🕘 파일 히스토리 보기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sortName"
+msgstr "가–힣"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.addRepo.dialogTitle"
+msgstr "Git 저장소 추가"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.addToMulti"
+msgstr "다중 저장소 필터에 추가"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.afterAlt"
+msgstr "변경 후"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.after"
+msgstr "변경 후"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.all"
+msgstr "모든 작성자"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.all"
+msgstr "모든 브랜치"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.allBranches"
+msgstr "모든 브랜치"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.allCount"
+msgstr "모든 브랜치 ({count})"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.scope.historyAll"
+msgstr "전체 히스토리"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.scope.allRepos"
+msgstr "모든 저장소"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.all"
+msgstr "모든 저장소"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.allCount"
+msgstr "모든 저장소 ({count})"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.time.all"
+msgstr "전체 기간"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sortNameTitle"
+msgstr "이름순"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.busy"
+msgstr "다른 가져오기가 실행 중"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.busyTitle"
+msgstr "다른 가져오기가 실행 중입니다. 잠시 후 다시 시도하세요"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.label"
+msgstr "앱 언어"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.title"
+msgstr "모양"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.hint"
+msgstr "모든 gitwink 창과 트레이에 즉시 적용됩니다. 지원하지 않는 시스템 언어는 영어를 사용합니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.coverageAuthorLimited"
+msgstr "작성자 결과는 최근에 불러온 커밋 {limit}개로 제한됩니다. 그보다 오래된 작성자 일치는 확인하지 않았습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeAuthors"
+msgstr "작성자"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.autoFetch.title"
+msgstr "자동 가져오기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.automatic"
+msgstr "자동 확인"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.cloneHistory"
+msgstr "클론에 있는 히스토리"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.back"
+msgstr "뒤로"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.backTitle"
+msgstr "뒤로(Alt+←)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.backToAll"
+msgstr "모든 저장소로 돌아가기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.backToAllRepos"
+msgstr "모든 저장소로 돌아가기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeBack"
+msgstr "검색 범위로 돌아가기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.beforeAlt"
+msgstr "변경 전"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.before"
+msgstr "변경 전"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.binaryFile"
+msgstr "바이너리 파일"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.empty.browseFolder"
+msgstr "폴더 찾아보기…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.fontPlaceholder"
+msgstr "기본 고정폭 글꼴"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "common.cancel"
+msgstr "취소"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.cancelReplaceAria"
+msgstr "{repo} 교체 취소"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.automaticHint"
+msgstr "시작할 때와 24시간마다 {provider}에서 확인합니다. 업데이트가 준비되면 트레이 아이콘에 점이 표시됩니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.updateChecking"
+msgstr "업데이트 확인 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.policyExternal"
+msgstr "업데이트 확인은 {checkProvider}에서 수행합니다. 설치는 {installProvider}에서 관리합니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.policyInApp"
+msgstr "업데이트 확인은 {checkProvider}에서 수행합니다. {installProvider}를 통해 앱 안에서 설치합니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.clearAuthorFilter"
+msgstr "작성자 필터 지우기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.clear"
+msgstr "필터 지우기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.clear"
+msgstr "저장소 필터 지우기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.clear"
+msgstr "검색 지우기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.closeTitle"
+msgstr "닫기 (Esc)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.closeTitle"
+msgstr "닫기(Esc)—Diff 창도 함께 닫습니다"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.close"
+msgstr "커밋 검색 닫기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.close"
+msgstr "찾기 닫기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.closePanel"
+msgstr "패널 닫기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.marker.commit"
+msgstr "커밋"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.anchor.older"
+msgstr "커밋 {hash}은(는) 여기 불러온 {count}개 커밋보다 오래되었습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.results"
+msgstr "커밋 검색 결과"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.countTitle"
+msgstr "현재 저장소 및 기간 범위의 커밋"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.matchingCommitCounts"
+msgstr "현재 작성자 및 기간 필터와 일치하는 커밋"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.historyAvailable"
+msgstr "{published}/{total}개 저장소의 전체 히스토리를 사용할 수 있습니다{failed}{offline}."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.historyPaused"
+msgstr "전체 히스토리 색인이 일시 중지되었습니다. 결과는 이미 색인된 커밋으로 제한됩니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.confirmReplace"
+msgstr "교체 확인"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.confirmReplaceAria"
+msgstr "{oldRepo}를 {newRepo}(으)로 교체 확인"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "common.contextMenu"
+msgstr "컨텍스트 메뉴"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.sizeHint"
+msgstr "정보 공간과 별개로 가독성을 조절합니다. 일반 패널은 선택한 작업 영역 크기를 유지하면서 이 배율을 따릅니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.copy.copied"
+msgstr "복사됨 ✓"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.copy.copiedAi"
+msgstr "AI 컨텍스트로 복사됨 ✓"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copy"
+msgstr "복사"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyAiContext"
+msgstr "AI 컨텍스트로 복사"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.copy.ai"
+msgstr "AI 컨텍스트로 복사"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.copy.aiTitle"
+msgstr "AI 컨텍스트로 복사 (c)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyCommitMessage"
+msgstr "커밋 메시지 복사"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.copy.failed"
+msgstr "복사 실패"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.copy.failedTry"
+msgstr "복사 실패—다시 시도하세요"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyFileDiff"
+msgstr "파일 diff 복사"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyFilePath"
+msgstr "파일 경로 복사"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyFullHash"
+msgstr "전체 해시 복사"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyShortHash"
+msgstr "짧은 해시 복사"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.copyWithReference"
+msgstr "참조와 함께 복사"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.excludeFailed"
+msgstr "저장소를 제외하지 못했습니다: {error}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.inspectError"
+msgstr "{repo} 저장소를 확인하지 못했습니다"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.loadError"
+msgstr "제외된 저장소를 불러오지 못했습니다"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.loadFailed"
+msgstr "타임라인을 불러오지 못했습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.loadFailedTitle"
+msgstr "이 커밋의 파일을 불러오지 못했습니다"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.loadFailed"
+msgstr "이 커밋의 파일을 불러오지 못했습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.loadFailed"
+msgstr "이 diff를 불러오지 못했습니다"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.repoUnavailable"
+msgstr "이 저장소를 열지 못했습니다. 이동했거나 연결이 끊긴 드라이브에 있을 수 있습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteReadFailed"
+msgstr "클립보드를 읽지 못했습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileHistoryUnavailable"
+msgstr "이 파일의 히스토리를 읽지 못했습니다. 저장소를 사용할 수 없거나 디스크에서 변경 중일 수 있습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.restoreError"
+msgstr "{repo} 저장소를 복원하지 못했습니다"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.replaceError"
+msgstr "현재 {repo} 저장소를 사용하지 못했습니다"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sortCount"
+msgstr "개수"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.countUnavailableTitle"
+msgstr "{count}회 재시도 후에도 개수를 확인하지 못했습니다. 이 목록을 닫았다 다시 열면 재시도합니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.scope.historyIndexed"
+msgstr "현재 색인된 히스토리"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.context.default"
+msgstr "기본—각 변경 전후 3줄"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.context"
+msgstr "diff 컨텍스트"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.minimap.overview"
+msgstr "diff 개요—클릭하거나 드래그해 변경 지점으로 이동"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.fontHint"
+msgstr "Diff 화면의 글꼴입니다. 비워 두면 기본 고정폭 글꼴 모음을 사용합니다. 설치된 글꼴은 모두 사용할 수 있지만 거터와 줄 번호를 가지런히 맞추려면 고정폭 글꼴을 권장합니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "common.dismiss"
+msgstr "닫기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.control.dismiss"
+msgstr "외부 요청 상태 닫기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.firstRun.dismiss"
+msgstr "도움말 닫기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.downloading"
+msgstr "다운로드 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.columns.resizeTitle"
+msgstr "드래그하여 크기 조절 · 두 번 클릭하여 초기화"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.empty.dropTitle"
+msgstr "저장소 폴더를 여기에 놓으세요"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.english"
+msgstr "영어"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.error"
+msgstr "오류: {error}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.excludeAria"
+msgstr "gitwink에서 {repo} 제외"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.exclude"
+msgstr "gitwink에서 제외"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.excludeTitle"
+msgstr "gitwink에서 제외 (설정에서 복원 가능)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.excludedAt"
+msgstr "{when}에 제외"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.intro"
+msgstr "제외된 저장소는 검색 대상에서 무시되고 패널에서도 사라지지만, 폴더와 고정 상태, 브랜치 설정은 그대로 유지됩니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.exitFileHistory"
+msgstr "파일 히스토리 나가기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.context.expanded"
+msgstr "확장—컨텍스트 25줄"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.addRepo.failed"
+msgstr "저장소를 추가하지 못했습니다"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.failed"
+msgstr "가져오기 실패"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.failedTitle"
+msgstr "가져오기에 실패했습니다(오프라인, origin 없음 또는 다른 가져오기 실행 중). 개수는 마지막 성공 기준입니다"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.autoFetch.label"
+msgstr "패널을 열 때 가져오기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.now"
+msgstr "지금 origin 가져오기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.nowTitle"
+msgstr "지금 origin에서 새로 가져옵니다(읽기 전용, 병합하거나 푸시하지 않음)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.currentTitle"
+msgstr "가져오기 완료 ✓—origin ref가 최신입니다"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.current"
+msgstr "가져오기 완료—origin ref 최신"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.fetching"
+msgstr "origin에서 가져오는 중"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.fetchingTitle"
+msgstr "origin에서 가져오는 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.context.tooLarge"
+msgstr "전체 컨텍스트로 보기에는 파일이 너무 큽니다"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.facetsError"
+msgstr "필터 개수를 새로 고치지 못했습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.filterTimelineTo"
+msgstr "타임라인을 {repo}(으)로 필터링"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.aria"
+msgstr "diff에서 찾기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.placeholder"
+msgstr "diff에서 찾기…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.folderCheckedOnRestore"
+msgstr "복원할 때 폴더 상태를 확인합니다"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.folderAvailable"
+msgstr "폴더 사용 가능"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.folderUnavailable"
+msgstr "폴더를 사용할 수 없음—다시 나타날 때까지 누락 상태로 복원됩니다"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.system"
+msgstr "시스템 설정 따르기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.font"
+msgstr "글꼴"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.forward"
+msgstr "앞으로"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.forwardTitle"
+msgstr "앞으로(Alt+→)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.context.full"
+msgstr "전체"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.lfsFile"
+msgstr "Git LFS 파일"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.provider.gitwink"
+msgstr "gitwink"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.binaryUnsupported"
+msgstr "gitwink는 아직 이미지가 아닌 바이너리의 diff를 표시하지 않습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.autoFetchDisclosure"
+msgstr "이제 저장소를 볼 때 gitwink가 origin에서 변경 사항을 가져와 팀원이 푸시한 커밋을 표시합니다. 원격 추적 미러만 갱신하며 저장소를 병합하거나 푸시하거나 변경하지 않습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.dialog"
+msgstr "gitwink 업데이트"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+#: src/i18n/messages/updates.ts
+msgid "common.gotIt"
+msgstr "확인"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.title"
+msgstr "{path} 히스토리: {scope}—클릭하면 나갑니다(Esc)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.unavailable"
+msgstr "히스토리 사용 불가"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.upstream.syncedAria"
+msgstr "{upstream}과(와) 동기화됨"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.scope.historyIndexedCount"
+msgstr "색인된 히스토리({published}/{total}개 저장소)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.historyIndexing"
+msgstr "전체 히스토리 색인 중 · {published}/{total}개 저장소 사용 가능 · 커밋 {commits}개 확인"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.scope.historyIndexingCount"
+msgstr "히스토리 색인 중({published}/{total}개 저장소)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.inspecting"
+msgstr "확인 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.installing"
+msgstr "설치 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.japanese"
+msgstr "일본어"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.jumpToHistory"
+msgstr "히스토리로 이동"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.new.jumpLatest"
+msgstr "최신 커밋으로 이동"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.jumpToCommit"
+msgstr "이 커밋의 저장소 히스토리로 이동 (Enter)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "time.justNow"
+msgstr "방금"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.excludeDescription"
+msgstr "폴더와 환경설정은 유지됩니다. 나중에 설정에서 복원할 수 있습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.korean"
+msgstr "한국어"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.language.title"
+msgstr "언어"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.time.lastDays"
+msgstr "최근 {count}일"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.time.last24Hours"
+msgstr "최근 24시간"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.lastActivity"
+msgstr "마지막 활동: {date}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.upstream.lastFetch"
+msgstr "마지막 fetch: {age}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.later"
+msgstr "나중에"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.latestChanges"
+msgstr "최근 변경 {count}개"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.loading"
+msgstr "브랜치 불러오는 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.loadingCommits"
+msgstr "커밋 불러오는 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.loading"
+msgstr "diff 불러오는 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.loading"
+msgstr "파일 불러오는 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.loading"
+msgstr "이미지 불러오는 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "common.loading"
+msgstr "불러오는 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.loading"
+msgstr "불러오는 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.local"
+msgstr "로컬"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.manual"
+msgstr "수동 확인만"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.maximizeTitle"
+msgstr "깊이 살펴보기 위해 최대화"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.maximizePanel"
+msgstr "패널 최대화"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.marker.merge"
+msgstr "병합 커밋"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.provider.microsoftStore"
+msgstr "Microsoft Store"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.missing"
+msgstr "없음"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.missing"
+msgstr "없음"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sortCountTitle"
+msgstr "커밋 많은 순"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sortRecentTitle"
+msgstr "최근 활동 순"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.multiRepoOnly"
+msgstr "다중 선택은 모든 저장소 모드에서 사용할 수 있습니다"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.shortcut.modifierError"
+msgstr "보조 키(Ctrl / Alt / Shift) 하나 이상과 일반 키를 함께 눌러야 합니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.minimap.newViewport"
+msgstr "새 파일(변경 후) 뷰포트"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.next"
+msgstr "다음 일치 항목"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.nextTitle"
+msgstr "다음 일치 항목 (Enter)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.none"
+msgstr "작성자 없음"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.noMatch"
+msgstr "일치하는 작성자가 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.manualHint"
+msgstr "백그라운드에서 확인하지 않습니다. 트레이의 ‘업데이트 확인’을 사용하세요."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.none"
+msgstr "브랜치 없음"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.noMatch"
+msgstr "일치하는 브랜치가 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileEmptyScanLimit"
+msgstr "읽을 수 있는 히스토리에서 {file} 변경을 찾지 못했습니다. 더 오래된 커밋은 {count}개 안전 제한 밖에 남아 있습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileEmptyIncomplete"
+msgstr "읽을 수 있는 히스토리에서 {file} 변경을 찾지 못했습니다. 일부 Git 객체를 읽지 못해 결과가 불완전합니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.noCommitsDays"
+msgstr "최근 {days}일 동안 커밋이 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.noCommits24h"
+msgstr "최근 24시간 동안 커밋이 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.noCommits"
+msgstr "조건에 맞는 커밋이 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.empty"
+msgstr "제외된 저장소가 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.upstream.noFetch"
+msgstr "fetch 기록 없음"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.noChanges"
+msgstr "변경된 파일이 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileEmpty"
+msgstr "이 저장소에서 {file}의 히스토리를 찾지 못했습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileEmptyShallow"
+msgstr "이 얕은 클론에서 {file}의 히스토리를 찾지 못했습니다. 이전 히스토리는 로컬에 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.noMatchesScope"
+msgstr "{scope}에서 일치하는 항목이 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.noMatchesScanned"
+msgstr "스캔한 히스토리에 일치하는 항목이 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.noMatchShallow"
+msgstr "이 얕은 클론에서 사용할 수 있는 히스토리에 조건과 맞는 커밋이 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.noMatchIncomplete"
+msgstr "완전히 읽을 수 있었던 히스토리에 조건과 맞는 커밋이 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.noMatchLimited"
+msgstr "이 범위에서 최근에 불러온 커밋 {limit}개에는 조건과 맞는 항목이 없습니다. 더 오래된 커밋은 확인하지 않았습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.noNotes"
+msgstr "이 버전의 릴리스 노트가 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.noMatch"
+msgstr "일치하는 저장소가 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.text.none"
+msgstr "표시할 텍스트 diff가 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.off"
+msgstr "끄기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.minimap.oldViewport"
+msgstr "이전 파일(변경 전) 뷰포트"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.only"
+msgstr "단독"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.openAria"
+msgstr "{path}의 {repo} 열기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.openFile.action"
+msgstr "settings.json 열기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.control.opened"
+msgstr "{source}에서 열었습니다"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.openFile.hint"
+msgstr "기본 편집기에서 원본 설정 파일을 엽니다. 위 옵션 대부분이 여기에 반영되며, 자동 관리되는 창 위치와 저장소 상태는 직접 편집할 필요가 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.or"
+msgstr "또는"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.empty.pastePath"
+msgstr "또는 파일 관리자에서 폴더 경로를 복사하세요"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.shortcut.panelHotkey"
+msgstr "패널 단축키"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelSize"
+msgstr "패널 크기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.partial"
+msgstr "일부 히스토리"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteShort"
+msgstr "경로 붙여넣기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteTitle"
+msgstr "클립보드에서 저장소 경로 붙여넣기({shortcut})"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteBusy"
+msgstr "붙여넣는 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.pickFile"
+msgstr "파일을 선택하세요."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.pin"
+msgstr "고정"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.pinAria"
+msgstr "{repo} 고정"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.pinPanel"
+msgstr "패널 고정"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.pinTitle"
+msgstr "고정—다른 곳을 클릭해도 열어 둡니다. 항상 위에는 두지 않으며 트레이나 단축키로 다시 부를 수 있습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.scope.historyPreparing"
+msgstr "히스토리 색인 준비 중"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.notices.historyPreparing"
+msgstr "전체 히스토리 색인을 준비하는 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.preparing"
+msgstr "준비 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.shortcut.recording"
+msgstr "새 단축키를 누르세요… (Esc로 취소)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.previous"
+msgstr "이전 일치 항목"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.find.previousTitle"
+msgstr "이전 일치 항목 (Shift+Enter)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.minimap.realign"
+msgstr "양쪽 다시 맞추기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allReposTitle"
+msgstr "모든 저장소에서 이 검색 다시 실행"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allAuthorsTitle"
+msgstr "작성자 필터 없이 다시 검색"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allHistoryTitle"
+msgstr "기간 필터 없이 다시 검색"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.reachableCommits"
+msgstr "전체 기간의 도달 가능한 커밋 (기간 필터와 무관)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sortRecent"
+msgstr "최근"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.remoteTracking"
+msgstr "원격 추적"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.remoteTip"
+msgstr "이 커밋의 원격 추적 ref (읽기 전용, 마지막 Git fetch 기준)."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.remoteTrackingTitle"
+msgstr "원격 추적 ref는 로컬에서 읽습니다—IDE 또는 CLI, 패널을 열 때 실행되는 gitwink 자동 fetch로 갱신됩니다 (설정 → 자동 fetch)."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.remoteTips"
+msgstr "이 커밋의 원격 추적 ref (읽기 전용, 마지막 Git fetch 기준). {count}개 더 있음."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.renamedFrom"
+msgstr "{path}에서 이름 변경"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.renamesNotFollowed"
+msgstr "이름 변경 추적은 아직 지원하지 않습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.replacing"
+msgstr "교체 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeRepositories"
+msgstr "저장소"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.title"
+msgstr "저장소"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.control.failed"
+msgstr "{source} 요청 실패"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.shortcut.help"
+msgstr "필수: 보조 키(Ctrl / Alt / Shift) 하나 이상과 일반 키를 함께 눌러야 합니다. 운영체제가 예약한 조합(Alt+Tab, Win+L 등)은 감지할 수 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelReset"
+msgstr "레이아웃 초기화"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelSizeHint"
+msgstr "정확한 크기는 창의 어느 가장자리든 끌어 조절하고, 파일 경로를 넓게 보려면 ‘넓게’를 선택하세요. 초기화하면 크기와 위치가 기본값으로 돌아갑니다. 최대화는 임시 검토 모드로 유지됩니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.columns.resize"
+msgstr "이전/새 파일 열 크기 조절"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.restarting"
+msgstr "재시작 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.restore"
+msgstr "복원"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.restoreAria"
+msgstr "{repo} 복원"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.restorePanel"
+msgstr "패널 복원"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.restoreTitle"
+msgstr "이전 패널 크기로 복원"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.restoring"
+msgstr "복원 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "common.retry"
+msgstr "다시 시도"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.replacementWarning"
+msgstr "검토한 저장소: {repo}. 이 확인은 동일한 저장소와 제외 수명 주기가 바뀌지 않은 동안에만 유효합니다. 이 경로에 대한 gitwink의 기존 캐시, 고정 상태, 브랜치 설정을 지운 뒤 현재 폴더에 있는 Git 저장소를 등록합니다. 폴더 자체는 절대 변경하지 않습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileCoverageScanned"
+msgstr "커밋 {count}개를 확인했습니다. 더 오래된 히스토리는 안전 제한 밖에 남아 있습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.loadingFileHistory"
+msgstr "파일 히스토리 확인 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.empty.scanningRepos"
+msgstr "저장소를 찾는 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fileHistory.scanning"
+msgstr "확인 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.scanning"
+msgstr "검색 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.provider.scoop"
+msgstr "Scoop"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeButton"
+msgstr "범위"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeButtonCount"
+msgstr "범위 · {count}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.sync.off"
+msgstr "스크롤 동기화 꺼짐—양쪽을 독립적으로 스크롤합니다. 선택하면 함께 움직입니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.sync.on"
+msgstr "스크롤 동기화 켜짐—변경 전후가 함께 움직입니다. 선택하면 독립적으로 스크롤합니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.firstRun.tip"
+msgstr "검색 · 커밋을 클릭해 펼치기 · 파일의 히스토리 버튼으로 변경 내역 열기 · 오른쪽 클릭으로 AI용 복사"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allAuthors"
+msgstr "모든 작성자에서 검색"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allHistory"
+msgstr "전체 히스토리에서 검색"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.search.allRepos"
+msgstr "모든 저장소 검색"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.searchAria"
+msgstr "작성자 검색"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.searchPlaceholder"
+msgstr "작성자 검색…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.searchAria"
+msgstr "브랜치 검색"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.searchPlaceholder"
+msgstr "브랜치 검색…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.aria"
+msgstr "커밋 검색"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.commits"
+msgstr "커밋 검색"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.commitsTitle"
+msgstr "커밋 검색—메시지, 작성자, SHA (/)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.placeholder"
+msgstr "커밋 검색—메시지, 작성자, SHA 접두사…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.allBranchesNote"
+msgstr "이 저장소의 모든 브랜치를 포함해 검색합니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.searchAria"
+msgstr "저장소 검색"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.searchPlaceholder"
+msgstr "저장소 검색…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeTitle"
+msgstr "검색 범위"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scope"
+msgstr "검색 범위: {scope}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.searching"
+msgstr "검색 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.unavailable"
+msgstr "선택됨 · 현재 범위에서 사용 불가"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.unavailable"
+msgstr "선택됨 · 사용할 수 없는 ref"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.unavailableTitle"
+msgstr "현재 저장소, 브랜치 및 기간 범위에 커밋이 없는 선택된 작성자"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.branches.unavailableTitle"
+msgstr "이 저장소에 더 이상 존재하지 않는 선택된 ref"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.selectedRepoScopeLoading"
+msgstr "선택한 저장소 범위 (불러오는 중)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+#: src/i18n/messages/settings.ts
+msgid "settings.title"
+msgstr "설정"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "settings.openMenu"
+msgstr "설정…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.shortcut.title"
+msgstr "단축키"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.showAllTime"
+msgstr "전체 기간 보기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "clipboard.showFileHistory"
+msgstr "파일 히스토리 보기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.showHistory"
+msgstr "{file}의 히스토리 보기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.showOnly"
+msgstr "{author}만 보기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.showHistoryInPanel"
+msgstr "패널에서 이 파일의 히스토리 보기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.files.showing"
+msgstr "변경 파일 {total}개 중 {shown}개 표시"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileCoverageShallow"
+msgstr "이 얕은 클론에서 사용할 수 있는 모든 파일 히스토리를 표시합니다. 이전 히스토리는 로컬에 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileCoverageMatches"
+msgstr "최근 파일 변경 {count}개를 표시합니다. 이전 변경도 더 있습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.coverageLimited"
+msgstr "이 범위에서 최근 커밋 {limit}개를 표시합니다. 더 오래된 커밋은 불러오지 않았습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.skip"
+msgstr "v{version} 건너뛰기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.fileCoverageIncomplete"
+msgstr "일부 Git 객체를 읽지 못해 파일 히스토리가 불완전할 수 있습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.coverageIncomplete"
+msgstr "일부 ref 또는 Git 객체를 읽지 못해 저장소 히스토리가 불완전할 수 있습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.sort"
+msgstr "정렬"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.sort"
+msgstr "작성자 정렬"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.sync"
+msgstr "동기화"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "timeline.marker.tagged"
+msgstr "태그된 커밋"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.lfsHint"
+msgstr "실제 이미지는 Git LFS에 저장되어 있습니다. gitwink는 아직 LFS 객체를 가져오지 않으므로 미리 볼 내용이 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteNoPath"
+msgstr "클립보드에 붙여넣을 수 있는 절대 경로가 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.cannotShow"
+msgstr "diff를 표시할 수 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.confirmationExpired"
+msgstr "검토한 뒤 저장소가 변경되었습니다. 확인하기 전에 현재 저장소를 다시 검토하세요."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.identityMismatch"
+msgstr "이 폴더에는 이제 다른 Git 저장소가 있습니다. 교체 세부 정보를 검토한 뒤 확인하세요."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.unsupported"
+msgstr "이 설치 방식에서는 gitwink 안에서 업데이트를 확인할 수 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.managedExternally"
+msgstr "이 설치는 {provider}에서 관리하며 최종 업데이트 단계도 담당합니다. 터미널에서 {command} 명령을 실행해 v{version}(으)로 업데이트하세요."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.single.coverageShallow"
+msgstr "얕은 클론입니다. 로컬 경계 이전의 히스토리는 사용할 수 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.search.scopeTime"
+msgstr "기간"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.search.typeToSearch"
+msgstr "입력해서 {scope} 검색"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.size"
+msgstr "UI 배율"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.unpin"
+msgstr "고정 해제"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.unpinAria"
+msgstr "{repo} 고정 해제"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.unpinPanel"
+msgstr "패널 고정 해제"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.unpinTitle"
+msgstr "고정 해제—포커스를 잃으면 자동으로 숨고 항상 위에 표시되는 빠른 확인 모드로 돌아갑니다"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.available"
+msgstr "업데이트 가능"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.updateAvailableTitle"
+msgstr "업데이트 가능—v{version} · 클릭해서 업데이트"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.failed"
+msgstr "업데이트 실패"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.updateAria"
+msgstr "gitwink를 {version} 버전으로 업데이트"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.now"
+msgstr "지금 업데이트"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.progress"
+msgstr "업데이트 진행률"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.offHint"
+msgstr "업데이트 기능을 완전히 끕니다. 트레이에서 ‘업데이트 확인’도 숨깁니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.updates.title"
+msgstr "업데이트"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.authors.updating"
+msgstr "작성자 갱신 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.updatingCommitCountAria"
+msgstr "커밋 개수 갱신 중"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/filters.ts
+msgid "filters.repos.updatingCommitCounts"
+msgstr "현재 작성자 및 기간 필터의 커밋 갱신 중"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.inspect"
+msgstr "현재 저장소 사용…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/repositories.ts
+msgid "settings.repositories.useCurrentAria"
+msgstr "{repo} 폴더에 현재 있는 저장소 사용"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.provider.githubReleases"
+msgstr "GitHub의 검증된 gitwink 릴리스"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.chrome.viewHistory"
+msgstr "화면 이동 기록"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/updates.ts
+msgid "update.waiting"
+msgstr "{provider} 대기 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.waitingForFile"
+msgstr "파일을 기다리는 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.autoFetch.hint"
+msgstr "저장소 하나를 볼 때 패널이 열리면 gitwink가 조용히 git fetch origin을 실행해 팀원이 새로 푸시한 커밋을 표시합니다. 원격 추적 미러만 갱신하며 로컬 브랜치, 태그, 작업 트리는 절대 바꾸지 않습니다. 패널을 막지 않고, 인증이나 네트워크를 사용할 수 없으면 조용히 넘어가며, 최근에 가져온 저장소는 건너뜁니다. 모든 저장소 화면에서는 가져오지 않습니다. gitwink는 사용자의 작업을 병합하거나 푸시하거나 다시 쓰지 않습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.context.fullTitle"
+msgstr "변경 사항을 강조하여 전체 파일 표시"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/settings.ts
+msgid "settings.appearance.panelWide"
+msgstr "넓게"

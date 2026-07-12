@@ -5,7 +5,12 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import App from "./App";
 import { DiffApp } from "./components/DiffApp";
 import { Settings } from "./components/Settings";
-import { initSettings } from "./lib/settings";
+import { LocaleBoundary } from "./i18n/LocaleBoundary";
+import { activateLocale } from "./i18n/runtime";
+import { getCurrentSettings, initSettings } from "./lib/settings";
+import "./styles.css";
+import "./styles/platform-controls.css";
+import "./styles/panel-window.css";
 
 const label = getCurrentWindow().label;
 const Root =
@@ -59,11 +64,21 @@ class RootErrorBoundary extends React.Component<
 
 // Load + apply persisted settings before first paint so the font / scale
 // are already correct — no flash of default styling.
-void initSettings().finally(() => {
+void initSettings().finally(async () => {
+  try {
+    await activateLocale(getCurrentSettings().resolvedLocale);
+  } catch (error) {
+    // A damaged catalog must not strand a native window at a blank first
+    // paint. The error boundary remains available for render failures.
+    // eslint-disable-next-line no-console
+    console.error("[gitwink] locale catalog failed to load", error);
+  }
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
       <RootErrorBoundary>
-        <Root />
+        <LocaleBoundary>
+          <Root />
+        </LocaleBoundary>
       </RootErrorBoundary>
     </React.StrictMode>,
   );

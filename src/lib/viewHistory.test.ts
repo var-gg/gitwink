@@ -12,6 +12,8 @@ function view(overrides: Partial<ViewSnapshot> = {}): ViewSnapshot {
     fileHistory: null,
     searchOpen: false,
     searchInput: "",
+    anchoredCommit: null,
+    anchorExpand: false,
     ...overrides,
   };
 }
