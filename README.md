@@ -7,7 +7,7 @@
 
 > Tray-resident, read-only git glance for the AI-agent era.
 
-**Status:** v0.4 — usable. Cold-start friendly tray app.
+**Status:** Actively developed and ready for daily use.
 
 ![gitwink](docs/images/hero.gif)
 
@@ -104,27 +104,32 @@ agent commits  →  tray click  →  inline expand  →  "Copy as AI context"
 ## Features
 
 - System tray icon (Windows tray / macOS menu bar) with click-to-toggle
-  and right-click Reset position / Open settings file / Quit.
+  and right-click Check for updates / Settings / Reset panel position / Quit.
 - Global hotkey `Ctrl+Shift+G` (Windows) / `Cmd+Shift+G` (macOS) to
-  summon or dismiss the panel from anywhere. Change it by editing
-  `panel_hotkey` in `settings.json` (right-click the tray icon →
-  "Open settings file…") to any Tauri shortcut spec, e.g.
-  `"Alt+Space"`, `"Ctrl+Alt+Backquote"`. Restart gitwink to apply.
+  summon or dismiss the panel from anywhere. Change it live in
+  Settings → Shortcuts to any supported modifier + key combination.
 - First-run discovery walks default user dirs (`source`, `Documents`,
   `Projects`, `Code`, `Dev`, `repos`, `Desktop`, every non-system drive on
   Windows / `~/Projects`, `~/Code`, `~/Documents`, `~/Developer` on macOS).
   Results cached in SQLite at `%APPDATA%\gg.var.gitwink\cache.db`.
-- Unified commit timeline across all repos, with chips above for
-  filtering: Repo (search + pinning), Time range (24h / 3d / 7d / 30d /
-  All), Authors (multi-select with counts).
+- Unified commit timeline across all repos, with composable Repo, Time,
+  Author, and (in single-repo mode) Branch filters. Search stays inside
+  the active filter combination instead of becoming a separate view.
 - Per-row markers — `●` commit · `◆` merge · `★` tagged. Branch label
   badges for commits that aren't on the currently checked-out branch.
 - Single-repo mode: pick a repo and the panel switches to a per-branch
   view with a custom SVG DAG lane drawer (eight-colour palette, hashed
   from branch name; main / master / develop neutral).
+- Resize the panel from any edge or corner, switch between default and wide
+  presets, or maximise for deeper reading. The preferred normal size is
+  remembered independently from UI scale.
 - Inline expansion on click: commit message body + changed-file list
   with NEW/MOD/REN/DEL badges, `+/−` line counts, `bin` + size for
   binaries, GitLens-style filename emphasis.
+- Open a changed file's history from its clock button, then move between the
+  commits that touched that file, expand any revision, and open it in diff.
+- Exclude a repository from gitwink via its context menu without touching the
+  folder, then restore it later from Settings with its preferences intact.
 - Separate diff window (singleton, reused, position/size + maximised
   persisted) for full reading: file sidebar + side-by-side diff with
   synchronised horizontal scroll. PNG / JPG / GIF / WebP / SVG image
@@ -140,12 +145,12 @@ agent commits  →  tray click  →  inline expand  →  "Copy as AI context"
 
 ## Diff window
 
-For the *"wait, did the agent actually do that?"* moments. Click any
-commit and a separate window opens — full file sidebar, side-by-side
-diff with synchronised scroll, inline image preview for binary assets,
-and a singleton that remembers position, size, and maximised state.
+For the *"wait, did the agent actually do that?"* moments. Expand a commit,
+then select a changed file to open a separate window — full file sidebar,
+side-by-side diff with synchronised scroll, inline image preview for binary
+assets, and a singleton that remembers position, size, and maximised state.
 
-![diff window](docs/images/diff.gif)
+![diff window](docs/images/diff.png)
 
 ## Tech
 
