@@ -10,6 +10,8 @@ $ErrorActionPreference = 'Stop'
 $script:scenario = ''
 $script:requestCount = 0
 $script:sleepSeconds = @()
+$script:requestContentTypes = @()
+$script:requestHadBodies = @()
 
 function Start-Sleep {
     param([int]$Seconds)
@@ -28,6 +30,8 @@ function Invoke-RestMethod {
         [string]$ContentType
     )
     $script:requestCount++
+    $script:requestContentTypes += $ContentType
+    $script:requestHadBodies += $PSBoundParameters.ContainsKey('Body')
     if ($script:scenario -eq 'retry-get' -and
         $script:requestCount -eq 1) {
         Set-Variable -Name $StatusCodeVariable -Value 504 -Scope 1
@@ -54,6 +58,8 @@ function Reset-RequestMock([string]$Scenario) {
     $script:scenario = $Scenario
     $script:requestCount = 0
     $script:sleepSeconds = @()
+    $script:requestContentTypes = @()
+    $script:requestHadBodies = @()
 }
 
 Reset-RequestMock 'retry-get'
@@ -87,7 +93,11 @@ try {
 }
 if (-not $failedAsExpected -or
     $script:requestCount -ne 1 -or
-    $script:sleepSeconds.Count -ne 0) {
+    $script:sleepSeconds.Count -ne 0 -or
+    $script:requestContentTypes.Count -ne 1 -or
+    $script:requestContentTypes[0] -ne 'application/json' -or
+    $script:requestHadBodies.Count -ne 1 -or
+    $script:requestHadBodies[0]) {
     throw 'Non-retryable POST test failed.'
 }
 
