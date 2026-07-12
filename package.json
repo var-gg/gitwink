@@ -9,6 +9,7 @@
     "test": "vitest run",
     "i18n:extract": "lingui extract",
     "i18n:check": "lingui extract --clean && node tools/check-i18n.mjs",
+    "store:listing:check": "node tools/store-listing.mjs validate store/listing/screenshots.json",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:windows:build": "tauri-windows-bundle build"

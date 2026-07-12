@@ -7,7 +7,7 @@
   Partner Center fallback — removing the "which file?" risk after auto-publish fails.
 
 .DESCRIPTION
-  The normal Store path is automated (store.yml -> msstore -> Partner Center).
+  The normal Store path is automated (store.yml -> packaged-app API -> Partner Center).
   If that final submission step fails after CI produced a valid package, the risky
   part of a manual fallback is *picking the right file* (correct version + the
   x64/arm64 .msixbundle, not a stray local build). This removes that risk:

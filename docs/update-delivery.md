@@ -84,3 +84,11 @@ direct IPC calls from bypassing external package ownership.
 6. Extend the release-manifest validator if a new installer family is added.
 7. Validate the real N→N+1 update path on the distribution service; compilation
    and package creation alone do not prove catalog rollout behaviour.
+
+## Microsoft Store release metadata
+
+Package delivery and public listing assets share one Store submission but have
+different source-of-truth rules. The package is built by CI; approved
+screenshots are checked in and changed only for explicitly listed locales. See
+[Microsoft Store listing asset automation](store-listing-automation.md) for the
+manifest, validation, draft ownership, and commit guarantees.
