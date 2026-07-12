@@ -11,11 +11,21 @@ name: MSIX (Microsoft Store)
 
 on:
   workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: Reuse the gitwink-msix artifact from this workflow run
+        required: false
+        type: string
+      resume_submission_id:
+        description: Resume this exact clean API-created Store draft
+        required: false
+        type: string
   push:
     tags:
       - 'v*'
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -32,6 +42,8 @@ jobs:
     # the Partner Center / Entra credentials have been configured yet.
     env:
       AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+      STORE_ARTIFACT_RUN_ID: ${{ github.event.inputs.artifact_run_id || '' }}
+      STORE_RESUME_SUBMISSION_ID: ${{ github.event.inputs.resume_submission_id || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -48,16 +60,19 @@ jobs:
           run_install: false
 
       - name: Install Rust (stable, x64 + arm64)
+        if: ${{ env.STORE_ARTIFACT_RUN_ID == '' }}
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
 
       - name: Cache cargo workspace
+        if: ${{ env.STORE_ARTIFACT_RUN_ID == '' }}
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
 
       - name: Install frontend deps
+        if: ${{ env.STORE_ARTIFACT_RUN_ID == '' }}
         run: pnpm install --frozen-lockfile
 
       - name: Validate Store listing assets
@@ -67,20 +82,33 @@ jobs:
       # beforeBuildCommand, so the frontend must be built into dist/
       # explicitly before the Rust binary is compiled and packed.
       - name: Build frontend
+        if: ${{ env.STORE_ARTIFACT_RUN_ID == '' }}
         run: pnpm build
 
       - name: Install msixbundle-cli
+        if: ${{ env.STORE_ARTIFACT_RUN_ID == '' }}
         run: cargo install msixbundle-cli
 
       - name: Build MSIX bundle (x64 + arm64)
+        if: ${{ env.STORE_ARTIFACT_RUN_ID == '' }}
         run: pnpm tauri:windows:build --arch x64,arm64 --runner pnpm --verbose
 
       - name: Upload MSIX bundle
+        if: ${{ env.STORE_ARTIFACT_RUN_ID == '' }}
         uses: actions/upload-artifact@v4
         with:
           name: gitwink-msix
           path: src-tauri/target/msix/*.msixbundle
           if-no-files-found: error
+
+      - name: Reuse a previously built MSIX bundle
+        if: ${{ env.STORE_ARTIFACT_RUN_ID != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: gitwink-msix
+          path: src-tauri/target/msix
+          github-token: ${{ github.token }}
+          run-id: ${{ env.STORE_ARTIFACT_RUN_ID }}
 
       # Auto-submit to the Microsoft Store packaged-app submission API.
       #
@@ -88,9 +116,10 @@ jobs:
       # forks and credential-free runs still build/upload the MSIX artifact but
       # safely skip publication. `tools/deploy-store.ps1` downloads that exact
       # artifact for a manual Partner Center fallback when an automated publish
-      # fails. The wrapper creates exactly one API-owned draft, uploads the
-      # package and any checked-in locale screenshots in one ZIP, then commits
-      # once. An existing Partner Center draft is never changed or deleted.
+      # fails. The wrapper creates exactly one API-owned draft (or resumes an
+      # exact, explicitly selected clean API draft), uploads the package and any
+      # checked-in locale screenshots in one ZIP, then commits once. Every other
+      # existing Partner Center draft remains untouched.
       - name: Submit package and listing assets to the Microsoft Store
         if: ${{ vars.STORE_AUTOPUBLISH == 'true' && env.AZURE_AD_TENANT_ID != '' }}
         shell: pwsh
@@ -99,5 +128,27 @@ jobs:
           AZURE_AD_APPLICATION_CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
           AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
         run: |
-          $pkg = (Get-ChildItem src-tauri/target/msix/*.msixbundle | Select-Object -First 1).FullName
-          & ./tools/publish-store.ps1 -PackagePath $pkg -Publish
+          $packages = @(Get-ChildItem src-tauri/target/msix/*.msixbundle)
+          if ($packages.Count -ne 1) {
+            throw "Expected exactly one MSIX bundle, found $($packages.Count)."
+          }
+          $appVersion = (Get-Content src-tauri/tauri.conf.json -Raw |
+            ConvertFrom-Json).version
+          $expectedSuffix = "_$appVersion.0.msixbundle"
+          if (-not $packages[0].Name.EndsWith(
+            $expectedSuffix,
+            [StringComparison]::OrdinalIgnoreCase
+          )) {
+            throw (
+              "MSIX bundle $($packages[0].Name) does not match app version " +
+              "$appVersion."
+            )
+          }
+          $parameters = @{
+            PackagePath = $packages[0].FullName
+            Publish = $true
+          }
+          if (-not [string]::IsNullOrWhiteSpace($env:STORE_RESUME_SUBMISSION_ID)) {
+            $parameters.ResumeSubmissionId = $env:STORE_RESUME_SUBMISSION_ID.Trim()
+          }
+          & ./tools/publish-store.ps1 @parameters
