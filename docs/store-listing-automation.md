@@ -63,20 +63,23 @@ tools/publish-store.ps1 -PackagePath PATH -Publish is the only mutating entry
 point. GitHub Actions normally owns that invocation. It:
 
 1. validates local files before authentication;
-2. refuses to run if any pending submission already exists;
+2. refuses any pending submission unless an exact resume ID was explicitly
+   supplied;
 3. preflights package and locale ownership against the last published
    submission;
-4. creates one API-owned draft;
+4. creates one API-owned draft, or resumes the selected clean API draft;
 5. marks the previous package and only the selected locale screenshots for
    deletion;
 6. uploads one ZIP containing the new package and pending PNGs;
 7. commits once and polls until Partner Center accepts or rejects ingestion.
 
-Before commit, a failure rolls back only the draft created by that invocation.
-After a commit request, the draft is preserved because deleting an
-indeterminate server-side operation would be unsafe. Logs include the submission
-ID and available correlation ID, but never the access token, client secret, or
-SAS upload URL.
+Before commit, a failure rolls back only the API draft owned by that invocation.
+An explicitly resumed draft becomes rollback-owned only after its exact ID,
+API-only upload URL, and clean inherited file state have been verified. After a
+commit request, the draft is preserved because deleting an indeterminate
+server-side operation would be unsafe. Logs include the submission ID and
+available correlation ID, but never the access token, client secret, or SAS
+upload URL.
 
 Transient read failures are retried without rebuilding the submission. GET
 requests retry transport failures plus HTTP 408, 429, and 5xx responses up to
@@ -85,6 +88,13 @@ POST, PUT, and DELETE remain single-attempt operations: automatically repeating
 a mutation after a lost response could create a second draft or hide an
 indeterminate commit.
 
+Create is the one mutation with a bounded reconciliation path. If its response
+is lost to a transport failure or HTTP 408, 429, or 5xx, the POST is not
+repeated. The tool instead re-reads the product, adopts the newly pending draft
+only when it has an API upload URL, and continues with that exact ID. This is
+safe because the same invocation proved there was no pending submission
+immediately before the create request.
+
 Every submission API request declares the application/json media type, including
 bodyless create and commit POSTs. Those endpoints still receive no synthetic
 request body; the explicit media type satisfies the Store API contract without
@@ -92,8 +102,24 @@ changing the documented mutation payload.
 
 Do not edit an API-created draft in Partner Center while the workflow is
 running. Conversely, the workflow never modifies or deletes a draft that
-already existed when it started. The workflow concurrency key also prevents two
-gitwink Store submissions from racing.
+already existed when it started unless its exact ID is supplied through the
+explicit recovery path. The workflow concurrency key also prevents two gitwink
+Store submissions from racing.
+
+## Recovery and artifact reuse
+
+A workflow process can end after Partner Center accepted create but before its
+response arrived. Confirm that the pending draft is the untouched API-created
+submission, then manually dispatch store.yml with resume_submission_id set to
+that exact ID. A mismatched or missing pending ID fails closed, and the listing
+preparer rejects packages or selected screenshots already marked PendingUpload
+or PendingDelete.
+
+To avoid rebuilding an unchanged x64+arm64 bundle, artifact_run_id may point to
+a prior Store workflow run in this repository. The workflow downloads only its
+gitwink-msix artifact and verifies that exactly one bundle exists and that its
+filename version matches src-tauri/tauri.conf.json before publication. Omitting
+artifact_run_id preserves the normal clean build path used by release tags.
 
 ## CI credentials and result meaning
 

@@ -12,9 +12,14 @@
   submission API to refuse existing drafts, preflight the inherited listing,
   create one API-owned draft, upload one package-and-image ZIP, and commit once.
 
-  A failure before commit rolls back only the draft created by this invocation.
-  Once commit has been attempted the draft is preserved because its server-side
-  state is no longer safe to infer.
+  -ResumeSubmissionId explicitly resumes one clean API-created draft after a
+  previous create response was lost. The id must match the product's only
+  pending submission; Partner Center-created or already modified drafts remain
+  ineligible.
+
+  A failure before commit rolls back only the API draft owned by this
+  invocation. Once commit has been attempted the draft is preserved because its
+  server-side state is no longer safe to infer.
 
 .NOTES
   -Publish reads AZURE_AD_TENANT_ID, AZURE_AD_APPLICATION_CLIENT_ID, and
@@ -26,6 +31,9 @@ param(
     [string]$PackagePath,
     [string]$ManifestPath = (Join-Path $PSScriptRoot '..\store\listing\screenshots.json'),
     [switch]$Publish,
+    [ValidateLength(1, 128)]
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*$')]
+    [string]$ResumeSubmissionId,
     [switch]$KeepFailedDraft,
     [ValidateRange(60, 1800)]
     [int]$PollTimeoutSeconds = 600,
@@ -37,6 +45,7 @@ $ErrorActionPreference = 'Stop'
 $DevCenterBaseUrl = 'https://manage.devcenter.microsoft.com'
 $ListingTool = Join-Path $PSScriptRoot 'store-listing.mjs'
 $createdSubmissionId = $null
+$submissionId = $null
 $commitAttempted = $false
 $workRoot = $null
 
@@ -123,6 +132,50 @@ function Test-DevCenterReadRetryStatus([int]$StatusCode) {
     return $StatusCode -eq 408 -or
         $StatusCode -eq 429 -or
         ($StatusCode -ge 500 -and $StatusCode -lt 600)
+}
+
+function Test-DevCenterAmbiguousMutationFailure([object]$Failure) {
+    $message = if ($Failure -is [Management.Automation.ErrorRecord]) {
+        [string]$Failure.Exception.Message
+    } elseif ($Failure -is [Exception]) {
+        [string]$Failure.Message
+    } else {
+        [string]$Failure
+    }
+    return $message -match 'ended before an HTTP response\.?$' -or
+        $message -match 'failed with HTTP (408|429|5\d\d)\b'
+}
+
+function Resolve-RequestedStoreSubmissionId(
+    [object]$Application,
+    [string]$ProductId,
+    [string]$RequestedId
+) {
+    $pendingId =
+        [string]$Application.pendingApplicationSubmission.id
+    if (-not [string]::IsNullOrWhiteSpace($pendingId)) {
+        if ([string]::IsNullOrWhiteSpace($RequestedId)) {
+            throw (
+                "Store product $ProductId already has pending submission " +
+                "$pendingId. The automation will not modify or delete an " +
+                'existing draft without an exact resume id.'
+            )
+        }
+        if ($pendingId -cne $RequestedId) {
+            throw (
+                "Requested Store submission $RequestedId does not match " +
+                "pending submission $pendingId."
+            )
+        }
+        return $pendingId
+    }
+    if (-not [string]::IsNullOrWhiteSpace($RequestedId)) {
+        throw (
+            "Requested Store submission $RequestedId cannot be resumed " +
+            'because the product has no pending submission.'
+        )
+    }
+    return $null
 }
 
 function Get-SafeApiError([object]$Response) {
@@ -262,6 +315,72 @@ function Invoke-DevCenterJson(
     throw "Dev Center API $Method $Path exhausted its retry policy."
 }
 
+function Resolve-IndeterminateStoreCreate(
+    [string]$ApplicationPath,
+    [string]$ApplicationId,
+    [string]$AccessToken,
+    [string]$TenantId,
+    [string]$Reason,
+    [ValidateRange(1, 10)]
+    [int]$MaxAttempts = 5
+) {
+    Write-Warning (
+        'Store draft creation response was indeterminate. Reconciling the ' +
+        'product state with safe reads instead of repeating the POST.'
+    )
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        if ($attempt -gt 1) {
+            $delay = Get-DevCenterRetryDelaySeconds $null ($attempt - 1)
+            Start-Sleep -Seconds $delay
+        }
+        try {
+            $application =
+                Invoke-DevCenterJson GET $ApplicationPath $AccessToken $TenantId
+        } catch {
+            if (-not (Test-DevCenterAmbiguousMutationFailure $_)) { throw }
+            if ($attempt -lt $MaxAttempts) { continue }
+            throw (
+                'Could not reconcile the indeterminate Store draft creation: ' +
+                $_.Exception.Message
+            )
+        }
+        if ([string]$application.id -ne $ApplicationId) {
+            throw (
+                'Store product identity changed while reconciling an ' +
+                'indeterminate draft creation.'
+            )
+        }
+        $pendingId =
+            [string]$application.pendingApplicationSubmission.id
+        if ([string]::IsNullOrWhiteSpace($pendingId)) { continue }
+
+        $encodedApplicationId = [Uri]::EscapeDataString($ApplicationId)
+        $encodedPendingId = [Uri]::EscapeDataString($pendingId)
+        $submissionPath =
+            "/v1.0/my/applications/$encodedApplicationId/submissions/$encodedPendingId"
+        $draft =
+            Invoke-DevCenterJson GET $submissionPath $AccessToken $TenantId
+        if ([string]::IsNullOrWhiteSpace([string]$draft.fileUploadUrl)) {
+            throw (
+                "Pending submission $pendingId has no API upload URL. " +
+                'Its ownership is not safe to infer, so it was not adopted.'
+            )
+        }
+        Write-Warning (
+            "Recovered API-created Store draft $pendingId after the create " +
+            'response was lost.'
+        )
+        return [pscustomobject]@{
+            id    = $pendingId
+            draft = $draft
+        }
+    }
+    throw (
+        'Store draft creation remained indeterminate after safe ' +
+        "reconciliation. Original failure: $Reason"
+    )
+}
+
 function Send-StoreUploadZip([string]$UploadUrl, [string]$ZipPath) {
     if ([string]::IsNullOrWhiteSpace($UploadUrl)) {
         throw 'Submission has no package upload URL.'
@@ -358,6 +477,7 @@ if ([string]::IsNullOrWhiteSpace($PackagePath)) {
     throw '-PackagePath is required with -Publish.'
 }
 $PackagePath = (Resolve-Path -LiteralPath $PackagePath).Path
+$ResumeSubmissionId = ([string]$ResumeSubmissionId).Trim()
 $manifest = Get-Content -LiteralPath $ManifestPath -Raw |
     ConvertFrom-Json -Depth 100
 $productId = [string]$manifest.productId
@@ -382,19 +502,14 @@ try {
     Write-Step 'Authenticating to the packaged-app submission API'
     $accessToken = Get-DevCenterAccessToken $tenantId $clientId $clientSecret
     $encodedProductId = [Uri]::EscapeDataString($productId)
-    $application = Invoke-DevCenterJson GET "/v1.0/my/applications/$encodedProductId" $accessToken $tenantId
+    $applicationPath = "/v1.0/my/applications/$encodedProductId"
+    $application =
+        Invoke-DevCenterJson GET $applicationPath $accessToken $tenantId
     $applicationId = [string]$application.id
     if ([string]::IsNullOrWhiteSpace($applicationId)) {
         throw "Store product $productId returned no application id."
     }
-    if ($application.pendingApplicationSubmission -and
-        $application.pendingApplicationSubmission.id) {
-        throw (
-            "Store product $productId already has pending submission " +
-            "$($application.pendingApplicationSubmission.id). " +
-            'The automation will not modify or delete an existing draft.'
-        )
-    }
+    $submissionId = Resolve-RequestedStoreSubmissionId $application $productId $ResumeSubmissionId
 
     $lastPublishedId =
         [string]$application.lastPublishedApplicationSubmission.id
@@ -424,20 +539,56 @@ try {
         "replaced locales $(@($preflight.replacedLocales).Count)"
     ) -ForegroundColor DarkGray
 
-    Write-Step 'Creating one API-owned Store draft'
-    $createPath = "/v1.0/my/applications/$encodedApplicationId/submissions"
-    $created = Invoke-DevCenterJson POST $createPath $accessToken $tenantId
-    $createdSubmissionId = [string]$created.id
-    if ([string]::IsNullOrWhiteSpace($createdSubmissionId)) {
-        throw 'Dev Center created a submission but returned no submission id.'
+    $draft = $null
+    $isResuming = -not [string]::IsNullOrWhiteSpace($submissionId)
+    if ($isResuming) {
+        Write-Step "Resuming explicitly selected API Store draft $submissionId"
+    } else {
+        Write-Step 'Creating one API-owned Store draft'
+        $createPath =
+            "/v1.0/my/applications/$encodedApplicationId/submissions"
+        $reconcileParameters = @{
+            ApplicationPath = $applicationPath
+            ApplicationId   = $applicationId
+            AccessToken      = $accessToken
+            TenantId         = $tenantId
+            Reason           = ''
+        }
+        $created = $null
+        try {
+            $created =
+                Invoke-DevCenterJson POST $createPath $accessToken $tenantId
+        } catch {
+            if (-not (Test-DevCenterAmbiguousMutationFailure $_)) { throw }
+            $reconcileParameters.Reason = $_.Exception.Message
+            $reconciled =
+                Resolve-IndeterminateStoreCreate @reconcileParameters
+            $submissionId = [string]$reconciled.id
+            $draft = $reconciled.draft
+        }
+        if ([string]::IsNullOrWhiteSpace($submissionId)) {
+            $submissionId = [string]$created.id
+        }
+        if ([string]::IsNullOrWhiteSpace($submissionId)) {
+            $reconcileParameters.Reason =
+                'Dev Center returned a successful create response without an id.'
+            $reconciled =
+                Resolve-IndeterminateStoreCreate @reconcileParameters
+            $submissionId = [string]$reconciled.id
+            $draft = $reconciled.draft
+        }
+        $createdSubmissionId = $submissionId
     }
-    $encodedSubmissionId = [Uri]::EscapeDataString($createdSubmissionId)
+    $encodedSubmissionId = [Uri]::EscapeDataString($submissionId)
     $submissionPath =
         "/v1.0/my/applications/$encodedApplicationId/submissions/$encodedSubmissionId"
-    $draft = Invoke-DevCenterJson GET $submissionPath $accessToken $tenantId
+    if ($null -eq $draft) {
+        $draft =
+            Invoke-DevCenterJson GET $submissionPath $accessToken $tenantId
+    }
     if ([string]::IsNullOrWhiteSpace([string]$draft.fileUploadUrl)) {
         throw (
-            "Submission $createdSubmissionId has no API upload URL. " +
+            "Submission $submissionId has no API upload URL. " +
             'Do not mix a Partner Center-created draft with this API workflow.'
         )
     }
@@ -453,6 +604,11 @@ try {
         $preparedRoot
     ) -Json
     $metadataJson = Get-Content -LiteralPath $prepared.metadataPath -Raw
+    if ($isResuming) {
+        # `prepare` rejects PendingUpload/PendingDelete state, so only a clean
+        # explicitly selected API draft becomes rollback-owned at this point.
+        $createdSubmissionId = $submissionId
+    }
 
     Write-Step 'Updating the draft metadata once'
     $updated = Invoke-DevCenterJson PUT $submissionPath $accessToken $tenantId $metadataJson
@@ -468,7 +624,7 @@ try {
     Write-Step 'Uploading the exact package and pending screenshots as one ZIP'
     Send-StoreUploadZip $uploadUrl $uploadZip
 
-    Write-Step "Committing Store submission $createdSubmissionId"
+    Write-Step "Committing Store submission $submissionId"
     $commitAttempted = $true
     $null = Invoke-DevCenterJson POST "$submissionPath/commit" $accessToken $tenantId
 
@@ -478,7 +634,7 @@ try {
             Invoke-DevCenterJson GET "$submissionPath/status" $accessToken $tenantId
         $statusName = [string]$status.status
         if ([string]::IsNullOrWhiteSpace($statusName)) {
-            throw "Submission $createdSubmissionId returned no ingestion status."
+            throw "Submission $submissionId returned no ingestion status."
         }
         Write-Host "   ingestion status: $statusName" -ForegroundColor DarkGray
         if ($statusName -eq 'CommitFailed') {
@@ -486,13 +642,13 @@ try {
             if (-not $detail) {
                 $detail = 'Partner Center reported CommitFailed without details.'
             }
-            throw "Store submission $createdSubmissionId failed ingestion: $detail"
+            throw "Store submission $submissionId failed ingestion: $detail"
         }
         if ($statusName -notin @('PendingCommit', 'CommitStarted')) { break }
         if ([DateTimeOffset]::UtcNow -ge $deadline) {
             throw (
                 "Timed out waiting for Store ingestion of submission " +
-                "$createdSubmissionId. The commit was attempted, so the draft " +
+                "$submissionId. The commit was attempted, so the draft " +
                 'was preserved for status inspection.'
             )
         }
@@ -500,7 +656,7 @@ try {
     } while ($true)
 
     Write-Host (
-        "[OK] Store submission $createdSubmissionId was accepted for " +
+        "[OK] Store submission $submissionId was accepted for " +
         "downstream processing (status: $statusName)."
     ) -ForegroundColor Green
 } catch {
