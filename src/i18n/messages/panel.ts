@@ -176,7 +176,7 @@ export const panelMessages = {
   }),
   pastePath: msg({
     id: "panel.empty.pastePath",
-    message: "or paste a path (Ctrl+V / Cmd+V)",
+    message: "or copy its path from your file manager",
   }),
   browseFolder: msg({
     id: "panel.empty.browseFolder",
@@ -187,10 +187,20 @@ export const panelMessages = {
     message: "Scanning for repositories…",
   }),
   addRepo: msg({ id: "panel.footer.addRepo", message: "+ Add repo…" }),
-  pasteShort: msg({ id: "panel.footer.pasteShort", message: "or paste a path" }),
+  or: msg({ id: "panel.footer.or", message: "or" }),
+  pasteShort: msg({ id: "panel.footer.pasteShort", message: "Paste path" }),
+  pasteBusy: msg({ id: "panel.footer.pasteBusy", message: "Pasting…" }),
   pasteTitle: msg({
     id: "panel.footer.pasteTitle",
-    message: "Copy a repository folder's path in your file manager, then paste it here",
+    message: "Paste repository paths from the clipboard ({shortcut})",
+  }),
+  pasteNoPath: msg({
+    id: "panel.footer.pasteNoPath",
+    message: "The clipboard does not contain an absolute repository path.",
+  }),
+  pasteReadFailed: msg({
+    id: "panel.footer.pasteReadFailed",
+    message: "Couldn't read the clipboard.",
   }),
   loadingFileHistory: msg({
     id: "panel.single.loadingFileHistory",

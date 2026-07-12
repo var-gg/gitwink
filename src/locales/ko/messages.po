@@ -546,11 +546,6 @@ msgid "clipboard.copy"
 msgstr "복사"
 
 #. js-lingui-explicit-id
-#: src/i18n/messages/panel.ts
-msgid "panel.footer.pasteTitle"
-msgstr "파일 관리자에서 저장소 폴더 경로를 복사한 뒤 여기에 붙여넣으세요"
-
-#. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
 msgid "clipboard.copyAiContext"
 msgstr "AI 컨텍스트로 복사"
@@ -644,6 +639,11 @@ msgstr "이 diff를 불러오지 못했습니다"
 #: src/i18n/messages/panel.ts
 msgid "panel.single.repoUnavailable"
 msgstr "이 저장소를 열지 못했습니다. 이동했거나 연결이 끊긴 드라이브에 있을 수 있습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteReadFailed"
+msgstr "클립보드를 읽지 못했습니다."
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -1288,13 +1288,13 @@ msgstr "기본 편집기에서 원본 설정 파일을 엽니다. 위 옵션 대
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
-msgid "panel.footer.pasteShort"
-msgstr "또는 경로 붙여넣기"
+msgid "panel.footer.or"
+msgstr "또는"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "panel.empty.pastePath"
-msgstr "또는 경로 붙여넣기(Ctrl+V / Cmd+V)"
+msgstr "또는 파일 관리자에서 폴더 경로를 복사하세요"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/settings.ts
@@ -1310,6 +1310,21 @@ msgstr "패널 크기"
 #: src/i18n/messages/panel.ts
 msgid "panel.fileHistory.partial"
 msgstr "일부 히스토리"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteShort"
+msgstr "경로 붙여넣기"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteTitle"
+msgstr "클립보드에서 저장소 경로 붙여넣기({shortcut})"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteBusy"
+msgstr "붙여넣는 중…"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
@@ -1771,6 +1786,11 @@ msgstr "태그된 커밋"
 #: src/i18n/messages/diff.ts
 msgid "diff.image.lfsHint"
 msgstr "실제 이미지는 Git LFS에 저장되어 있습니다. gitwink는 아직 LFS 객체를 가져오지 않으므로 미리 볼 내용이 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteNoPath"
+msgstr "클립보드에 붙여넣을 수 있는 절대 경로가 없습니다."
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts

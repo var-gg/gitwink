@@ -546,11 +546,6 @@ msgid "clipboard.copy"
 msgstr "Copy"
 
 #. js-lingui-explicit-id
-#: src/i18n/messages/panel.ts
-msgid "panel.footer.pasteTitle"
-msgstr "Copy a repository folder's path in your file manager, then paste it here"
-
-#. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
 msgid "clipboard.copyAiContext"
 msgstr "Copy as AI context"
@@ -644,6 +639,11 @@ msgstr "Couldn't load this diff"
 #: src/i18n/messages/panel.ts
 msgid "panel.single.repoUnavailable"
 msgstr "Couldn't open this repository—it may have moved or be on a disconnected drive."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteReadFailed"
+msgstr "Couldn't read the clipboard."
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -1288,13 +1288,13 @@ msgstr "Opens the raw configuration in your default editor. Most options above a
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
-msgid "panel.footer.pasteShort"
-msgstr "or paste a path"
+msgid "panel.footer.or"
+msgstr "or"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "panel.empty.pastePath"
-msgstr "or paste a path (Ctrl+V / Cmd+V)"
+msgstr "or copy its path from your file manager"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/settings.ts
@@ -1310,6 +1310,21 @@ msgstr "Panel size"
 #: src/i18n/messages/panel.ts
 msgid "panel.fileHistory.partial"
 msgstr "partial history"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteShort"
+msgstr "Paste path"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteTitle"
+msgstr "Paste repository paths from the clipboard ({shortcut})"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteBusy"
+msgstr "Pasting…"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
@@ -1771,6 +1786,11 @@ msgstr "Tagged commit"
 #: src/i18n/messages/diff.ts
 msgid "diff.image.lfsHint"
 msgstr "The actual image is stored in Git LFS. gitwink doesn't fetch LFS objects yet, so there's nothing to preview."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteNoPath"
+msgstr "The clipboard does not contain an absolute repository path."
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts

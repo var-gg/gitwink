@@ -476,7 +476,13 @@ function App() {
 
   const singleMode = selectedRepoPath != null;
   const emptyState = allRepos.length === 0 && !singleMode;
-  const { addError, browse: browseForRepo } = useRepositoryIntake({
+  const {
+    addError,
+    browse: browseForRepo,
+    pasteFromClipboard,
+    pasteShortcut,
+    pasting,
+  } = useRepositoryIntake({
     emptyState,
     dispatchCatalog: dispatchRepoCatalog,
   });
@@ -2004,6 +2010,9 @@ function App() {
             scanning={scanning}
             addError={addError}
             onBrowse={() => void browseForRepo()}
+            onPaste={() => void pasteFromClipboard()}
+            pasteShortcut={pasteShortcut}
+            pasting={pasting}
           />
         ) : (
           <>
@@ -2114,6 +2123,9 @@ function App() {
           <PanelFooter
             addError={addError}
             onAddRepo={() => void browseForRepo()}
+            onPaste={() => void pasteFromClipboard()}
+            pasteShortcut={pasteShortcut}
+            pasting={pasting}
           />
         )}
       </section>

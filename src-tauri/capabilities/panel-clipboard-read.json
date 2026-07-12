@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "panel-clipboard-read",
+  "description": "Read clipboard text only after an explicit paste action in the panel",
+  "windows": ["panel"],
+  "permissions": ["clipboard-manager:allow-read-text"]
+}

@@ -546,11 +546,6 @@ msgid "clipboard.copy"
 msgstr "コピー"
 
 #. js-lingui-explicit-id
-#: src/i18n/messages/panel.ts
-msgid "panel.footer.pasteTitle"
-msgstr "ファイルマネージャーでリポジトリのフォルダーパスをコピーし、ここに貼り付けてください"
-
-#. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
 msgid "clipboard.copyAiContext"
 msgstr "AI コンテキストとしてコピー"
@@ -644,6 +639,11 @@ msgstr "この差分を読み込めませんでした"
 #: src/i18n/messages/panel.ts
 msgid "panel.single.repoUnavailable"
 msgstr "このリポジトリを開けませんでした。移動したか、切断されたドライブにある可能性があります。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteReadFailed"
+msgstr "クリップボードを読み取れませんでした。"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -1288,13 +1288,13 @@ msgstr "既定のエディターで元の設定ファイルを開きます。上
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
-msgid "panel.footer.pasteShort"
-msgstr "またはパスを貼り付け"
+msgid "panel.footer.or"
+msgstr "または"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "panel.empty.pastePath"
-msgstr "またはパスを貼り付け（Ctrl+V / Cmd+V）"
+msgstr "またはファイルマネージャーでフォルダーのパスをコピーしてください"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/settings.ts
@@ -1310,6 +1310,21 @@ msgstr "パネルサイズ"
 #: src/i18n/messages/panel.ts
 msgid "panel.fileHistory.partial"
 msgstr "一部の履歴"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteShort"
+msgstr "パスを貼り付け"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteTitle"
+msgstr "クリップボードからリポジトリのパスを貼り付け（{shortcut}）"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteBusy"
+msgstr "貼り付け中…"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
@@ -1771,6 +1786,11 @@ msgstr "タグ付きコミット"
 #: src/i18n/messages/diff.ts
 msgid "diff.image.lfsHint"
 msgstr "実際の画像は Git LFS に保存されています。gitwink はまだ LFS オブジェクトを取得しないため、プレビューできません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.footer.pasteNoPath"
+msgstr "クリップボードに貼り付け可能な絶対パスがありません。"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts

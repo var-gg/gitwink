@@ -9,6 +9,7 @@ import {
   branchCountRetryDelay,
 } from "./BranchChip";
 import { contextMenuDismissesOnTab } from "./ContextMenu";
+import { PanelFooter, PasteRepoButton } from "./panel/PanelOnboarding";
 import { SearchBar } from "./SearchBar";
 import { SearchResultJumpAffordance } from "./TimelineWindowed";
 import {
@@ -148,5 +149,46 @@ describe("commit-search accessibility contract", () => {
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).not.toContain("aria-controls");
     expect(markup).not.toContain("aria-activedescendant");
+  });
+});
+
+describe("repository paste affordance", () => {
+  it("is an explicit action with the native shortcut visible", () => {
+    const markup = renderLocalized(
+      <PasteRepoButton
+        onPaste={noop}
+        pasteShortcut="Ctrl+V"
+        pasting={false}
+      />,
+    );
+    expect(markup).toContain("<button");
+    expect(markup).toContain("Paste path");
+    expect(markup).toContain("<kbd>Ctrl+V</kbd>");
+    expect(markup).toContain(
+      'aria-label="Paste repository paths from the clipboard (Ctrl+V)"',
+    );
+  });
+
+  it("blocks duplicate clipboard reads while one is in flight", () => {
+    const markup = renderLocalized(
+      <PasteRepoButton onPaste={noop} pasteShortcut="⌘V" pasting />,
+    );
+    expect(markup).toContain("disabled");
+    expect(markup).toContain("Pasting…");
+  });
+
+  it("announces an intake error on its own footer row", () => {
+    const markup = renderLocalized(
+      <PanelFooter
+        addError="Clipboard has no absolute path"
+        onAddRepo={noop}
+        onPaste={noop}
+        pasteShortcut="Ctrl+V"
+        pasting={false}
+      />,
+    );
+    expect(markup).toContain('class="panel-footer-actions"');
+    expect(markup).toContain('class="panel-footer-hint-error" role="status"');
+    expect(markup).toContain("Clipboard has no absolute path");
   });
 });

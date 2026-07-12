@@ -1,11 +1,16 @@
-import { useCallback, useEffect, useState, type Dispatch } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useLingui } from "@lingui/react";
 
 import { explicitAddRepo, listRepos, setPanelSticky } from "../lib/ipc";
 import type { RepoCatalogAction } from "../lib/repoCatalog";
+import {
+  parseRepositoryPathClipboard,
+  repositoryPasteShortcut,
+} from "../lib/repositoryPathPaste";
 import { panelMessages } from "../i18n/messages/panel";
 
 interface RepositoryIntakeOptions {
@@ -24,34 +29,74 @@ export function useRepositoryIntake({
   const { i18n } = useLingui();
   const [addError, setAddError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [pasting, setPasting] = useState(false);
+  const [pasteShortcut] = useState(() => repositoryPasteShortcut());
+  const errorTimerRef = useRef<number | null>(null);
+  const pasteInFlightRef = useRef(false);
 
-  const addPath = useCallback(
-    async (rawPath: string): Promise<boolean> => {
-      const trimmed = rawPath.trim();
-      if (!trimmed) return false;
-      try {
-        const repo = await explicitAddRepo(trimmed);
-        // The discovery event can beat listener registration. Publish the
-        // accepted row immediately, then replace it with its persisted id.
-        dispatchCatalog({ type: "discovered", repo });
+  const clearAddError = useCallback(() => {
+    if (errorTimerRef.current != null) {
+      window.clearTimeout(errorTimerRef.current);
+      errorTimerRef.current = null;
+    }
+    setAddError(null);
+  }, []);
+
+  const showAddError = useCallback((message: string) => {
+    if (errorTimerRef.current != null) {
+      window.clearTimeout(errorTimerRef.current);
+    }
+    setAddError(message);
+    errorTimerRef.current = window.setTimeout(() => {
+      errorTimerRef.current = null;
+      setAddError(null);
+    }, 4_000);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (errorTimerRef.current != null) {
+        window.clearTimeout(errorTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const addPaths = useCallback(
+    async (rawPaths: readonly string[]): Promise<boolean> => {
+      const paths = rawPaths.map((path) => path.trim()).filter(Boolean);
+      if (paths.length === 0) return false;
+
+      let accepted = false;
+      let lastError: string | null = null;
+      for (const path of paths) {
+        try {
+          const repo = await explicitAddRepo(path);
+          // The discovery event can beat listener registration. Publish the
+          // accepted row immediately, then replace it with its persisted id.
+          dispatchCatalog({ type: "discovered", repo });
+          accepted = true;
+        } catch (error) {
+          lastError =
+            typeof error === "string"
+              ? error
+              : error instanceof Error
+                ? error.message
+                : i18n._(panelMessages.addRepoFailed);
+        }
+      }
+
+      if (accepted) {
         void listRepos()
           .then((repos) => dispatchCatalog({ type: "replace", repos }))
           .catch(() => {});
-        setAddError(null);
-        return true;
-      } catch (error) {
-        setAddError(
-          typeof error === "string"
-            ? error
-            : error instanceof Error
-              ? error.message
-              : i18n._(panelMessages.addRepoFailed),
-        );
-        window.setTimeout(() => setAddError(null), 4_000);
-        return false;
       }
+
+      if (lastError) showAddError(lastError);
+      else if (accepted) clearAddError();
+      return accepted;
     },
-    [dispatchCatalog, i18n],
+    [clearAddError, dispatchCatalog, i18n, showAddError],
   );
 
   useEffect(() => {
@@ -70,48 +115,66 @@ export function useRepositoryIntake({
         title: i18n._(panelMessages.addRepoDialogTitle),
       });
       if (!selected) return;
-      for (const path of Array.isArray(selected) ? selected : [selected]) {
-        await addPath(path);
-      }
+      await addPaths(Array.isArray(selected) ? selected : [selected]);
     } catch {
       // Drop/paste remain available if the platform picker cannot open.
     } finally {
       setDialogOpen(false);
     }
-  }, [addPath, i18n]);
+  }, [addPaths, i18n]);
 
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
     void getCurrentWindow()
       .listen<{ type: string; paths?: string[] }>("tauri://drag-drop", (event) => {
         if (event.payload.type !== "drop") return;
-        for (const path of event.payload.paths ?? []) void addPath(path);
+        void addPaths(event.payload.paths ?? []);
       })
       .then((stop) => {
         unlisten = stop;
       });
     return () => unlisten?.();
-  }, [addPath]);
+  }, [addPaths]);
 
   useEffect(() => {
     function onPaste(event: ClipboardEvent) {
-      const target = event.target as HTMLElement | null;
       if (
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.getAttribute("contenteditable") === "true")
+        event.target instanceof Element &&
+        event.target.closest(
+          'input, textarea, [contenteditable]:not([contenteditable="false"])',
+        )
       ) {
         return;
       }
-      const text = event.clipboardData?.getData("text/plain")?.trim() ?? "";
-      if (!/^([a-zA-Z]:[\\/]|\/|~[\\/])/.test(text)) return;
+      const text = event.clipboardData?.getData("text/plain") ?? "";
+      const paths = parseRepositoryPathClipboard(text);
+      if (paths.length === 0) return;
       event.preventDefault();
-      void addPath(text);
+      void addPaths(paths);
     }
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-  }, [addPath]);
+  }, [addPaths]);
 
-  return { addError, browse };
+  const pasteFromClipboard = useCallback(async (): Promise<boolean> => {
+    if (pasteInFlightRef.current) return false;
+    pasteInFlightRef.current = true;
+    setPasting(true);
+    try {
+      const paths = parseRepositoryPathClipboard(await readText());
+      if (paths.length === 0) {
+        showAddError(i18n._(panelMessages.pasteNoPath));
+        return false;
+      }
+      return await addPaths(paths);
+    } catch {
+      showAddError(i18n._(panelMessages.pasteReadFailed));
+      return false;
+    } finally {
+      pasteInFlightRef.current = false;
+      setPasting(false);
+    }
+  }, [addPaths, i18n, showAddError]);
+
+  return { addError, browse, pasteFromClipboard, pasteShortcut, pasting };
 }
