@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Reliable explicit origin refresh.** Panel-open auto-fetch and the ↻ action
+  now share one per-repository flight instead of racing the same remote refs.
+  Manual refresh applies a 30-second Git-process timeout, reports categorized
+  failures, disables itself when `origin` is absent, and records non-secret
+  outcome and timing diagnostics in the bounded local activity log.
+
 ## [0.12.0] — 2026-07-12
 
 An agent-ready interaction and delivery release. AI tools can land the user on

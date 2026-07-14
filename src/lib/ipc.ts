@@ -145,11 +145,31 @@ export async function currentUpstreamStatus(
   });
 }
 
-/** Explicit user-initiated `git fetch origin` — bypasses the auto-fetch
- * setting and cooldown, awaits completion. Resolves to "ok" | "failed" |
- * "busy" (global concurrency cap full — try again in a moment). */
-export async function fetchRepoNow(repoPath: string): Promise<string> {
-  return invoke<string>("fetch_repo_now", { repoPath });
+export type FetchRepoResult =
+  | "ok"
+  | "in_progress"
+  | "busy"
+  | "no_origin"
+  | "authentication"
+  | "network"
+  | "ref_lock"
+  | "timeout"
+  | "unavailable"
+  | "failed";
+
+export type RepoFetchCapability = "available" | "no_origin" | "unavailable";
+
+/** Local-only preflight for whether this repository can refresh `origin`. */
+export async function repoFetchCapability(
+  repoPath: string,
+): Promise<RepoFetchCapability> {
+  return invoke<RepoFetchCapability>("repo_fetch_capability", { repoPath });
+}
+
+/** Explicit user-initiated `git fetch origin`. It bypasses cooldown, joins a
+ * same-repository auto-fetch, and returns a stable categorized outcome. */
+export async function fetchRepoNow(repoPath: string): Promise<FetchRepoResult> {
+  return invoke<FetchRepoResult>("fetch_repo_now", { repoPath });
 }
 
 /** Add a repo by absolute path (drag-drop / paste). Backend validates

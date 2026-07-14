@@ -783,7 +783,7 @@ msgstr "Fetch failed"
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "panel.fetch.failedTitle"
-msgstr "Fetch failed (offline, no origin, or another fetch in flight)—counts reflect the last successful fetch"
+msgstr "Fetch failed for an unclassified reason—counts reflect the last successful fetch"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/settings.ts
@@ -889,6 +889,11 @@ msgstr "Full"
 #: src/i18n/messages/diff.ts
 msgid "diff.image.lfsFile"
 msgstr "Git LFS file"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.refLock"
+msgstr "Git refs are busy—try again in a moment"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/updates.ts
@@ -1237,6 +1242,11 @@ msgid "panel.single.noMatchLimited"
 msgstr "No matching commits in the latest {limit} loaded for this scope. Older commits haven't been checked."
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.noOrigin"
+msgstr "No origin remote is configured"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/updates.ts
 msgid "update.noNotes"
 msgstr "No release notes were provided for this version."
@@ -1295,6 +1305,21 @@ msgstr "or"
 #: src/i18n/messages/panel.ts
 msgid "panel.empty.pastePath"
 msgstr "or copy its path from your file manager"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.authentication"
+msgstr "Origin authentication failed"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.timeout"
+msgstr "Origin fetch timed out after 30 seconds"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.network"
+msgstr "Origin is unreachable"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/settings.ts
@@ -1801,6 +1826,11 @@ msgstr "The diff can't be shown."
 #: src/i18n/messages/repositories.ts
 msgid "settings.repositories.confirmationExpired"
 msgstr "The repository changed after you reviewed it. Review the current repository again before confirming."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.unavailable"
+msgstr "The repository or system Git is unavailable"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/repositories.ts

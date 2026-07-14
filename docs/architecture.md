@@ -31,12 +31,14 @@
   pushes, or rewrites — it cannot alter or lose your repo. `git.rs` must never
   call any `git2` API that mutates a repo or touches the network (no commits,
   no fetch, no merges, no working-tree writes); libgit2 here is built without
-  a network transport. The one network touch against a repo is the panel-open
-  fetch (on by default, toggleable) — it shells out to the system `git` in
-  `fetch.rs`, pinned to `origin` with a branch-only refspec so it can only
-  write `refs/remotes/origin/*`, with repo hooks disabled and submodule
-  recursion off, and still never touches branches, the working tree, or
-  history.
+  a network transport. The one network operation against a repo is an
+  `origin` fetch, triggered on panel-open (on by default, toggleable) or by the
+  explicit ↻ action. It shells out to the system `git` through `fetch.rs`,
+  pinned to `origin` with a branch-only refspec so it can only write
+  `refs/remotes/origin/*`, with repo hooks disabled and submodule recursion
+  off, and still never touches branches, the working tree, or history. Fetches
+  are single-flight per canonical repository: a manual request joins an
+  existing automatic request instead of racing its ref transaction.
 - **No telemetry, no analytics, no auto-uploads**, and no repo data ever
   leaves the machine to us. The only outbound network is the self-updater
   (GitHub Releases for standalone/Scoop installs, the device's Microsoft Store
@@ -53,6 +55,8 @@
 - SQLite cache: `%APPDATA%\gitwink\cache.db` (Windows) /
   `~/Library/Application Support/gitwink/cache.db` (macOS)
 - Settings JSON: same directory, `settings.json`
+- Bounded local activity log: same directory, `scan.log` (discovery summaries
+  and categorized fetch outcomes; no remote URL or raw Git stderr)
 
 ## Focused contracts
 

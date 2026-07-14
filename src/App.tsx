@@ -38,7 +38,6 @@ import {
   currentUpstreamStatus,
   dismissPanel,
   excludeRepo,
-  fetchRepoNow,
   fileHistory as fetchFileHistory,
   getBranchSelection,
   getHistoryIndexStatus,
@@ -82,6 +81,7 @@ import {
 import { timelineSnapshotFilterKey } from "./lib/useTimelineWindow";
 import { isSearchResultCurrent } from "./lib/searchResolution";
 import { useContextualFacets } from "./hooks/useContextualFacets";
+import { useOriginFetch } from "./hooks/useOriginFetch";
 import { usePanelViewportClass } from "./hooks/usePanelViewportClass";
 import { usePanelWindowState } from "./hooks/usePanelWindowState";
 import { useRepositoryIntake } from "./hooks/useRepositoryIntake";
@@ -260,15 +260,6 @@ function App() {
   // fetch-age) depend on this, NOT on every summon, so they refresh exactly
   // when refs move and stay cheap on a plain re-show.
   const [refsNonce, setRefsNonce] = useState(0);
-
-  // Explicit "fetch now" button state — idle → fetching → (ok|failed|busy),
-  // decaying back to idle so the glyph doesn't stick. Presentation is pinned
-  // to the repo that was actually fetched: switching repos resets to idle
-  // (below), and a resolving fetch for a repo you've left is dropped.
-  const [fetchNow, setFetchNow] = useState<
-    "idle" | "fetching" | "ok" | "failed" | "busy"
-  >("idle");
-  const fetchNowTimerRef = useRef<number | null>(null);
 
   // File-history scope: when set, single-repo mode shows the commits that
   // touched this file (a live capped walk), ignoring the branch/author/time
@@ -475,6 +466,20 @@ function App() {
   }, [updateModal]);
 
   const singleMode = selectedRepoPath != null;
+  const refreshRefsAfterFetch = useCallback(
+    () => setRefsNonce((nonce) => nonce + 1),
+    [],
+  );
+  const {
+    state: fetchNow,
+    capability: fetchCapability,
+    runFetch: runFetchNow,
+  } = useOriginFetch({
+    repoPath: selectedRepoPath,
+    enabled: singleMode,
+    refreshNonce,
+    onFetched: refreshRefsAfterFetch,
+  });
   const emptyState = allRepos.length === 0 && !singleMode;
   const {
     addError,
@@ -1135,43 +1140,6 @@ function App() {
   }, [pushView]);
 
   useControlDelivery(applyControlDelivery);
-
-  // Explicit fetch: await the backend one-shot, then bump refsNonce so the
-  // upstream badge re-pulls (fetch-age → fresh, ↑↓ recomputed). The result
-  // glyph decays back to idle after a beat. Reads the repo via the live ref
-  // so a stale closure can't fetch a previously-viewed repo — and the RESULT
-  // only lands if that repo is still the one on screen (a ✓ must never claim
-  // freshness for a repo that wasn't fetched).
-  const runFetchNow = useCallback(async () => {
-    const repo = selectedRepoPathRef.current;
-    if (!repo) return;
-    // A newer run owns the glyph — a previous run's decay timer must not
-    // wipe this run's result early.
-    if (fetchNowTimerRef.current != null) {
-      window.clearTimeout(fetchNowTimerRef.current);
-      fetchNowTimerRef.current = null;
-    }
-    setFetchNow("fetching");
-    let res: string;
-    try {
-      res = await fetchRepoNow(repo);
-    } catch {
-      res = "failed";
-    }
-    const current = selectedRepoPathRef.current;
-    if (current == null || !sameCanonicalPath(current, repo)) return; // repo left — drop
-    setFetchNow(res === "ok" ? "ok" : res === "busy" ? "busy" : "failed");
-    if (res === "ok") setRefsNonce((n) => n + 1);
-    fetchNowTimerRef.current = window.setTimeout(() => {
-      fetchNowTimerRef.current = null;
-      setFetchNow((s) => (s === "fetching" ? s : "idle"));
-    }, 2600);
-  }, []);
-
-  // Repo switch: whatever the button was showing belonged to the old repo.
-  useEffect(() => {
-    setFetchNow("idle");
-  }, [selectedRepoPath]);
 
   const togglePanelPinned = useCallback(async () => {
     const next = !pinned;
@@ -1919,6 +1887,7 @@ function App() {
           upstream={upstream}
           showRepoSync={singleMode && !fileHistory && !searchOpen}
           fetchNow={fetchNow}
+          fetchCapability={fetchCapability}
           onFetchNow={() => void runFetchNow()}
           searchOpen={searchOpen}
           onToggleSearch={() => (searchOpen ? closeSearch() : openSearch())}

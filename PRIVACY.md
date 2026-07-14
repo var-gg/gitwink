@@ -40,6 +40,10 @@ your user profile (`%APPDATA%\gg.var.gitwink` on Windows):
   paints quickly.
 - `settings.json` — your preferences (panel position, pinned
   repositories, update-check mode, the auto-fetch toggle, and similar).
+- `scan.log` — a bounded local activity log containing discovery summaries
+  and categorized fetch outcomes. Fetch entries contain the local repository
+  path, trigger, outcome category, and elapsed time, but never the remote URL,
+  raw Git stderr, or credentials.
 
 These files never leave your computer. Uninstalling gitwink or deleting
 that folder removes them.
@@ -61,14 +65,16 @@ both under your control:
    triggers: automatically as the panel opens _(on by default; turn it off in
    Settings → Auto-fetch or `settings.json`)_, and manually via the ↻ button
    next to the branch chip _(user-initiated, so it works regardless of the
-   auto-fetch toggle)_. Both triggers run the identical invocation: your
-   system `git` with your existing Git credentials, pinned to that
-   repository's `origin` remote with a branch-only refspec — gitwink adds no
-   destination of its own and sends nothing beyond what a normal fetch
-   negotiates (e.g. which commit IDs you already have). Locally it updates
-   only the remote-tracking mirror (`refs/remotes/origin/*`); it never touches
-   your branches, working tree, or history, and never pushes, merges, or
-   rewrites. A repository without an `origin` remote isn't fetched.
+   auto-fetch toggle)_. Both triggers use the same hardened invocation; if an
+   automatic fetch is already running for that repository, the manual action
+   joins it instead of starting a competing process. The invocation uses your
+   system `git` with your existing Git credentials, pinned to that repository's
+   `origin` remote with a branch-only refspec — gitwink adds no destination of
+   its own and sends nothing beyond what a normal fetch negotiates (e.g. which
+   commit IDs you already have). Locally it updates only the remote-tracking
+   mirror (`refs/remotes/origin/*`); it never touches your branches, working
+   tree, or history, and never pushes, merges, or rewrites. A repository
+   without an `origin` remote isn't fetched.
 
 ## Third-party components
 

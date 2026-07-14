@@ -1,11 +1,11 @@
 import type { UpdateCheckNotice, UpstreamStatus } from "../../types";
+import type { RepoFetchCapability } from "../../lib/ipc";
+import type { FetchNowState } from "../../hooks/useOriginFetch";
 import type { I18n } from "@lingui/core";
 import { useLingui } from "@lingui/react";
 
 import { panelMessages as m } from "../../i18n/messages/panel";
 import { translate } from "../../i18n/translate";
-
-export type FetchNowState = "idle" | "fetching" | "ok" | "failed" | "busy";
 
 interface Props {
   updateVersion: string | null;
@@ -19,6 +19,7 @@ interface Props {
   upstream: UpstreamStatus | null;
   showRepoSync: boolean;
   fetchNow: FetchNowState;
+  fetchCapability: RepoFetchCapability | null;
   onFetchNow: () => void;
   searchOpen: boolean;
   onToggleSearch: () => void;
@@ -46,6 +47,7 @@ export function PanelChromeRow({
   upstream,
   showRepoSync,
   fetchNow,
+  fetchCapability,
   onFetchNow,
   searchOpen,
   onToggleSearch,
@@ -153,7 +155,11 @@ export function PanelChromeRow({
         ) : null}
         {showRepoSync && upstream && <UpstreamBadge status={upstream} />}
         {showRepoSync && (
-          <FetchNowButton state={fetchNow} onFetch={onFetchNow} />
+          <FetchNowButton
+            state={fetchNow}
+            fetchCapability={fetchCapability}
+            onFetch={onFetchNow}
+          />
         )}
       </div>
 
@@ -219,49 +225,96 @@ export function updateCheckNoticeLabel(
   }
 }
 
+function fetchNowLabel(i18n: I18n, state: FetchNowState): string {
+  switch (state) {
+    case "idle":
+      return i18n._(m.fetchNow);
+    case "fetching":
+      return i18n._(m.fetchFetching);
+    case "ok":
+      return i18n._(m.fetchCurrent);
+    case "in_progress":
+    case "busy":
+      return i18n._(m.fetchBusy);
+    case "no_origin":
+      return i18n._(m.fetchNoOrigin);
+    case "authentication":
+      return i18n._(m.fetchAuthentication);
+    case "network":
+      return i18n._(m.fetchNetwork);
+    case "ref_lock":
+      return i18n._(m.fetchRefLock);
+    case "timeout":
+      return i18n._(m.fetchTimeout);
+    case "unavailable":
+      return i18n._(m.fetchUnavailable);
+    case "failed":
+      return i18n._(m.fetchFailed);
+  }
+}
+
 function FetchNowButton({
   state,
+  fetchCapability,
   onFetch,
 }: {
   state: FetchNowState;
+  fetchCapability: RepoFetchCapability | null;
   onFetch: () => void;
 }) {
   const { i18n } = useLingui();
-  const failed = state === "failed" || state === "busy";
-  const label =
-    state === "fetching"
-      ? i18n._(m.fetchFetching)
-      : state === "ok"
-        ? i18n._(m.fetchCurrent)
-        : state === "busy"
-          ? i18n._(m.fetchBusy)
-          : state === "failed"
-            ? i18n._(m.fetchFailed)
-            : i18n._(m.fetchNow);
+  const effectiveState =
+    fetchCapability === "no_origin"
+      ? "no_origin"
+      : fetchCapability === "unavailable"
+        ? "unavailable"
+        : state;
+  const failed = [
+    "authentication",
+    "network",
+    "ref_lock",
+    "timeout",
+    "unavailable",
+    "failed",
+  ].includes(effectiveState);
+  const label = fetchNowLabel(i18n, effectiveState);
   const title =
-    state === "fetching"
+    effectiveState === "fetching"
       ? i18n._(m.fetchFetchingTitle)
-      : state === "ok"
+      : effectiveState === "ok"
         ? i18n._(m.fetchCurrentTitle)
-        : state === "busy"
+        : effectiveState === "busy" || effectiveState === "in_progress"
           ? i18n._(m.fetchBusyTitle)
-          : state === "failed"
-            ? i18n._(m.fetchFailedTitle)
-            : i18n._(m.fetchNowTitle);
+          : effectiveState === "idle"
+            ? i18n._(m.fetchNowTitle)
+            : label;
+  const disabled =
+    fetchCapability !== "available" ||
+    effectiveState === "fetching" ||
+    effectiveState === "in_progress" ||
+    effectiveState === "no_origin";
+  const glyph =
+    effectiveState === "ok"
+      ? "✓"
+      : effectiveState === "no_origin"
+        ? "–"
+        : failed
+          ? "!"
+          : "↻";
   return (
     <button
       type="button"
       className={
         "fetch-now-btn" +
-        (state === "fetching" ? " fetching" : "") +
+        (effectiveState === "fetching" ? " fetching" : "") +
         (failed ? " failed" : "")
       }
-      disabled={state === "fetching"}
+      disabled={disabled}
       onClick={onFetch}
       aria-label={label}
       title={title}
     >
-      {state === "ok" ? "✓" : failed ? "!" : "↻"}
+      {glyph}
     </button>
   );
 }

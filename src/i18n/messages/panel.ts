@@ -451,6 +451,30 @@ export const panelMessages = {
   }),
   fetchBusy: msg({ id: "panel.fetch.busy", message: "Another fetch is running" }),
   fetchFailed: msg({ id: "panel.fetch.failed", message: "Fetch failed" }),
+  fetchNoOrigin: msg({
+    id: "panel.fetch.noOrigin",
+    message: "No origin remote is configured",
+  }),
+  fetchAuthentication: msg({
+    id: "panel.fetch.authentication",
+    message: "Origin authentication failed",
+  }),
+  fetchNetwork: msg({
+    id: "panel.fetch.network",
+    message: "Origin is unreachable",
+  }),
+  fetchRefLock: msg({
+    id: "panel.fetch.refLock",
+    message: "Git refs are busy—try again in a moment",
+  }),
+  fetchTimeout: msg({
+    id: "panel.fetch.timeout",
+    message: "Origin fetch timed out after 30 seconds",
+  }),
+  fetchUnavailable: msg({
+    id: "panel.fetch.unavailable",
+    message: "The repository or system Git is unavailable",
+  }),
   fetchNow: msg({ id: "panel.fetch.now", message: "Fetch origin now" }),
   fetchFetchingTitle: msg({
     id: "panel.fetch.fetchingTitle",
@@ -467,7 +491,7 @@ export const panelMessages = {
   fetchFailedTitle: msg({
     id: "panel.fetch.failedTitle",
     message:
-      "Fetch failed (offline, no origin, or another fetch in flight)—counts reflect the last successful fetch",
+      "Fetch failed for an unclassified reason—counts reflect the last successful fetch",
   }),
   fetchNowTitle: msg({
     id: "panel.fetch.nowTitle",

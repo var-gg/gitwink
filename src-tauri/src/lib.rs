@@ -89,7 +89,7 @@ pub fn run() {
             // stale disk while a debounced broadcast was in flight).
             app.manage(commands::LiveSettings::from_disk(app.handle()));
             app.manage(commands::ChangedFilesCache::default());
-            app.manage(fetch::FetchCooldown::default());
+            app.manage(fetch::FetchCoordinator::default());
             app.manage(discovery_orchestrator::ScanState::default());
             app.manage(Arc::new(file_history_jobs::FileHistoryJobs::default()));
 
@@ -463,6 +463,7 @@ pub fn run() {
             commands::set_auto_fetch_on_show,
             commands::ack_auto_fetch_notice,
             commands::maybe_fetch_repo,
+            commands::repo_fetch_capability,
             commands::fetch_repo_now,
             commands::repo_refs_fingerprint,
             commands::open_settings_file,

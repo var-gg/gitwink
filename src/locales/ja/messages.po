@@ -783,7 +783,7 @@ msgstr "fetch に失敗"
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "panel.fetch.failedTitle"
-msgstr "fetch に失敗しました（オフライン、origin なし、または別の fetch を実行中）。件数は最後の成功時点です"
+msgstr "分類できない理由で fetch に失敗しました。件数は最後の成功時点です"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/settings.ts
@@ -889,6 +889,11 @@ msgstr "全体"
 #: src/i18n/messages/diff.ts
 msgid "diff.image.lfsFile"
 msgstr "Git LFS ファイル"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.refLock"
+msgstr "Git ref が使用中です。しばらくしてから再試行してください"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/updates.ts
@@ -1237,6 +1242,11 @@ msgid "panel.single.noMatchLimited"
 msgstr "この範囲で最近読み込んだ {limit}件のコミットには一致するものがありません。古いコミットは未確認です。"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.noOrigin"
+msgstr "origin リモートが設定されていません"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/updates.ts
 msgid "update.noNotes"
 msgstr "このバージョンのリリースノートはありません。"
@@ -1295,6 +1305,21 @@ msgstr "または"
 #: src/i18n/messages/panel.ts
 msgid "panel.empty.pastePath"
 msgstr "またはファイルマネージャーでフォルダーのパスをコピーしてください"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.authentication"
+msgstr "origin の認証に失敗しました"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.timeout"
+msgstr "origin の fetch が30秒でタイムアウトしました"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.network"
+msgstr "origin に接続できません"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/settings.ts
@@ -1801,6 +1826,11 @@ msgstr "差分を表示できません。"
 #: src/i18n/messages/repositories.ts
 msgid "settings.repositories.confirmationExpired"
 msgstr "確認後にリポジトリが変更されました。確定する前に現在のリポジトリをもう一度確認してください。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.unavailable"
+msgstr "リポジトリまたはシステム Git を利用できません"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/repositories.ts

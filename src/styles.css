@@ -261,6 +261,10 @@ body,
 .fetch-now-btn:hover:not(:disabled) {
   opacity: 1;
 }
+.fetch-now-btn:disabled:not(.fetching) {
+  cursor: not-allowed;
+  opacity: 0.25;
+}
 .fetch-now-btn.fetching {
   opacity: 0.9;
   animation: fetch-now-spin 0.9s linear infinite;

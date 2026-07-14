@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
@@ -1921,48 +1921,97 @@ pub fn maybe_fetch_repo(app: AppHandle, repo_path: String) {
     if !live.snapshot().auto_fetch_on_show.unwrap_or(true) {
         return;
     }
-    let Some(cooldown) = app.try_state::<crate::fetch::FetchCooldown>() else {
+    let Some(coordinator) = app.try_state::<crate::fetch::FetchCoordinator>() else {
         return;
     };
     let repo = std::path::PathBuf::from(&repo_path);
-    // Claim a per-repo cooldown slot + a global concurrency slot. The guard
-    // is moved into the blocking task and releases the slot when it returns.
-    let Some(guard) = cooldown.try_claim(&repo, crate::fetch::FETCH_COOLDOWN) else {
+    // Claim cooldown + per-repo single-flight + a global concurrency slot.
+    // The guard publishes the terminal result to any manual waiter.
+    let Some(guard) = coordinator.try_claim(&repo, crate::fetch::FETCH_COOLDOWN) else {
         return;
     };
+    let fetch_app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let _guard = guard;
-        // Auto path: fire-and-forget — outcome intentionally ignored.
-        let _ = crate::fetch::git_fetch_one_shot(&repo);
+        let started = Instant::now();
+        let outcome = crate::fetch::git_fetch_one_shot(&repo, crate::fetch::AUTO_FETCH_TIMEOUT);
+        guard.finish(outcome);
+        if outcome != crate::fetch::FetchOutcome::Ok {
+            crate::fetch::record_fetch_outcome(
+                &fetch_app,
+                "auto",
+                &repo,
+                outcome,
+                started.elapsed(),
+            );
+        }
     });
+}
+
+/// Cheap, local preflight used to disable the manual refresh action for a
+/// repository that has no configured `origin`. No network is contacted.
+#[tauri::command]
+pub async fn repo_fetch_capability(
+    repo_path: String,
+) -> Result<crate::fetch::FetchCapability, String> {
+    if repo_path.trim().is_empty() {
+        return Ok(crate::fetch::FetchCapability::Unavailable);
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::fetch::repo_fetch_capability(Path::new(&repo_path))
+    })
+    .await
+    .map_err(|error| error.to_string())
 }
 
 /// Explicit, user-initiated fetch — the ↻ button next to the upstream badge.
 /// Unlike `maybe_fetch_repo` this bypasses the `auto_fetch_on_show` setting
 /// (a manual click IS the alternative for people who turned auto off) and the
-/// per-repo cooldown (the user asked *now*), but still respects the global
-/// concurrency cap and stamps the cooldown so the next auto pass waits a full
-/// window. Runs the exact same hardened one-shot fetch, awaits completion,
-/// and reports: "ok" (git exited 0), "failed" (it didn't), "busy" (cap full).
+/// per-repo cooldown (the user asked *now*). It joins an existing auto-fetch
+/// for the same repository, otherwise starts a 30-second manual one-shot. A
+/// global cap still bounds work across different repositories. The structured
+/// result lets the UI distinguish auth, network, ref-lock, and timeout errors.
 #[tauri::command]
-pub async fn fetch_repo_now(app: AppHandle, repo_path: String) -> Result<String, String> {
+pub async fn fetch_repo_now(
+    app: AppHandle,
+    repo_path: String,
+) -> Result<crate::fetch::FetchOutcome, String> {
     if repo_path.trim().is_empty() {
         return Err("empty repo path".into());
     }
-    let Some(cooldown) = app.try_state::<crate::fetch::FetchCooldown>() else {
+    let Some(coordinator) = app.try_state::<crate::fetch::FetchCoordinator>() else {
         return Err("fetch state unavailable".into());
     };
     let repo = std::path::PathBuf::from(&repo_path);
-    let Some(guard) = cooldown.claim_forced(&repo) else {
-        return Ok("busy".into());
+    let claim = coordinator.claim_forced(&repo);
+    let started = Instant::now();
+    let (trigger, outcome) = match claim {
+        crate::fetch::ManualFetchClaim::Start(guard) => {
+            let worker_repo = repo.clone();
+            let outcome = tauri::async_runtime::spawn_blocking(move || {
+                let outcome = crate::fetch::git_fetch_one_shot(
+                    &worker_repo,
+                    crate::fetch::MANUAL_FETCH_TIMEOUT,
+                );
+                guard.finish(outcome)
+            })
+            .await
+            .map_err(|error| error.to_string())?;
+            ("manual", outcome)
+        }
+        crate::fetch::ManualFetchClaim::Join(flight) => {
+            let outcome = tauri::async_runtime::spawn_blocking(move || {
+                flight
+                    .wait_timeout(crate::fetch::MANUAL_FETCH_TIMEOUT)
+                    .unwrap_or(crate::fetch::FetchOutcome::InProgress)
+            })
+            .await
+            .map_err(|error| error.to_string())?;
+            ("manual_join", outcome)
+        }
+        crate::fetch::ManualFetchClaim::Busy => ("manual", crate::fetch::FetchOutcome::Busy),
     };
-    let ok = tauri::async_runtime::spawn_blocking(move || {
-        let _guard = guard;
-        crate::fetch::git_fetch_one_shot(&repo)
-    })
-    .await
-    .map_err(|e| e.to_string())?;
-    Ok(if ok { "ok".into() } else { "failed".into() })
+    crate::fetch::record_fetch_outcome(&app, trigger, &repo, outcome, started.elapsed());
+    Ok(outcome)
 }
 
 /// Reveal `settings.json` in the user's default editor (or the OS file
