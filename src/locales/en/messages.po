@@ -417,8 +417,18 @@ msgstr "Check {provider} at startup and every 24 hours. A tray dot appears when 
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
+msgid "panel.fetch.checking"
+msgstr "Checking origin"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
 msgid "panel.chrome.updateChecking"
 msgstr "Checking updates…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.checkingTitle"
+msgstr "Checking whether this repository has an origin remote"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/settings.ts
@@ -893,7 +903,7 @@ msgstr "Git LFS file"
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "panel.fetch.refLock"
-msgstr "Git refs are busy—try again in a moment"
+msgstr "Git refs stayed busy after retries"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/updates.ts
@@ -1313,8 +1323,13 @@ msgstr "Origin authentication failed"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
+msgid "panel.fetch.inProgress"
+msgstr "Origin fetch is still running"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
 msgid "panel.fetch.timeout"
-msgstr "Origin fetch timed out after 30 seconds"
+msgstr "Origin fetch timed out"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -1821,6 +1836,11 @@ msgstr "The clipboard does not contain an absolute repository path."
 #: src/i18n/messages/diff.ts
 msgid "diff.cannotShow"
 msgstr "The diff can't be shown."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.inProgressTitle"
+msgstr "The existing origin fetch is still running"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/repositories.ts

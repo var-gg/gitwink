@@ -37,8 +37,14 @@
   pinned to `origin` with a branch-only refspec so it can only write
   `refs/remotes/origin/*`, with repo hooks disabled and submodule recursion
   off, and still never touches branches, the working tree, or history. Fetches
-  are single-flight per canonical repository: a manual request joins an
-  existing automatic request instead of racing its ref transaction.
+  are single-flight per common Git directory: linked worktrees and a manual
+  request join an existing automatic request instead of racing its ref
+  transaction. Repository resolution, origin preflight, bounded ref-lock
+  retries and transfer all share one absolute deadline (30 seconds manual,
+  150 seconds automatic). Timeout cleanup owns the complete Git helper process
+  tree. Started/completed flight events update the panel, and every success is
+  also scheduled through the watcher debounce lane so a missed OS event cannot
+  leave the cache stale.
 - **No telemetry, no analytics, no auto-uploads**, and no repo data ever
   leaves the machine to us. The only outbound network is the self-updater
   (GitHub Releases for standalone/Scoop installs, the device's Microsoft Store
@@ -56,7 +62,8 @@
   `~/Library/Application Support/gitwink/cache.db` (macOS)
 - Settings JSON: same directory, `settings.json`
 - Bounded local activity log: same directory, `scan.log` (discovery summaries
-  and categorized fetch outcomes; no remote URL or raw Git stderr)
+  plus categorized fetch flight, attempt and timing diagnostics; no remote URL
+  or raw Git stderr)
 
 ## Focused contracts
 

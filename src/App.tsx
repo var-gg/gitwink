@@ -250,6 +250,9 @@ function App() {
   // author facet, and the single-repo commits effect all depend on it, so
   // re-showing the panel re-pulls (covering anything the watcher missed).
   const [refreshNonce, setRefreshNonce] = useState(0);
+  // Narrow capability refresh: origin presence is re-probed on repository
+  // change and panel summon, never on every timeline invalidation.
+  const [fetchCapabilityNonce, setFetchCapabilityNonce] = useState(0);
   // Cache-only history publication refresh. Unlike refreshNonce this never
   // authorizes another legacy Git fleet walk.
   const [historyRefreshNonce, setHistoryRefreshNonce] = useState(0);
@@ -274,6 +277,10 @@ function App() {
   > | null>(null);
   const [fileHistoryError, setFileHistoryError] = useState(false);
   const fileHistoryOperationRef = useRef(0);
+  const [fileHistoryRefsFingerprint, setFileHistoryRefsFingerprint] = useState<{
+    scope: string;
+    fingerprint: string;
+  } | null>(null);
 
   // The exact target stays injected until the user navigates away, even when
   // it sits outside the normal bounded single-repo snapshot.
@@ -466,10 +473,10 @@ function App() {
   }, [updateModal]);
 
   const singleMode = selectedRepoPath != null;
-  const refreshRefsAfterFetch = useCallback(
-    () => setRefsNonce((nonce) => nonce + 1),
-    [],
-  );
+  const refreshAfterFetch = useCallback(() => {
+    setRefreshNonce((nonce) => nonce + 1);
+    setRefsNonce((nonce) => nonce + 1);
+  }, []);
   const {
     state: fetchNow,
     capability: fetchCapability,
@@ -477,8 +484,8 @@ function App() {
   } = useOriginFetch({
     repoPath: selectedRepoPath,
     enabled: singleMode,
-    refreshNonce,
-    onFetched: refreshRefsAfterFetch,
+    capabilityNonce: fetchCapabilityNonce,
+    onFetched: refreshAfterFetch,
   });
   const emptyState = allRepos.length === 0 && !singleMode;
   const {
@@ -742,6 +749,7 @@ function App() {
       unShown = await onPanelShown(() => {
         if (!mounted) return;
         setRefreshNonce((n) => n + 1);
+        setFetchCapabilityNonce((n) => n + 1);
         // Single-repo mode only (repo != null): optionally fetch the viewed
         // repo so a teammate's just-pushed commit surfaces. The backend gates
         // on the auto_fetch_on_show setting + a per-repo cooldown and runs it
@@ -1356,6 +1364,38 @@ function App() {
     fileHistory,
   ]);
 
+  // Fingerprint refs separately from the expensive file walk. A fetch success
+  // and its watcher echo can both bump refsNonce; an identical fingerprint
+  // preserves this state object, so the second signal cannot cancel/restart a
+  // 50k-commit history job.
+  useEffect(() => {
+    if (!singleMode || !selectedRepoPath) return;
+    if (!fileHistory || fileHistory.repoPath !== selectedRepoPath) return;
+    let cancelled = false;
+    const { repoPath, filePath } = fileHistory;
+    const scope = `${repoPath}\u0000${filePath}`;
+    void repoRefsFingerprint(repoPath, null)
+      .then((fingerprint) => {
+        if (cancelled) return;
+        setFileHistoryRefsFingerprint((current) =>
+          current?.scope === scope && current.fingerprint === fingerprint
+            ? current
+            : { scope, fingerprint },
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFileHistoryRefsFingerprint({
+            scope,
+            fingerprint: `unavailable:${refsNonce}`,
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [singleMode, selectedRepoPath, fileHistory, refsNonce]);
+
   // ----- file-history commits (dedicated effect) -----
   // The capped history walk is the panel's most expensive single query (up
   // to 50k commits × two tree lookups), so it re-runs ONLY when its inputs
@@ -1367,6 +1407,8 @@ function App() {
     if (!fileHistory || fileHistory.repoPath !== selectedRepoPath) return;
     let cancelled = false;
     const { repoPath, filePath } = fileHistory;
+    const scope = `${repoPath}\u0000${filePath}`;
+    if (fileHistoryRefsFingerprint?.scope !== scope) return;
     const operationId = `${Date.now().toString(36)}-${(
       ++fileHistoryOperationRef.current
     ).toString(36)}`;
@@ -1402,7 +1444,12 @@ function App() {
       cancelled = true;
       void cancelFileHistory(operationId, FILE_HISTORY_FLOW_ID).catch(() => {});
     };
-  }, [singleMode, selectedRepoPath, fileHistory, refsNonce]);
+  }, [
+    singleMode,
+    selectedRepoPath,
+    fileHistory,
+    fileHistoryRefsFingerprint,
+  ]);
 
   // ----- `/` (or Ctrl+F): summon the commit search bar -----
   useEffect(() => {

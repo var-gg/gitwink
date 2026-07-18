@@ -1,38 +1,145 @@
-use std::io::Read;
-use std::path::Path;
-use std::process::{Command, Stdio};
-use std::sync::mpsc::{self, Receiver};
-use std::time::{Duration, Instant};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::path::{Component, Path, PathBuf};
+use std::process::Command;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-
+use super::child_process::{run_command, CommandError, Deadline};
 use super::{FetchCapability, FetchOutcome};
 
 const MAX_CAPTURED_STDERR: usize = 16 * 1024;
-const STDERR_COLLECTION_GRACE: Duration = Duration::from_millis(200);
+const MAX_CAPTURED_PATH: usize = 8 * 1024;
+const MAX_FETCH_ATTEMPTS: u8 = 3;
 
-pub fn repo_fetch_capability(repo: &Path) -> FetchCapability {
-    origin_availability(repo)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FetchTarget {
+    pub key: PathBuf,
 }
 
-/// Run one hardened, non-interactive system-Git fetch. The explicit remote,
-/// empty refmap, and branch-only destination ensure this can update only
-/// `refs/remotes/origin/*`; it never touches local branches, tags, the index,
-/// working tree, or submodules.
-pub fn git_fetch_one_shot(repo: &Path, timeout: Duration) -> FetchOutcome {
-    match origin_availability(repo) {
-        FetchCapability::NoOrigin => return FetchOutcome::NoOrigin,
-        FetchCapability::Unavailable => return FetchOutcome::Unavailable,
-        FetchCapability::Available => {}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FetchRun {
+    pub outcome: FetchOutcome,
+    pub attempts: u8,
+}
+
+/// Resolve the common Git directory through a killable system-Git child.
+/// `git2::Repository::discover` and filesystem canonicalization can block in
+/// the caller on an offline UNC path; this resolver is covered by the same
+/// absolute deadline as the eventual fetch.
+pub fn resolve_fetch_target(repo: &Path, deadline: Deadline) -> Result<FetchTarget, FetchOutcome> {
+    let mut command = git_command(repo);
+    command.args(["rev-parse", "--show-toplevel", "--git-common-dir"]);
+    let output = run_command(command, deadline, MAX_CAPTURED_PATH, MAX_CAPTURED_STDERR)
+        .map_err(map_command_error)?;
+    if !output.status.success() {
+        return Err(classify_failure(&output.stderr));
+    }
+
+    let Some(common) = output
+        .stdout
+        .lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+    else {
+        return Err(FetchOutcome::Unavailable);
+    };
+    let common = Path::new(common.trim_end_matches(['\r', '\n']));
+    let joined = if common.is_absolute() {
+        common.to_path_buf()
+    } else {
+        repo.join(common)
+    };
+    Ok(FetchTarget {
+        key: coordinator_key(&joined),
+    })
+}
+
+/// Cheap, local-only capability probe with its own short absolute deadline.
+/// Stdout is discarded so a credential-bearing remote URL is never retained.
+pub fn repo_fetch_capability(repo: &Path, deadline: Deadline) -> FetchCapability {
+    let mut command = git_command(repo);
+    command.args(["config", "--local", "--get", "remote.origin.url"]);
+    match run_command(command, deadline, 0, MAX_CAPTURED_STDERR) {
+        Ok(output) if output.status.success() => FetchCapability::Available,
+        Ok(output) if output.stderr.trim().is_empty() => FetchCapability::NoOrigin,
+        Ok(output) => match classify_failure(&output.stderr) {
+            FetchOutcome::NoOrigin => FetchCapability::NoOrigin,
+            _ => FetchCapability::Unavailable,
+        },
+        Err(_) => FetchCapability::Unavailable,
+    }
+}
+
+/// Run one hardened `origin` fetch under an already-started absolute deadline.
+/// Only transient ref-lock collisions are retried, and every backoff consumes
+/// the same deadline budget as repository resolution and preflight.
+pub fn git_fetch_one_shot(repo: &Path, deadline: Deadline) -> FetchRun {
+    match origin_availability(repo, deadline) {
+        Ok(()) => {}
+        Err(outcome) => {
+            return FetchRun {
+                outcome,
+                attempts: 0,
+            }
+        }
     }
 
     let no_hooks = std::env::temp_dir().join("gitwink-no-hooks");
     let _ = std::fs::create_dir_all(&no_hooks);
 
-    let mut cmd = Command::new("git");
-    cmd.arg("-C")
-        .arg(repo)
+    run_fetch_with(repo, deadline, || {
+        run_fetch_attempt(repo, &no_hooks, deadline)
+    })
+}
+
+fn run_fetch_with(
+    repo: &Path,
+    deadline: Deadline,
+    mut attempt_fetch: impl FnMut() -> FetchOutcome,
+) -> FetchRun {
+    for attempt in 1..=MAX_FETCH_ATTEMPTS {
+        let outcome = attempt_fetch();
+        if outcome != FetchOutcome::RefLock || attempt == MAX_FETCH_ATTEMPTS {
+            return FetchRun {
+                outcome,
+                attempts: attempt,
+            };
+        }
+
+        let delay = retry_delay(repo, attempt);
+        let Some(remaining) = deadline.remaining() else {
+            return FetchRun {
+                outcome: FetchOutcome::Timeout,
+                attempts: attempt,
+            };
+        };
+        if remaining <= delay {
+            std::thread::sleep(remaining);
+            return FetchRun {
+                outcome: FetchOutcome::Timeout,
+                attempts: attempt,
+            };
+        }
+        std::thread::sleep(delay);
+    }
+
+    unreachable!("bounded fetch attempt loop always returns")
+}
+
+fn origin_availability(repo: &Path, deadline: Deadline) -> Result<(), FetchOutcome> {
+    let mut command = git_command(repo);
+    command.args(["config", "--local", "--get", "remote.origin.url"]);
+    match run_command(command, deadline, 0, MAX_CAPTURED_STDERR) {
+        Ok(output) if output.status.success() => Ok(()),
+        Ok(output) if output.stderr.trim().is_empty() => Err(FetchOutcome::NoOrigin),
+        Ok(output) => Err(classify_failure(&output.stderr)),
+        Err(error) => Err(map_command_error(error)),
+    }
+}
+
+fn run_fetch_attempt(repo: &Path, no_hooks: &Path, deadline: Deadline) -> FetchOutcome {
+    let mut command = git_command(repo);
+    command
         .arg("-c")
         .arg(format!("core.hooksPath={}", no_hooks.display()))
         // Abort a genuinely stalled HTTP(S) transfer while allowing a large,
@@ -50,6 +157,7 @@ pub fn git_fetch_one_shot(repo: &Path, timeout: Duration) -> FetchOutcome {
             "fetch",
             "--atomic",
             "--quiet",
+            "--no-write-fetch-head",
             "--no-tags",
             "--no-recurse-submodules",
             // Ignore any repository-configured mirror refmap. Only the
@@ -57,10 +165,28 @@ pub fn git_fetch_one_shot(repo: &Path, timeout: Duration) -> FetchOutcome {
             "--refmap=",
         ])
         .arg("origin")
-        .arg("+refs/heads/*:refs/remotes/origin/*")
+        .arg("+refs/heads/*:refs/remotes/origin/*");
+
+    match run_command(command, deadline, 0, MAX_CAPTURED_STDERR) {
+        Ok(output) if output.status.success() => FetchOutcome::Ok,
+        Ok(output) => classify_failure(&output.stderr),
+        Err(error) => map_command_error(error),
+    }
+}
+
+fn git_command(repo: &Path) -> Command {
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(repo)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GCM_INTERACTIVE", "never")
         .env("SSH_ASKPASS_REQUIRE", "never")
+        // Git's human-readable errors are an implementation detail used only
+        // for bounded classification. Pin them to a stable locale.
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .env("LANGUAGE", "C")
         .env_remove("GIT_ASKPASS")
         .env_remove("SSH_ASKPASS")
         .env_remove("GIT_DIR")
@@ -73,94 +199,32 @@ pub fn git_fetch_one_shot(repo: &Path, timeout: Duration) -> FetchOutcome {
         .env_remove("GIT_CONFIG")
         .env_remove("GIT_CONFIG_COUNT")
         .env_remove("GIT_HTTP_LOW_SPEED_LIMIT")
-        .env_remove("GIT_HTTP_LOW_SPEED_TIME")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        // Drain stderr to avoid pipe back-pressure, but retain only a bounded
-        // prefix in memory for stable error classification.
-        .stderr(Stdio::piped());
+        .env_remove("GIT_HTTP_LOW_SPEED_TIME");
+    command
+}
 
-    #[cfg(windows)]
-    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-
-    let mut child = match cmd.spawn() {
-        Ok(child) => child,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return FetchOutcome::Unavailable;
-        }
-        Err(_) => return FetchOutcome::Failed,
+fn retry_delay(repo: &Path, failed_attempt: u8) -> Duration {
+    let (minimum, spread) = match failed_attempt {
+        1 => (100_u64, 151_u64), // 100..=250ms
+        _ => (250_u64, 351_u64), // 250..=600ms
     };
-    let stderr_capture = child
-        .stderr
-        .take()
-        .map(|stderr| spawn_stderr_capture(stderr, MAX_CAPTURED_STDERR));
+    let mut hasher = DefaultHasher::new();
+    repo.hash(&mut hasher);
+    failed_attempt.hash(&mut hasher);
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.subsec_nanos())
+        .unwrap_or(0)
+        .hash(&mut hasher);
+    Duration::from_millis(minimum + hasher.finish() % spread)
+}
 
-    match wait_with_timeout(child, timeout) {
-        WaitOutcome::Exited(status) if status.success() => {
-            // The reader has already drained concurrently. A successful fetch
-            // has no error to classify, so never extend the UI wait for EOF
-            // from an inherited descendant pipe.
-            drop(stderr_capture);
-            FetchOutcome::Ok
-        }
-        WaitOutcome::Exited(_) => {
-            let stderr = collect_stderr(stderr_capture);
-            classify_failure(&stderr)
-        }
-        WaitOutcome::TimedOut => {
-            // A wedged descendant may still own the pipe. Detach the reader
-            // instead of turning the timeout itself into another unbounded wait.
-            drop(stderr_capture);
-            FetchOutcome::Timeout
-        }
-        WaitOutcome::Errored => {
-            drop(stderr_capture);
-            FetchOutcome::Failed
-        }
+fn map_command_error(error: CommandError) -> FetchOutcome {
+    match error {
+        CommandError::NotFound => FetchOutcome::Unavailable,
+        CommandError::TimedOut => FetchOutcome::Timeout,
+        CommandError::Failed => FetchOutcome::Failed,
     }
-}
-
-fn origin_availability(repo: &Path) -> FetchCapability {
-    let Ok(repository) = git2::Repository::discover(repo) else {
-        return FetchCapability::Unavailable;
-    };
-    let availability = match repository.find_remote("origin") {
-        Ok(remote) if remote.url().is_some_and(|url| !url.trim().is_empty()) => {
-            FetchCapability::Available
-        }
-        _ => FetchCapability::NoOrigin,
-    };
-    availability
-}
-
-fn read_bounded(mut reader: impl Read, limit: usize) -> String {
-    let mut captured = Vec::with_capacity(limit.min(4096));
-    let mut buffer = [0_u8; 4096];
-    loop {
-        let read = match reader.read(&mut buffer) {
-            Ok(0) | Err(_) => break,
-            Ok(read) => read,
-        };
-        let remaining = limit.saturating_sub(captured.len());
-        if remaining > 0 {
-            captured.extend_from_slice(&buffer[..read.min(remaining)]);
-        }
-    }
-    String::from_utf8_lossy(&captured).into_owned()
-}
-
-fn spawn_stderr_capture(reader: impl Read + Send + 'static, limit: usize) -> Receiver<String> {
-    let (sender, receiver) = mpsc::sync_channel(1);
-    std::thread::spawn(move || {
-        let _ = sender.send(read_bounded(reader, limit));
-    });
-    receiver
-}
-
-fn collect_stderr(capture: Option<Receiver<String>>) -> String {
-    capture
-        .and_then(|capture| capture.recv_timeout(STDERR_COLLECTION_GRACE).ok())
-        .unwrap_or_default()
 }
 
 fn classify_failure(stderr: &str) -> FetchOutcome {
@@ -170,7 +234,6 @@ fn classify_failure(stderr: &str) -> FetchOutcome {
         &[
             "cannot lock ref",
             "another git process",
-            "unable to create",
             ".lock': file exists",
             ".lock\": file exists",
         ],
@@ -212,6 +275,16 @@ fn classify_failure(stderr: &str) -> FetchOutcome {
     if contains_any(
         &lower,
         &[
+            "no such remote 'origin'",
+            "no such remote \"origin\"",
+            "remote origin not found",
+        ],
+    ) {
+        return FetchOutcome::NoOrigin;
+    }
+    if contains_any(
+        &lower,
+        &[
             "not a git repository",
             "cannot change to",
             "no such file or directory",
@@ -226,97 +299,170 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
     needles.iter().any(|needle| haystack.contains(needle))
 }
 
-enum WaitOutcome {
-    Exited(std::process::ExitStatus),
-    TimedOut,
-    Errored,
-}
-
-fn wait_with_timeout(mut child: std::process::Child, timeout: Duration) -> WaitOutcome {
-    let deadline = Instant::now() + timeout;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => return WaitOutcome::Exited(status),
-            Ok(None) if Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return WaitOutcome::TimedOut;
+fn coordinator_key(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                let _ = normalized.pop();
             }
-            Ok(None) => std::thread::sleep(Duration::from_millis(100)),
-            Err(_) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return WaitOutcome::Errored;
-            }
+            other => normalized.push(other.as_os_str()),
         }
+    }
+    #[cfg(windows)]
+    {
+        PathBuf::from(
+            normalized
+                .to_string_lossy()
+                .replace('/', "\\")
+                .to_lowercase(),
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        normalized
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
 
     #[test]
     fn origin_preflight_distinguishes_missing_and_unavailable_repositories() {
         let root = tempfile::tempdir().unwrap();
         assert_eq!(
-            origin_availability(root.path()),
+            repo_fetch_capability(root.path(), Deadline::after(Duration::from_secs(2))),
             FetchCapability::Unavailable
         );
 
         let repo = git2::Repository::init(root.path()).unwrap();
-        assert_eq!(origin_availability(root.path()), FetchCapability::NoOrigin);
+        assert_eq!(
+            repo_fetch_capability(root.path(), Deadline::after(Duration::from_secs(2))),
+            FetchCapability::NoOrigin
+        );
         repo.remote("origin", "https://example.invalid/repo.git")
             .unwrap();
-        assert_eq!(origin_availability(root.path()), FetchCapability::Available);
+        assert_eq!(
+            repo_fetch_capability(root.path(), Deadline::after(Duration::from_secs(2))),
+            FetchCapability::Available
+        );
     }
 
     #[test]
     fn one_shot_fetch_updates_only_the_origin_branch_mirror() {
+        let fixture = FetchFixture::new();
+
+        let run = git_fetch_one_shot(
+            &fixture.client_path,
+            Deadline::after(Duration::from_secs(5)),
+        );
+        assert_eq!(run.outcome, FetchOutcome::Ok);
+        assert_eq!(run.attempts, 1);
+        assert_eq!(
+            fixture
+                .client
+                .refname_to_id("refs/remotes/origin/main")
+                .unwrap(),
+            fixture.commit_id
+        );
+        assert!(fixture
+            .client
+            .find_reference("refs/heads/unsafe/main")
+            .is_err());
+        assert!(fixture.client.find_reference("refs/tags/v1.0.0").is_err());
+        assert!(!fixture.client.path().join("FETCH_HEAD").exists());
+        assert_eq!(
+            fixture.client.head().unwrap().target().unwrap(),
+            fixture.local_commit_id
+        );
+        assert_eq!(
+            fixture
+                .client
+                .refname_to_id("refs/tags/local-only")
+                .unwrap(),
+            fixture.local_commit_id
+        );
+        assert_eq!(
+            std::fs::read(fixture.client_path.join("local.txt")).unwrap(),
+            b"local worktree\n"
+        );
+        assert!(!fixture.client_path.join("README.md").exists());
+    }
+
+    #[test]
+    fn transient_external_ref_lock_is_retried_successfully() {
+        let fixture = FetchFixture::new();
+        let lock_path = fixture.client.path().join("refs/remotes/origin/main.lock");
+        std::fs::create_dir_all(lock_path.parent().unwrap()).unwrap();
+        std::fs::write(&lock_path, b"held by external Git").unwrap();
+        let deadline = Deadline::after(Duration::from_secs(5));
+        origin_availability(&fixture.client_path, deadline).unwrap();
+        let no_hooks = std::env::temp_dir().join("gitwink-no-hooks");
+        let mut calls = 0;
+        let run = run_fetch_with(&fixture.client_path, deadline, || {
+            calls += 1;
+            let outcome = run_fetch_attempt(&fixture.client_path, &no_hooks, deadline);
+            if calls == 1 {
+                assert_eq!(outcome, FetchOutcome::RefLock);
+                std::fs::remove_file(&lock_path).unwrap();
+            }
+            outcome
+        });
+        assert_eq!(run.outcome, FetchOutcome::Ok);
+        assert_eq!(run.attempts, 2);
+    }
+
+    #[test]
+    fn persistent_external_ref_lock_stops_at_retry_budget() {
+        let fixture = FetchFixture::new();
+        let lock_path = fixture.client.path().join("refs/remotes/origin/main.lock");
+        std::fs::create_dir_all(lock_path.parent().unwrap()).unwrap();
+        std::fs::write(&lock_path, b"held by external Git").unwrap();
+
+        let run = git_fetch_one_shot(
+            &fixture.client_path,
+            Deadline::after(Duration::from_secs(5)),
+        );
+        assert_eq!(run.outcome, FetchOutcome::RefLock);
+        assert_eq!(run.attempts, MAX_FETCH_ATTEMPTS);
+    }
+
+    #[test]
+    fn absolute_deadline_includes_discovery_preflight_and_retry_backoff() {
+        let fixture = FetchFixture::new();
+        let lock_path = fixture.client.path().join("refs/remotes/origin/main.lock");
+        std::fs::create_dir_all(lock_path.parent().unwrap()).unwrap();
+        std::fs::write(&lock_path, b"held by external Git").unwrap();
+
+        let started = std::time::Instant::now();
+        let deadline = Deadline::after(Duration::from_secs(1));
+        resolve_fetch_target(&fixture.client_path, deadline).unwrap();
+        if let Some(remaining) = deadline.remaining() {
+            std::thread::sleep(remaining.saturating_sub(Duration::from_millis(300)));
+        }
+        let run = git_fetch_one_shot(&fixture.client_path, deadline);
+        assert_eq!(run.outcome, FetchOutcome::Timeout);
+        assert!(
+            started.elapsed() < Duration::from_millis(1_500),
+            "deadline overran by more than process cleanup grace"
+        );
+    }
+
+    #[test]
+    fn linked_worktrees_resolve_to_the_same_common_directory_key() {
         let root = tempfile::tempdir().unwrap();
-        let origin_path = root.path().join("origin.git");
-        let client_path = root.path().join("client");
-        let origin = git2::Repository::init_bare(&origin_path).unwrap();
-        let blob_id = origin.blob(b"hello\n").unwrap();
-        let mut tree_builder = origin.treebuilder(None).unwrap();
-        tree_builder.insert("README.md", blob_id, 0o100644).unwrap();
-        let tree_id = tree_builder.write().unwrap();
-        drop(tree_builder);
-        let tree = origin.find_tree(tree_id).unwrap();
-        let signature = git2::Signature::now("gitwink", "tests@gitwink.local").unwrap();
-        let commit_id = origin
-            .commit(
-                Some("refs/heads/main"),
-                &signature,
-                &signature,
-                "initial",
-                &tree,
-                &[],
-            )
-            .unwrap();
-        origin
-            .reference("refs/tags/v1.0.0", commit_id, true, "test tag")
-            .unwrap();
+        let main = root.path().join("main");
+        let linked = root.path().join("linked");
+        let repository = repository_with_initial_commit(&main);
+        repository.worktree("linked", &linked, None).unwrap();
 
-        let client = git2::Repository::init(&client_path).unwrap();
-        client
-            .remote("origin", &origin_path.to_string_lossy())
-            .unwrap();
-        client
-            .remote_add_fetch("origin", "+refs/heads/*:refs/heads/unsafe/*")
-            .unwrap();
-
-        assert_eq!(
-            git_fetch_one_shot(&client_path, Duration::from_secs(5)),
-            FetchOutcome::Ok
-        );
-        assert_eq!(
-            client.refname_to_id("refs/remotes/origin/main").unwrap(),
-            commit_id
-        );
-        assert!(client.find_reference("refs/heads/unsafe/main").is_err());
-        assert!(client.find_reference("refs/tags/v1.0.0").is_err());
+        let main_target =
+            resolve_fetch_target(&main, Deadline::after(Duration::from_secs(2))).unwrap();
+        let linked_target =
+            resolve_fetch_target(&linked, Deadline::after(Duration::from_secs(2))).unwrap();
+        assert_eq!(main_target.key, linked_target.key);
     }
 
     #[test]
@@ -336,10 +482,94 @@ mod tests {
         assert_eq!(classify_failure("fatal: unknown"), FetchOutcome::Failed);
     }
 
-    #[test]
-    fn stderr_capture_is_bounded_but_fully_drains_input() {
-        let input = vec![b'x'; MAX_CAPTURED_STDERR * 2];
-        let captured = read_bounded(Cursor::new(input), MAX_CAPTURED_STDERR);
-        assert_eq!(captured.len(), MAX_CAPTURED_STDERR);
+    struct FetchFixture {
+        _root: tempfile::TempDir,
+        client_path: PathBuf,
+        client: git2::Repository,
+        commit_id: git2::Oid,
+        local_commit_id: git2::Oid,
+    }
+
+    impl FetchFixture {
+        fn new() -> Self {
+            let root = tempfile::tempdir().unwrap();
+            let origin_path = root.path().join("origin.git");
+            let client_path = root.path().join("client");
+            let origin = git2::Repository::init_bare(&origin_path).unwrap();
+            let blob_id = origin.blob(b"hello\n").unwrap();
+            let mut tree_builder = origin.treebuilder(None).unwrap();
+            tree_builder.insert("README.md", blob_id, 0o100644).unwrap();
+            let tree_id = tree_builder.write().unwrap();
+            drop(tree_builder);
+            let tree = origin.find_tree(tree_id).unwrap();
+            let signature = git2::Signature::now("gitwink", "tests@gitwink.local").unwrap();
+            let commit_id = origin
+                .commit(
+                    Some("refs/heads/main"),
+                    &signature,
+                    &signature,
+                    "initial",
+                    &tree,
+                    &[],
+                )
+                .unwrap();
+            origin
+                .reference("refs/tags/v1.0.0", commit_id, true, "test tag")
+                .unwrap();
+
+            let client = git2::Repository::init(&client_path).unwrap();
+            std::fs::write(client_path.join("local.txt"), b"local worktree\n").unwrap();
+            let mut index = client.index().unwrap();
+            index.add_path(Path::new("local.txt")).unwrap();
+            index.write().unwrap();
+            let local_tree_id = index.write_tree().unwrap();
+            drop(index);
+            let local_tree = client.find_tree(local_tree_id).unwrap();
+            let local_commit_id = client
+                .commit(
+                    Some("HEAD"),
+                    &signature,
+                    &signature,
+                    "local commit",
+                    &local_tree,
+                    &[],
+                )
+                .unwrap();
+            drop(local_tree);
+            client
+                .reference(
+                    "refs/tags/local-only",
+                    local_commit_id,
+                    true,
+                    "local test tag",
+                )
+                .unwrap();
+            client
+                .remote("origin", &origin_path.to_string_lossy())
+                .unwrap();
+            client
+                .remote_add_fetch("origin", "+refs/heads/*:refs/heads/unsafe/*")
+                .unwrap();
+            Self {
+                _root: root,
+                client_path,
+                client,
+                commit_id,
+                local_commit_id,
+            }
+        }
+    }
+
+    fn repository_with_initial_commit(path: &Path) -> git2::Repository {
+        let repository = git2::Repository::init(path).unwrap();
+        let mut index = repository.index().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repository.find_tree(tree_id).unwrap();
+        let signature = git2::Signature::now("gitwink", "tests@gitwink.local").unwrap();
+        repository
+            .commit(Some("HEAD"), &signature, &signature, "initial", &tree, &[])
+            .unwrap();
+        drop(tree);
+        repository
     }
 }

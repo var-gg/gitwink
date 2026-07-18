@@ -417,8 +417,18 @@ msgstr "시작할 때와 24시간마다 {provider}에서 확인합니다. 업데
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
+msgid "panel.fetch.checking"
+msgstr "origin 확인 중"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
 msgid "panel.chrome.updateChecking"
 msgstr "업데이트 확인 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.checkingTitle"
+msgstr "이 저장소에 origin 원격이 설정되어 있는지 확인하는 중입니다"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/settings.ts
@@ -893,7 +903,7 @@ msgstr "Git LFS 파일"
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "panel.fetch.refLock"
-msgstr "Git ref가 사용 중입니다. 잠시 후 다시 시도하세요"
+msgstr "재시도 후에도 Git ref가 사용 중입니다"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/updates.ts
@@ -1313,8 +1323,13 @@ msgstr "origin 인증에 실패했습니다"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
+msgid "panel.fetch.inProgress"
+msgstr "origin 가져오기가 아직 진행 중"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
 msgid "panel.fetch.timeout"
-msgstr "origin 가져오기가 30초 후 시간 초과되었습니다"
+msgstr "origin 가져오기 시간이 초과되었습니다"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -1821,6 +1836,11 @@ msgstr "클립보드에 붙여넣을 수 있는 절대 경로가 없습니다."
 #: src/i18n/messages/diff.ts
 msgid "diff.cannotShow"
 msgstr "diff를 표시할 수 없습니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.inProgressTitle"
+msgstr "기존 origin 가져오기가 아직 진행 중입니다"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/repositories.ts

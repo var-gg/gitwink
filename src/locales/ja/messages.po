@@ -417,8 +417,18 @@ msgstr "起動時と24時間ごとに {provider} を確認します。アップ�
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
+msgid "panel.fetch.checking"
+msgstr "origin を確認中"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
 msgid "panel.chrome.updateChecking"
 msgstr "アップデートを確認中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.checkingTitle"
+msgstr "このリポジトリに origin リモートがあるか確認しています"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/settings.ts
@@ -893,7 +903,7 @@ msgstr "Git LFS ファイル"
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "panel.fetch.refLock"
-msgstr "Git ref が使用中です。しばらくしてから再試行してください"
+msgstr "再試行後も Git ref が使用中です"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/updates.ts
@@ -1313,8 +1323,13 @@ msgstr "origin の認証に失敗しました"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
+msgid "panel.fetch.inProgress"
+msgstr "origin の fetch はまだ実行中です"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
 msgid "panel.fetch.timeout"
-msgstr "origin の fetch が30秒でタイムアウトしました"
+msgstr "origin の fetch がタイムアウトしました"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -1821,6 +1836,11 @@ msgstr "クリップボードに貼り付け可能な絶対パスがありませ
 #: src/i18n/messages/diff.ts
 msgid "diff.cannotShow"
 msgstr "差分を表示できません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/panel.ts
+msgid "panel.fetch.inProgressTitle"
+msgstr "既存の origin fetch はまだ実行中です"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/repositories.ts

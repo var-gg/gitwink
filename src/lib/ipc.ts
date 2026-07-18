@@ -159,6 +159,29 @@ export type FetchRepoResult =
 
 export type RepoFetchCapability = "available" | "no_origin" | "unavailable";
 
+export interface FetchCommandResult {
+  flightId: string | null;
+  outcome: FetchRepoResult;
+}
+
+export type FetchTrigger = "auto" | "manual";
+
+export type FetchStateEvent =
+  | {
+      flightId: string;
+      repoPath: string;
+      phase: "started";
+      trigger: FetchTrigger;
+    }
+  | {
+      flightId: string;
+      repoPath: string;
+      phase: "completed";
+      trigger: FetchTrigger;
+      outcome: Exclude<FetchRepoResult, "in_progress" | "busy">;
+      elapsedMs: number;
+    };
+
 /** Local-only preflight for whether this repository can refresh `origin`. */
 export async function repoFetchCapability(
   repoPath: string,
@@ -168,8 +191,15 @@ export async function repoFetchCapability(
 
 /** Explicit user-initiated `git fetch origin`. It bypasses cooldown, joins a
  * same-repository auto-fetch, and returns a stable categorized outcome. */
-export async function fetchRepoNow(repoPath: string): Promise<FetchRepoResult> {
-  return invoke<FetchRepoResult>("fetch_repo_now", { repoPath });
+export async function fetchRepoNow(repoPath: string): Promise<FetchCommandResult> {
+  return invoke<FetchCommandResult>("fetch_repo_now", { repoPath });
+}
+
+/** Backend-owned lifecycle for both panel-open and explicit origin fetches. */
+export async function onFetchState(
+  cb: (event: FetchStateEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<FetchStateEvent>("fetch://state", (event) => cb(event.payload));
 }
 
 /** Add a repo by absolute path (drag-drop / paste). Backend validates

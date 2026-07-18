@@ -225,8 +225,12 @@ export function updateCheckNoticeLabel(
   }
 }
 
-function fetchNowLabel(i18n: I18n, state: FetchNowState): string {
+type FetchDisplayState = FetchNowState | "checking";
+
+function fetchNowLabel(i18n: I18n, state: FetchDisplayState): string {
   switch (state) {
+    case "checking":
+      return i18n._(m.fetchChecking);
     case "idle":
       return i18n._(m.fetchNow);
     case "fetching":
@@ -234,6 +238,7 @@ function fetchNowLabel(i18n: I18n, state: FetchNowState): string {
     case "ok":
       return i18n._(m.fetchCurrent);
     case "in_progress":
+      return i18n._(m.fetchInProgress);
     case "busy":
       return i18n._(m.fetchBusy);
     case "no_origin":
@@ -253,7 +258,7 @@ function fetchNowLabel(i18n: I18n, state: FetchNowState): string {
   }
 }
 
-function FetchNowButton({
+export function FetchNowButton({
   state,
   fetchCapability,
   onFetch,
@@ -263,8 +268,12 @@ function FetchNowButton({
   onFetch: () => void;
 }) {
   const { i18n } = useLingui();
-  const effectiveState =
-    fetchCapability === "no_origin"
+  const effectiveState: FetchDisplayState =
+    state === "fetching" || state === "in_progress"
+      ? state
+      : fetchCapability == null
+        ? "checking"
+        : fetchCapability === "no_origin"
       ? "no_origin"
       : fetchCapability === "unavailable"
         ? "unavailable"
@@ -279,22 +288,27 @@ function FetchNowButton({
   ].includes(effectiveState);
   const label = fetchNowLabel(i18n, effectiveState);
   const title =
-    effectiveState === "fetching"
+    effectiveState === "checking"
+      ? i18n._(m.fetchCheckingTitle)
+      : effectiveState === "fetching"
       ? i18n._(m.fetchFetchingTitle)
       : effectiveState === "ok"
         ? i18n._(m.fetchCurrentTitle)
-        : effectiveState === "busy" || effectiveState === "in_progress"
+        : effectiveState === "in_progress"
+          ? i18n._(m.fetchInProgressTitle)
+          : effectiveState === "busy"
           ? i18n._(m.fetchBusyTitle)
           : effectiveState === "idle"
             ? i18n._(m.fetchNowTitle)
             : label;
-  const disabled =
+  const inactive =
     fetchCapability !== "available" ||
     effectiveState === "fetching" ||
-    effectiveState === "in_progress" ||
-    effectiveState === "no_origin";
+    effectiveState === "in_progress";
   const glyph =
-    effectiveState === "ok"
+    effectiveState === "checking"
+      ? "…"
+      : effectiveState === "ok"
       ? "✓"
       : effectiveState === "no_origin"
         ? "–"
@@ -302,20 +316,46 @@ function FetchNowButton({
           ? "!"
           : "↻";
   return (
-    <button
-      type="button"
-      className={
-        "fetch-now-btn" +
-        (effectiveState === "fetching" ? " fetching" : "") +
-        (failed ? " failed" : "")
-      }
-      disabled={disabled}
-      onClick={onFetch}
-      aria-label={label}
-      title={title}
-    >
-      {glyph}
-    </button>
+    <span className="fetch-now-control">
+      {effectiveState !== "idle" && (
+        <span
+          id="origin-fetch-status"
+          className={"panel-status fetch-now-status" + (failed ? " error" : "")}
+          role="status"
+        >
+          {label}
+        </span>
+      )}
+      <button
+        type="button"
+        className={
+          "fetch-now-btn" +
+          (effectiveState === "fetching" || effectiveState === "in_progress"
+            ? " fetching"
+            : "") +
+          (failed ? " failed" : "") +
+          (inactive ? " inactive" : "")
+        }
+        aria-disabled={inactive}
+        aria-busy={
+          effectiveState === "fetching" || effectiveState === "in_progress"
+        }
+        aria-describedby={
+          effectiveState === "idle" ? undefined : "origin-fetch-status"
+        }
+        onClick={(event) => {
+          if (inactive) {
+            event.preventDefault();
+            return;
+          }
+          onFetch();
+        }}
+        aria-label={label}
+        title={title}
+      >
+        {glyph}
+      </button>
+    </span>
   );
 }
 

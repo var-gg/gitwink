@@ -445,11 +445,19 @@ export const panelMessages = {
     message: "⚠ Update check failed",
   }),
   fetchFetching: msg({ id: "panel.fetch.fetching", message: "Fetching origin" }),
+  fetchChecking: msg({
+    id: "panel.fetch.checking",
+    message: "Checking origin",
+  }),
   fetchCurrent: msg({
     id: "panel.fetch.current",
     message: "Fetched—origin refs are current",
   }),
   fetchBusy: msg({ id: "panel.fetch.busy", message: "Another fetch is running" }),
+  fetchInProgress: msg({
+    id: "panel.fetch.inProgress",
+    message: "Origin fetch is still running",
+  }),
   fetchFailed: msg({ id: "panel.fetch.failed", message: "Fetch failed" }),
   fetchNoOrigin: msg({
     id: "panel.fetch.noOrigin",
@@ -465,11 +473,11 @@ export const panelMessages = {
   }),
   fetchRefLock: msg({
     id: "panel.fetch.refLock",
-    message: "Git refs are busy—try again in a moment",
+    message: "Git refs stayed busy after retries",
   }),
   fetchTimeout: msg({
     id: "panel.fetch.timeout",
-    message: "Origin fetch timed out after 30 seconds",
+    message: "Origin fetch timed out",
   }),
   fetchUnavailable: msg({
     id: "panel.fetch.unavailable",
@@ -480,6 +488,10 @@ export const panelMessages = {
     id: "panel.fetch.fetchingTitle",
     message: "Fetching origin…",
   }),
+  fetchCheckingTitle: msg({
+    id: "panel.fetch.checkingTitle",
+    message: "Checking whether this repository has an origin remote",
+  }),
   fetchCurrentTitle: msg({
     id: "panel.fetch.currentTitle",
     message: "Fetched ✓—origin refs are current",
@@ -487,6 +499,10 @@ export const panelMessages = {
   fetchBusyTitle: msg({
     id: "panel.fetch.busyTitle",
     message: "Another fetch is running—try again in a moment",
+  }),
+  fetchInProgressTitle: msg({
+    id: "panel.fetch.inProgressTitle",
+    message: "The existing origin fetch is still running",
   }),
   fetchFailedTitle: msg({
     id: "panel.fetch.failedTitle",

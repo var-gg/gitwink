@@ -17,7 +17,10 @@ import {
   modalTabDestination,
   updateProgressLabel,
 } from "./UpdateModal";
-import { updateCheckNoticeLabel } from "./header/PanelChromeRow";
+import {
+  FetchNowButton,
+  updateCheckNoticeLabel,
+} from "./header/PanelChromeRow";
 import {
   SEARCH_RESULTS_LIST_ID,
   searchResultOptionId,
@@ -149,6 +152,48 @@ describe("commit-search accessibility contract", () => {
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).not.toContain("aria-controls");
     expect(markup).not.toContain("aria-activedescendant");
+  });
+});
+
+describe("origin fetch accessibility contract", () => {
+  it("keeps an unavailable action focusable while exposing its reason", () => {
+    const markup = renderLocalized(
+      <FetchNowButton
+        state="idle"
+        fetchCapability="no_origin"
+        onFetch={noop}
+      />,
+    );
+    expect(markup).toContain('aria-disabled="true"');
+    expect(markup).not.toContain(" disabled");
+    expect(markup).toContain('role="status"');
+    expect(markup).toContain("No origin remote is configured");
+    expect(markup).toContain('aria-describedby="origin-fetch-status"');
+  });
+
+  it("announces and marks the full lifetime of an in-progress flight", () => {
+    const markup = renderLocalized(
+      <FetchNowButton
+        state="in_progress"
+        fetchCapability="available"
+        onFetch={noop}
+      />,
+    );
+    expect(markup).toContain('aria-busy="true"');
+    expect(markup).toContain('aria-disabled="true"');
+    expect(markup).toContain("Origin fetch is still running");
+  });
+
+  it("leaves an idle available fetch action enabled", () => {
+    const markup = renderLocalized(
+      <FetchNowButton
+        state="idle"
+        fetchCapability="available"
+        onFetch={noop}
+      />,
+    );
+    expect(markup).toContain('aria-disabled="false"');
+    expect(markup).not.toContain('aria-describedby="origin-fetch-status"');
   });
 });
 

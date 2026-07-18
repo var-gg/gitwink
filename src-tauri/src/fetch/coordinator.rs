@@ -1,9 +1,12 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use super::{FetchOutcome, MAX_INFLIGHT};
+
+static NEXT_FLIGHT_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Default)]
 struct CoordinatorState {
@@ -14,20 +17,33 @@ struct CoordinatorState {
 /// Managed Tauri state for fetch cooldown and concurrency. Paths are
 /// canonicalized so aliases, linked worktrees, and Windows case variants join
 /// the same flight.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct FetchCoordinator {
     state: Arc<Mutex<CoordinatorState>>,
 }
 
 /// One shared terminal result. A manual refresh may wait on the flight started
 /// by panel-open auto-fetch instead of spawning a competing Git process.
-#[derive(Default)]
 pub struct FetchFlight {
+    id: String,
     result: Mutex<Option<FetchOutcome>>,
     ready: Condvar,
 }
 
 impl FetchFlight {
+    fn new() -> Self {
+        let sequence = NEXT_FLIGHT_ID.fetch_add(1, Ordering::Relaxed);
+        Self {
+            id: format!("f{sequence:x}"),
+            result: Mutex::new(None),
+            ready: Condvar::new(),
+        }
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
     pub fn wait_timeout(&self, timeout: Duration) -> Option<FetchOutcome> {
         let result = match self.result.lock() {
             Ok(result) => result,
@@ -66,6 +82,10 @@ pub struct FetchGuard {
 }
 
 impl FetchGuard {
+    pub fn flight_id(&self) -> &str {
+        self.flight.id()
+    }
+
     pub fn finish(mut self, outcome: FetchOutcome) -> FetchOutcome {
         self.complete(outcome);
         outcome
@@ -107,8 +127,7 @@ pub enum ManualFetchClaim {
 impl FetchCoordinator {
     /// Claim an automatic fetch. Existing same-repository work, cooldown, and
     /// a full global cap are all silent skips for the fire-and-forget path.
-    pub fn try_claim(&self, repo: &Path, interval: Duration) -> Option<FetchGuard> {
-        let key = canonical_key(repo);
+    pub fn try_claim(&self, key: PathBuf, interval: Duration) -> Option<FetchGuard> {
         let Ok(mut state) = self.state.lock() else {
             return None;
         };
@@ -134,8 +153,7 @@ impl FetchCoordinator {
     /// Claim an explicit refresh. It bypasses cooldown, but joins an existing
     /// same-repository flight before considering the global cap. This ordering
     /// is what removes the auto/manual ref-lock race.
-    pub fn claim_forced(&self, repo: &Path) -> ManualFetchClaim {
-        let key = canonical_key(repo);
+    pub fn claim_forced(&self, key: PathBuf) -> ManualFetchClaim {
         let Ok(mut state) = self.state.lock() else {
             return ManualFetchClaim::Busy;
         };
@@ -156,43 +174,13 @@ impl FetchCoordinator {
     }
 }
 
-fn canonical_key(repo: &Path) -> PathBuf {
-    repository_common_dir(repo)
-        .and_then(|path| std::fs::canonicalize(&path).ok().or(Some(path)))
-        .unwrap_or_else(|| std::fs::canonicalize(repo).unwrap_or_else(|_| repo.to_path_buf()))
-}
-
-/// Fetch writes shared refs and `FETCH_HEAD`, so linked worktrees must key on
-/// their common Git directory rather than their distinct working directories.
-/// Resolving the repository also makes a nested path join its repository root.
-fn repository_common_dir(repo: &Path) -> Option<PathBuf> {
-    let repository = git2::Repository::discover(repo).ok()?;
-    let git_dir = repository.path();
-    let common_dir = std::fs::read_to_string(git_dir.join("commondir"))
-        .ok()
-        .and_then(|text| {
-            let raw = text.trim_end_matches(['\n', '\r']);
-            if raw.is_empty() {
-                return None;
-            }
-            let path = Path::new(raw);
-            Some(if path.is_absolute() {
-                path.to_path_buf()
-            } else {
-                git_dir.join(path)
-            })
-        })
-        .unwrap_or_else(|| git_dir.to_path_buf());
-    Some(common_dir)
-}
-
 fn start_flight(
     state: &mut CoordinatorState,
     shared_state: Arc<Mutex<CoordinatorState>>,
     key: PathBuf,
     now: Instant,
 ) -> FetchGuard {
-    let flight = Arc::new(FetchFlight::default());
+    let flight = Arc::new(FetchFlight::new());
     state.last_attempt.insert(key.clone(), now);
     state.inflight.insert(key.clone(), Arc::clone(&flight));
     FetchGuard {
@@ -206,6 +194,7 @@ fn start_flight(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
     use std::thread;
 
     fn repository_with_initial_commit(path: &Path) -> git2::Repository {
@@ -226,12 +215,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let coordinator = FetchCoordinator::default();
         let guard = coordinator
-            .try_claim(dir.path(), Duration::ZERO)
+            .try_claim(dir.path().to_path_buf(), Duration::ZERO)
             .expect("auto flight should start");
+        let owner_flight_id = guard.flight_id().to_owned();
 
-        let ManualFetchClaim::Join(flight) = coordinator.claim_forced(dir.path()) else {
+        let ManualFetchClaim::Join(flight) = coordinator.claim_forced(dir.path().to_path_buf())
+        else {
             panic!("manual fetch must join the automatic flight");
         };
+        assert_eq!(flight.id(), owner_flight_id);
         guard.finish(FetchOutcome::Ok);
         assert_eq!(
             flight.wait_timeout(Duration::from_millis(10)),
@@ -244,9 +236,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let coordinator = FetchCoordinator::default();
         let guard = coordinator
-            .try_claim(dir.path(), Duration::ZERO)
+            .try_claim(dir.path().to_path_buf(), Duration::ZERO)
             .expect("flight should start");
-        let ManualFetchClaim::Join(flight) = coordinator.claim_forced(dir.path()) else {
+        let ManualFetchClaim::Join(flight) = coordinator.claim_forced(dir.path().to_path_buf())
+        else {
             panic!("manual fetch must join");
         };
 
@@ -267,13 +260,13 @@ mod tests {
 
         let coordinator = FetchCoordinator::default();
         let _a = coordinator
-            .try_claim(&repo_a, Duration::ZERO)
+            .try_claim(repo_a, Duration::ZERO)
             .expect("first slot");
         let _b = coordinator
-            .try_claim(&repo_b, Duration::ZERO)
+            .try_claim(repo_b, Duration::ZERO)
             .expect("second slot");
         assert!(matches!(
-            coordinator.claim_forced(&repo_c),
+            coordinator.claim_forced(repo_c),
             ManualFetchClaim::Busy
         ));
     }
@@ -283,32 +276,41 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let coordinator = FetchCoordinator::default();
         coordinator
-            .try_claim(dir.path(), Duration::from_secs(60))
+            .try_claim(dir.path().to_path_buf(), Duration::from_secs(60))
             .expect("auto flight")
             .finish(FetchOutcome::Ok);
 
         assert!(coordinator
-            .try_claim(dir.path(), Duration::from_secs(60))
+            .try_claim(dir.path().to_path_buf(), Duration::from_secs(60))
             .is_none());
         assert!(matches!(
-            coordinator.claim_forced(dir.path()),
+            coordinator.claim_forced(dir.path().to_path_buf()),
             ManualFetchClaim::Start(_)
         ));
     }
 
     #[test]
     fn linked_worktrees_join_the_same_repository_flight() {
+        use crate::fetch::child_process::Deadline;
+        use crate::fetch::process::resolve_fetch_target;
+
         let root = tempfile::tempdir().unwrap();
         let main = root.path().join("main");
         let linked = root.path().join("linked");
         let repository = repository_with_initial_commit(&main);
         repository.worktree("linked", &linked, None).unwrap();
+        let main_key = resolve_fetch_target(&main, Deadline::after(Duration::from_secs(2)))
+            .unwrap()
+            .key;
+        let linked_key = resolve_fetch_target(&linked, Deadline::after(Duration::from_secs(2)))
+            .unwrap()
+            .key;
 
         let coordinator = FetchCoordinator::default();
         let guard = coordinator
-            .try_claim(&main, Duration::ZERO)
+            .try_claim(main_key, Duration::ZERO)
             .expect("main worktree should start a flight");
-        let ManualFetchClaim::Join(flight) = coordinator.claim_forced(&linked) else {
+        let ManualFetchClaim::Join(flight) = coordinator.claim_forced(linked_key) else {
             panic!("linked worktree must join the shared ref flight");
         };
 

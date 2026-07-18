@@ -42,8 +42,8 @@ your user profile (`%APPDATA%\gg.var.gitwink` on Windows):
   repositories, update-check mode, the auto-fetch toggle, and similar).
 - `scan.log` — a bounded local activity log containing discovery summaries
   and categorized fetch outcomes. Fetch entries contain the local repository
-  path, trigger, outcome category, and elapsed time, but never the remote URL,
-  raw Git stderr, or credentials.
+  path, trigger, non-secret flight ID, attempt count, outcome category, and
+  elapsed time, but never the remote URL, raw Git stderr, or credentials.
 
 These files never leave your computer. Uninstalling gitwink or deleting
 that folder removes them.
@@ -67,7 +67,9 @@ both under your control:
    next to the branch chip _(user-initiated, so it works regardless of the
    auto-fetch toggle)_. Both triggers use the same hardened invocation; if an
    automatic fetch is already running for that repository, the manual action
-   joins it instead of starting a competing process. The invocation uses your
+   joins it instead of starting a competing process. Transient local ref-lock
+   collisions with an IDE or terminal Git process receive a bounded retry, and
+   a timeout terminates Git's helper process tree. The invocation uses your
    system `git` with your existing Git credentials, pinned to that repository's
    `origin` remote with a branch-only refspec — gitwink adds no destination of
    its own and sends nothing beyond what a normal fetch negotiates (e.g. which

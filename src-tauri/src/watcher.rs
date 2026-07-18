@@ -859,6 +859,22 @@ pub(crate) fn refresh_repo_now(app: &AppHandle, repo_path: &Path) {
     refresh_repo(app, repo_path, event_epoch);
 }
 
+/// Deterministically feed a successful gitwink fetch into the same
+/// trailing-edge lane as native filesystem notifications. If notify already
+/// observed the ref transaction, both signals coalesce into one cache walk;
+/// if it missed the transaction, this explicit edge still refreshes the
+/// timeline and emits `timeline://invalidated`.
+pub(crate) fn schedule_repo_refresh(app: &AppHandle, repo_path: &Path) {
+    let Some(watcher) = app.try_state::<RepoWatcher>() else {
+        return;
+    };
+    schedule_refresh(
+        app.clone(),
+        repo_path.to_path_buf(),
+        Arc::clone(&watcher.debounce),
+    );
+}
+
 fn unix_now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

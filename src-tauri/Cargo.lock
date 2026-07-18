@@ -1477,6 +1477,7 @@ dependencies = [
  "base64 0.22.1",
  "git2",
  "ignore",
+ "libc",
  "notify",
  "rusqlite",
  "serde",
