@@ -1,0 +1,34 @@
+schema_version: 1
+project: gitwink
+policy_ref: docs/ops/feedback-playbook.md
+
+sources:
+  github_activity:
+    provider: github
+    stream: activity
+    enabled: true
+    role: external_feedback
+    cadence: 30m
+    identity:
+      repository:
+        derive: git.origin
+    config:
+      overlap_seconds: 86400
+
+  microsoft_store_reviews:
+    provider: microsoft_store
+    stream: reviews
+    enabled: true
+    role: external_feedback
+    cadence: 24h
+    identity:
+      product_id:
+        derive: microsoft_store.product_id
+    credential_ref:
+      envs:
+        tenant_id: AZURE_AD_TENANT_ID
+        client_id: AZURE_AD_APPLICATION_CLIENT_ID
+        client_secret: AZURE_AD_APPLICATION_SECRET
+    config:
+      initial_lookback_days: 30
+      overlap_seconds: 172800
