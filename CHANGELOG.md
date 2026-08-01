@@ -22,11 +22,12 @@ startup join the catalog when the panel is summoned.
   a single-flight lease, preserving the app's no-idle-polling contract.
 - **Reliable explicit origin refresh.** Panel-open auto-fetch and the ↻ action
   now share one common-Git-directory flight instead of racing the same remote
-  refs. Manual refresh applies one 30-second end-to-end deadline, transient
-  external ref locks receive bounded retries, and timeout cleanup terminates
-  Git's helper process tree. Flight lifecycle events keep the UI busy until the
-  real completion, deterministically refresh commits and refs, expose
-  accessible status text, and record only non-secret timing diagnostics.
+  refs, including linked worktrees reached through macOS filesystem aliases.
+  Manual refresh applies one 30-second end-to-end deadline, transient external
+  ref locks receive bounded retries, and timeout cleanup terminates Git's
+  helper process tree. Flight lifecycle events keep the UI busy until the real
+  completion, deterministically refresh commits and refs, expose accessible
+  status text, and record only non-secret timing diagnostics.
 
 ## [0.12.0] — 2026-07-12
 

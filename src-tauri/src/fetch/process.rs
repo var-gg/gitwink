@@ -300,8 +300,14 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
 }
 
 fn coordinator_key(path: &Path) -> PathBuf {
+    // Git has just resolved and accessed this common directory under the
+    // caller's deadline. Collapse filesystem aliases before using it as the
+    // process-wide flight key: macOS can expose the same temp/worktree path as
+    // both `/var/...` and `/private/var/...`. If the path races away, retain
+    // the existing lexical fallback rather than making refresh unavailable.
+    let physical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let mut normalized = PathBuf::new();
-    for component in path.components() {
+    for component in physical.components() {
         match component {
             Component::CurDir => {}
             Component::ParentDir => {
@@ -463,6 +469,20 @@ mod tests {
         let linked_target =
             resolve_fetch_target(&linked, Deadline::after(Duration::from_secs(2))).unwrap();
         assert_eq!(main_target.key, linked_target.key);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn coordinator_key_collapses_filesystem_aliases() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let physical = root.path().join("physical");
+        let alias = root.path().join("alias");
+        std::fs::create_dir(&physical).unwrap();
+        symlink(&physical, &alias).unwrap();
+
+        assert_eq!(coordinator_key(&physical), coordinator_key(&alias));
     }
 
     #[test]
