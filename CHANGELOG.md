@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-08-01
+
+A lifecycle reliability patch for long-lived tray sessions. Origin refreshes
+now complete through one coordinated flight, and repositories created after
+startup join the catalog when the panel is summoned.
+
 ### Fixed
 
 - **New repositories no longer disappear during long tray sessions.**
