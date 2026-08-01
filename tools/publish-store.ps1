@@ -48,6 +48,11 @@ $createdSubmissionId = $null
 $submissionId = $null
 $commitAttempted = $false
 $workRoot = $null
+$requestedSubmissionId = if ([string]::IsNullOrWhiteSpace($ResumeSubmissionId)) {
+    $null
+} else {
+    $ResumeSubmissionId.Trim()
+}
 
 function Write-Step([string]$Message) {
     Write-Host "-> $Message" -ForegroundColor Cyan
@@ -477,7 +482,6 @@ if ([string]::IsNullOrWhiteSpace($PackagePath)) {
     throw '-PackagePath is required with -Publish.'
 }
 $PackagePath = (Resolve-Path -LiteralPath $PackagePath).Path
-$ResumeSubmissionId = ([string]$ResumeSubmissionId).Trim()
 $manifest = Get-Content -LiteralPath $ManifestPath -Raw |
     ConvertFrom-Json -Depth 100
 $productId = [string]$manifest.productId
@@ -509,7 +513,7 @@ try {
     if ([string]::IsNullOrWhiteSpace($applicationId)) {
         throw "Store product $productId returned no application id."
     }
-    $submissionId = Resolve-RequestedStoreSubmissionId $application $productId $ResumeSubmissionId
+    $submissionId = Resolve-RequestedStoreSubmissionId $application $productId $requestedSubmissionId
 
     $lastPublishedId =
         [string]$application.lastPublishedApplicationSubmission.id

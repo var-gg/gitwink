@@ -230,4 +230,43 @@ if (-not $unselectedDraftFailed -or -not $missingDraftFailed) {
     throw 'Fail-closed draft resume tests failed.'
 }
 
+# Exercise the real -Publish entry path with no resume id while stopping before
+# authentication or any Store API mutation. A validated optional parameter must
+# not be assigned an empty string during normalization.
+$probePath = Join-Path (
+    [IO.Path]::GetTempPath()
+) "gitwink-store-resume-probe-$([guid]::NewGuid().ToString('N')).msixbundle"
+$credentialNames = @(
+    'AZURE_AD_TENANT_ID',
+    'AZURE_AD_APPLICATION_CLIENT_ID',
+    'AZURE_AD_APPLICATION_SECRET'
+)
+$credentialBackup = @{}
+$missingCredentialsFailed = $false
+try {
+    [IO.File]::WriteAllBytes($probePath, [byte[]]@(1))
+    foreach ($name in $credentialNames) {
+        $credentialBackup[$name] = [Environment]::GetEnvironmentVariable($name)
+        [Environment]::SetEnvironmentVariable($name, $null)
+    }
+    try {
+        . (Join-Path $PSScriptRoot 'publish-store.ps1') `
+            -Publish `
+            -PackagePath $probePath
+    } catch {
+        if ($_.Exception.Message -notmatch '^Store publication requires ') {
+            throw
+        }
+        $missingCredentialsFailed = $true
+    }
+} finally {
+    foreach ($name in $credentialNames) {
+        [Environment]::SetEnvironmentVariable($name, $credentialBackup[$name])
+    }
+    Remove-Item -LiteralPath $probePath -Force -ErrorAction SilentlyContinue
+}
+if (-not $missingCredentialsFailed) {
+    throw 'Empty optional Store resume id regression test failed.'
+}
+
 Write-Host '[OK] Store publishing request policy tests passed.' -ForegroundColor Green
