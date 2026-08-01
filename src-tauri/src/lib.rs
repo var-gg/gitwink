@@ -10,6 +10,7 @@ mod commands;
 pub mod control;
 mod discovery;
 mod discovery_orchestrator;
+mod discovery_scheduler;
 mod discovery_sources;
 mod fetch;
 mod file_history_jobs;
@@ -90,7 +91,7 @@ pub fn run() {
             app.manage(commands::LiveSettings::from_disk(app.handle()));
             app.manage(commands::ChangedFilesCache::default());
             app.manage(fetch::FetchCoordinator::default());
-            app.manage(discovery_orchestrator::ScanState::default());
+            app.manage(discovery_scheduler::ScanState::default());
             app.manage(Arc::new(file_history_jobs::FileHistoryJobs::default()));
 
             // Full history is strictly demand-driven: the worker exists at
@@ -237,15 +238,13 @@ pub fn run() {
             app.manage(update::UpdateState::default());
             update::start(app.handle().clone());
 
-            // Prewarm discovery in the background. Reads cache + IDE
-            // recents + git config + (first-run only) full fs walk and
-            // fills cache so the next panel-open paints cache hits
-            // immediately. No UI events in this commit; commit 4 wires
-            // those up. Returns a handle holding a CancellationToken
-            // so we *could* cancel on app exit; the task is also
-            // self-bounded by per-tier deadlines + caps.
-            let _orchestrator = discovery_orchestrator::start(app.handle().clone());
-            app.manage(_orchestrator);
+            // Prewarm discovery in the background. Reads IDE recents + git
+            // config + learned roots + (first-run only) the full fallback
+            // walk. The managed scheduler also coalesces cooldown-bounded
+            // panel-summon refreshes, so a long-lived tray process discovers
+            // repositories created after startup without idle polling.
+            let discovery_scheduler = discovery_scheduler::start(app.handle().clone());
+            app.manage(discovery_scheduler);
 
             // Global hotkey to summon the panel from anywhere, even when
             // tray-hidden. Default CmdOrCtrl+Shift+G ("G" for gitwink),

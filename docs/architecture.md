@@ -53,6 +53,9 @@
 - **Cold start ≤300ms / idle RAM ≤100MB.** Architecture preserves this:
   - Lazy-load git data, eager-load only the cached timeline.
   - No long-lived per-repo polling; rely on `notify` (v0.2) for refresh.
+  - Repository discovery runs at startup and on panel summon, not on an idle
+    timer. Summon-triggered learned-root scans are off-thread, single-flight,
+    and process-cooled for 60 seconds.
 - **Errors are silent unless critical.** Repo failing to load → small
   indicator next to that repo's commits. Never blocks the UI.
 

@@ -49,11 +49,6 @@ pub enum DiscoverySource {
     GitConfigIncludeIf,
     /// Filesystem walk (Tier 5).
     FsWalk,
-    /// File watcher saw a `.git` directory appear. Hooked up in commit 6
-    /// when the existing watcher promotes its events into orchestrator
-    /// candidates.
-    #[allow(dead_code)]
-    Watcher,
 }
 
 impl DiscoverySource {
@@ -69,7 +64,6 @@ impl DiscoverySource {
             DiscoverySource::GitConfigSafe => "git_config_safe",
             DiscoverySource::GitConfigIncludeIf => "git_config_includeif",
             DiscoverySource::FsWalk => "fs_walk",
-            DiscoverySource::Watcher => "watcher",
         }
     }
 }

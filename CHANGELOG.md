@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **New repositories no longer disappear during long tray sessions.**
+  Summoning the panel now rechecks IDE hints and learned workspace roots, so a
+  sibling repository created after startup joins the catalog without restarting
+  gitwink. Refreshes run off the UI thread and share a 60-second cooldown plus
+  a single-flight lease, preserving the app's no-idle-polling contract.
 - **Reliable explicit origin refresh.** Panel-open auto-fetch and the ↻ action
   now share one common-Git-directory flight instead of racing the same remote
   refs. Manual refresh applies one 30-second end-to-end deadline, transient

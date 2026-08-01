@@ -110,7 +110,9 @@ git ツールは *何であるべきか* — はエッセイ
   `Documents`、`Projects`、`Code`、`Dev`、`repos`、`Desktop`、Windows
   ではすべての非システムドライブ / macOS では `~/Projects`、`~/Code`、
   `~/Documents`、`~/Developer`）。結果は
-  `%APPDATA%\gg.var.gitwink\cache.db` の SQLite にキャッシュ。
+  `%APPDATA%\gg.var.gitwink\cache.db` の SQLite にキャッシュされ、以後
+  パネルを呼び出すたびに学習済みのワークスペースルートを再確認するため、
+  トレイプロセスの起動中に作成したリポジトリも再起動なしで表示される。
 - すべてのリポジトリを横断する統合コミットタイムライン。Repo、期間、
   作成者、単一リポジトリモードのブランチを組み合わせて絞り込める。
   検索も別画面にはならず、現在のフィルタ組み合わせの中で動作する。

@@ -1,10 +1,10 @@
 // Multi-tier discovery orchestrator.
 //
-// Runs as a background task spawned in setup(). Pulls candidates from
-// every available source (cache, VS Code family, git config, filesystem
-// walk, learned roots), deduplicates, validates with git2::Repository
-// ::discover, and upserts to cache. Learns parent roots from validated
-// repos so the next run finds siblings.
+// Runs as a background task requested by discovery_scheduler. Pulls
+// candidates from every available source (cache, VS Code family, git config,
+// filesystem walk, learned roots), deduplicates, validates with
+// git2::Repository::discover, and upserts to cache. Learns parent roots from
+// validated repos so the next run finds siblings.
 //
 // Commit 3 scope: fill the cache silently. UI still sees repos through
 // the existing `list_repos` / `discover_repos` paths. Commit 4 wires
@@ -12,7 +12,6 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -199,51 +198,6 @@ struct ValidatedRepo {
     repo_storage_identity: Option<String>,
     /// Display name = leaf folder name of canonical_path.
     name: String,
-}
-
-/// Owned handle to the running orchestrator. Holding it lets the app
-/// cancel the task on exit if needed.
-pub struct OrchestratorHandle {
-    cancel: CancellationToken,
-}
-
-impl OrchestratorHandle {
-    #[allow(dead_code)]
-    pub fn cancel(&self) {
-        self.cancel.cancel();
-    }
-}
-
-/// Whether a discovery run is currently in flight. The frontend pulls
-/// this on startup via the `get_scan_state` command. Relying only on
-/// the `scan-progress` push event races with frontend listener
-/// registration — a fast run (warm cache, few repos) can emit its
-/// `complete` event before the listener exists, leaving the panel's
-/// "Scanning…" indicator stuck on forever.
-pub struct ScanState(pub AtomicBool);
-
-impl Default for ScanState {
-    fn default() -> Self {
-        // True at construction: the orchestrator is started right after
-        // this is managed, so "scanning" is the correct initial state.
-        Self(AtomicBool::new(true))
-    }
-}
-
-/// Spin up the discovery prewarm task. Fire-and-forget: the task runs
-/// to completion or until cancelled, logging summary lines to scan.log.
-pub fn start(app: AppHandle) -> OrchestratorHandle {
-    let cancel = CancellationToken::new();
-    let token_clone = cancel.clone();
-    let app_clone = app.clone();
-
-    tauri::async_runtime::spawn(async move {
-        if let Err(e) = run_discovery_async(app_clone, token_clone).await {
-            eprintln!("discovery orchestrator: {e:#}");
-        }
-    });
-
-    OrchestratorHandle { cancel }
 }
 
 /// Manually add a repo by path (drag-drop / paste / future file picker).
@@ -514,10 +468,11 @@ fn discover_nested_repos(app: &AppHandle, super_path: &Path, super_canonical: &s
     }
 }
 
-async fn run_discovery_async(app: AppHandle, cancel: CancellationToken) -> Result<()> {
-    if let Some(s) = app.try_state::<ScanState>() {
-        s.0.store(true, Ordering::SeqCst);
-    }
+pub(crate) async fn run(
+    app: &AppHandle,
+    cancel: CancellationToken,
+    trigger: &'static str,
+) -> Result<()> {
     let app_for_blocking = app.clone();
     let cancel_for_blocking = cancel.clone();
 
@@ -542,27 +497,28 @@ async fn run_discovery_async(app: AppHandle, cancel: CancellationToken) -> Resul
     })
     .await;
 
-    // Scan finished — clear the flag regardless of success so the panel
-    // never sticks on "Scanning…" after an errored or cancelled run.
-    if let Some(s) = app.try_state::<ScanState>() {
-        s.0.store(false, Ordering::SeqCst);
-    }
-
     match join {
         Ok(Ok((seen, valid, first))) => {
             let line = format!(
-                "{} discovery: seen={} valid={} first_run={} cancelled={}",
+                "{} discovery: trigger={} seen={} valid={} first_run={} cancelled={}",
                 unix_now(),
+                trigger,
                 seen,
                 valid,
                 first,
                 cancel.is_cancelled()
             );
-            let _ = append_scan_log(&app, &line);
+            let _ = append_scan_log(app, &line);
             Ok(())
         }
-        Ok(Err(e)) => Err(e),
-        Err(e) => Err(anyhow::anyhow!("orchestrator join error: {e}")),
+        Ok(Err(e)) => {
+            emit_scan_progress(app, 0, "complete", 1);
+            Err(e)
+        }
+        Err(e) => {
+            emit_scan_progress(app, 0, "complete", 1);
+            Err(anyhow::anyhow!("orchestrator join error: {e}"))
+        }
     }
 }
 

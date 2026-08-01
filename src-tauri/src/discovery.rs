@@ -165,6 +165,17 @@ mod tests {
     }
 
     #[test]
+    fn rescan_finds_repo_created_after_initial_pass() {
+        let dir = TempDir::new().unwrap();
+        assert!(collect(dir.path()).is_empty());
+
+        let late_repo = dir.path().join("late-repo");
+        git2::Repository::init(&late_repo).unwrap();
+
+        assert_eq!(collect(dir.path()), vec![late_repo]);
+    }
+
+    #[test]
     fn finds_top_level_repo() {
         let dir = TempDir::new().unwrap();
         make_repo(dir.path(), "alpha");

@@ -107,7 +107,9 @@ commit 없음. push 없음. merge 없음. git 수술이 필요하면
   `Projects`, `Code`, `Dev`, `repos`, `Desktop`, Windows에선 모든
   비시스템 드라이브 / macOS에선 `~/Projects`, `~/Code`,
   `~/Documents`, `~/Developer`). 결과는
-  `%APPDATA%\gg.var.gitwink\cache.db`의 SQLite에 캐시.
+  `%APPDATA%\gg.var.gitwink\cache.db`의 SQLite에 캐시하며, 이후 패널을
+  다시 열 때 학습된 워크스페이스 루트를 재확인하므로 트레이 프로세스가
+  계속 실행 중이어도 새로 만든 저장소가 앱 재시작 없이 나타난다.
 - 모든 repo를 가로지르는 통합 커밋 타임라인. Repo, 기간, 작성자,
   단일 repo 모드의 브랜치 필터를 함께 조합한다. 검색도 별도 화면으로
   분리되지 않고 현재 필터 조합 안에서 동작한다.

@@ -6,7 +6,7 @@ use tauri::{
 };
 
 use crate::panel_geometry::{self, PhysicalWorkArea};
-use crate::{commands, settings, update};
+use crate::{commands, discovery_scheduler, settings, update};
 
 const PANEL_LABEL: &str = "panel";
 const DIFF_LABEL: &str = "diff";
@@ -70,9 +70,12 @@ fn surface_panel(app: &AppHandle, window: &WebviewWindow, reposition: bool) {
     // maximize and pin state still decide whether topmost is appropriate.
     assert_panel_always_on_top(app);
     let _ = window.set_focus();
-    // The webview is only un-hidden on show, never re-created, so the
-    // bootstrap commit fetch runs once per app launch. Nudge the frontend to
-    // re-pull so a commit missed by a watcher still surfaces on summon.
+    // A tray process can outlive repositories created beside already-known
+    // workspaces. Recheck learned roots on summon; the scheduler keeps this
+    // non-blocking, single-flight and cooldown-bounded.
+    discovery_scheduler::request_panel_refresh(app);
+    // The webview is only un-hidden on show, never re-created, so nudge the
+    // frontend to re-pull commits that a watcher may have missed as well.
     let _ = window.emit("panel://shown", ());
 }
 

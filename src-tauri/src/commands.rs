@@ -1309,8 +1309,8 @@ pub fn set_panel_sticky(sticky: bool, state: tauri::State<'_, PanelSticky>) {
 /// the orchestrator finished before the scan-progress listener was
 /// registered.
 #[tauri::command]
-pub fn get_scan_state(state: tauri::State<'_, discovery_orchestrator::ScanState>) -> bool {
-    state.0.load(std::sync::atomic::Ordering::SeqCst)
+pub fn get_scan_state(state: tauri::State<'_, crate::discovery_scheduler::ScanState>) -> bool {
+    state.is_scanning()
 }
 
 /// Open (or focus) the diff window for one file revision. Thin

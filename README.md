@@ -111,7 +111,9 @@ agent commits  →  tray click  →  inline expand  →  "Copy as AI context"
 - First-run discovery walks default user dirs (`source`, `Documents`,
   `Projects`, `Code`, `Dev`, `repos`, `Desktop`, every non-system drive on
   Windows / `~/Projects`, `~/Code`, `~/Documents`, `~/Developer` on macOS).
-  Results cached in SQLite at `%APPDATA%\gg.var.gitwink\cache.db`.
+  Results are cached in SQLite at `%APPDATA%\gg.var.gitwink\cache.db`; later
+  panel summons recheck learned workspace roots so repositories created while
+  the tray process stays alive appear without an app restart.
 - Unified commit timeline across all repos, with composable Repo, Time,
   Author, and (in single-repo mode) Branch filters. Search stays inside
   the active filter combination instead of becoming a separate view.
