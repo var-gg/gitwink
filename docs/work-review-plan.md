@@ -59,3 +59,12 @@ Keep CSS local to the review surface. Preserve current read-only/privacy policy.
   handoff test. Corrected the test fixture and scoped Vitest to src/tools;
   the earlier local 175 total included 28 tests in an unrelated nested
   worktree. The owning frontend suite is now 147 tests, all passing locally.
+
+- Integration complete: native clipboard/baseline/context checks passed.
+  A 16,000-line native test exposed missing scroll listeners after worker
+  loading; fixed and covered by a regression that fails before the fix.
+  Final local result: 207 Rust tests, 148 frontend tests, complete locales
+  and production-asset Windows build. Validation details, build hashes and
+  measurement boundaries are in [Work review validation](work-review-validation.md).
+  English/Korean/Japanese usage documentation is updated; PR #12 carries
+  the per-commit Windows/macOS CI results.
