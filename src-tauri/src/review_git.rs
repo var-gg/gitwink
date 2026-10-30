@@ -180,6 +180,19 @@ pub fn patch(
     file_id: &str,
     context: u32,
 ) -> Result<git_diff::FilePatch> {
+    let repo = validate(snapshot)?;
+    let result = read_patch(&repo, snapshot, file_id, context)?;
+    validate(snapshot)?;
+    Ok(result)
+}
+
+// Callers must validate the same snapshot before and after the whole read batch.
+pub(crate) fn read_patch(
+    repo: &Repository,
+    snapshot: &ReviewSnapshot,
+    file_id: &str,
+    context: u32,
+) -> Result<git_diff::FilePatch> {
     let file = snapshot
         .files
         .iter()
@@ -188,7 +201,6 @@ pub fn patch(
     if file.file.is_binary {
         bail!("Binary content is listed as metadata in work review");
     }
-    let repo = validate(snapshot)?;
     let result = if let Some(fingerprint) = &snapshot.fingerprint {
         review_worktree::patch(
             &repo,
@@ -207,6 +219,5 @@ pub fn patch(
             context,
         )?
     };
-    validate(snapshot)?;
     Ok(result)
 }

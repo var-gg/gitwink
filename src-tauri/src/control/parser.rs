@@ -49,6 +49,8 @@ pub fn parse_show_tokens(tokens: &[String], cwd: &str) -> Result<ControlRequest,
         .ok_or_else(|| invalid("Missing show target (`commit` or `file-history`)"))?;
 
     let mut repo: Option<String> = None;
+    let mut base = None;
+    let mut head = None;
     let mut revision: Option<String> = None;
     let mut file_path: Option<String> = None;
     let mut source: Option<String> = None;
@@ -59,6 +61,16 @@ pub fn parse_show_tokens(tokens: &[String], cwd: &str) -> Result<ControlRequest,
     let mut index = 2usize;
     while index < tokens.len() {
         match tokens[index].as_str() {
+            "--base" => set_once(
+                &mut base,
+                value_after(tokens, &mut index, "--base")?,
+                "--base",
+            )?,
+            "--head" => set_once(
+                &mut head,
+                value_after(tokens, &mut index, "--head")?,
+                "--head",
+            )?,
             "--repo" => set_once(
                 &mut repo,
                 value_after(tokens, &mut index, "--repo")?,
@@ -103,7 +115,24 @@ pub fn parse_show_tokens(tokens: &[String], cwd: &str) -> Result<ControlRequest,
     let invocation_cwd = non_empty(cwd.to_string(), "invocation cwd")?;
     let repo = RepoLocator::LocalPath { path: repo };
 
+    if target != "range" && (base.is_some() || head.is_some()) {
+        return Err(invalid(
+            "`--base` and `--head` are only valid for `show range`",
+        ));
+    }
     let intent = match target {
+        "range" | "worktree" => {
+            if revision.is_some() || file_path.is_some() || expand_explicit {
+                return Err(invalid("Range/worktree do not accept --rev, --path or --expand"));
+            }
+            if target == "worktree" { ControlIntent::ShowWorktree { repo } }
+            else {
+                let base = non_empty(base.ok_or_else(|| invalid("show range requires --base"))?, "--base")?;
+                let head = non_empty(head.ok_or_else(|| invalid("show range requires --head"))?, "--head")?;
+                if base.len() > MAX_REVISION_BYTES || head.len() > MAX_REVISION_BYTES { return Err(invalid("Revision is too long")); }
+                ControlIntent::ShowRange { repo, base, head }
+            }
+        }
         "commit" => {
             if file_path.is_some() {
                 return Err(invalid("`--path` is only valid for `show file-history`"));
@@ -145,7 +174,7 @@ pub fn parse_show_tokens(tokens: &[String], cwd: &str) -> Result<ControlRequest,
         }
         unknown => {
             return Err(invalid(format!(
-                "Unknown show target `{unknown}`; expected `commit` or `file-history`"
+                "Unknown show target `{unknown}`; expected `commit`, `file-history`, `range` or `worktree`"
             )))
         }
     };

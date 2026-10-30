@@ -1,0 +1,49 @@
+.review-shell { height: 100vh; display: flex; flex-direction: column; background: inherit; color: inherit; font-size: 13px; }
+.review-shell button, .review-shell input { font: inherit; }
+.review-shell button { cursor: pointer; border: 1px solid color-mix(in srgb, currentColor 16%, transparent); background: transparent; color: inherit; border-radius: 6px; padding: 7px 11px; }
+.review-shell button:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+.review-shell button:disabled { opacity: .45; cursor: default; }
+.review-shell input { min-width: 0; color: inherit; background: color-mix(in srgb, currentColor 5%, transparent); border: 1px solid color-mix(in srgb, currentColor 16%, transparent); border-radius: 5px; padding: 7px 9px; }
+.review-shell :focus-visible { outline: 2px solid #57a6ff; outline-offset: 2px; }
+.review-header { padding: 18px 24px 14px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.review-eyebrow { font-size: 11px; opacity: .6; letter-spacing: .06em; }
+.review-header h1 { font-size: 22px; margin: 4px 0; font-weight: 600; }
+.review-branch { font-family: monospace; opacity: .7; font-size: 12px; }
+.review-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.review-actions .review-primary { background: #276baf; border-color: #448acb; color: white; }
+.review-tabs { display: flex; padding: 0 24px; gap: 18px; border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent); }
+.review-tabs button { border: 0; border-radius: 0; padding: 12px 0; border-bottom: 2px solid transparent; opacity: .6; }
+.review-tabs button.active { color: #58a6ff; border-bottom-color: #58a6ff; opacity: 1; }
+.review-range { display: flex; align-items: end; gap: 12px; padding: 12px 24px; border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent); }
+.review-range label { display: flex; flex-direction: column; gap: 5px; font-size: 11px; flex: 1; }
+.review-range input { font-family: monospace; font-size: 12px; }
+.review-range > span { padding-bottom: 9px; opacity: .5; }
+.review-notice, .review-error { padding: 10px 24px; background: color-mix(in srgb, #58a6ff 10%, transparent); line-height: 1.5; }
+.review-error { background: color-mix(in srgb, #db6060 10%, transparent); color: #df7777; }
+.review-error pre { font: inherit; margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.review-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.review-files { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid color-mix(in srgb, currentColor 15%, transparent); }
+.review-file-tools { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.review-file-tools > div { display: flex; gap: 8px; }
+.review-file-tools button { font-size: 11px; padding: 4px 8px; }
+.review-file-tools small { font-size: 10px; opacity: .6; }
+.review-file-scroll { overflow: auto; flex: 1; }
+.review-file-scroll h2 { font-size: 11px; padding: 9px 12px; margin: 0; opacity: .7; display: flex; justify-content: space-between; }
+.review-file-scroll p { padding: 12px; opacity: .65; }
+.review-file-row { display: flex; align-items: center; padding-left: 10px; }
+.review-file-row.active { background: color-mix(in srgb, #58a6ff 13%, transparent); }
+.review-file-row > input { accent-color: #58a6ff; }
+.review-file-row > button { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; border: 0; border-radius: 0; padding: 10px 8px; text-align: left; }
+.review-file-path { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 11px; }
+.review-file-path small { display: block; opacity: .5; margin-top: 3px; }
+.review-file-row button > small { white-space: nowrap; font: 10px monospace; opacity: .65; }
+.review-patch { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.review-patch-title { padding: 10px 16px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent); }
+.review-patch-title strong { font: 12px monospace; flex: 1; overflow-wrap: anywhere; }
+.review-patch-title button { padding: 3px 8px; margin-left: 4px; font-size: 11px; }
+.review-patch-title button.active { background: color-mix(in srgb, #58a6ff 18%, transparent); }
+.review-provenance { padding: 5px 16px; font-size: 9px; opacity: .5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.review-diff-content { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.review-empty { padding: 36px 24px; flex: 1; text-align: center; opacity: .6; line-height: 1.6; }
+.review-footer { display: flex; justify-content: space-between; gap: 12px; padding: 8px 14px; font-size: 10px; opacity: .5; border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent); }
+@media (max-width: 850px) { .review-files { width: 245px; } .review-header { padding: 12px 16px; } .review-actions { max-width: 370px; } .review-actions button { font-size: 11px; padding: 6px 8px; } }

@@ -22,6 +22,8 @@ mod review_store;
 mod review_worktree;
 mod review_git;
 mod review_commands;
+mod review_copy;
+mod review_window;
 #[cfg(test)]
 mod review_tests;
 #[cfg(test)]
@@ -103,6 +105,7 @@ pub fn run() {
             app.manage(commands::LiveSettings::from_disk(app.handle()));
             app.manage(diff_commands::ChangedFilesCache::default());
             app.manage(review_commands::ReviewSessions::default());
+            app.manage(review_window::PendingReview::default());
             app.manage(fetch::FetchCoordinator::default());
             app.manage(discovery_scheduler::ScanState::default());
             app.manage(Arc::new(file_history_jobs::FileHistoryJobs::default()));
@@ -442,8 +445,11 @@ pub fn run() {
             diff_commands::changed_files,
             diff_commands::changed_files_batch,
             diff_commands::file_diff,
+            review_window::open_review,
+            review_window::take_pending_review,
             review_commands::review_snapshot,
             review_commands::review_patch,
+            review_commands::review_copy_patches,
             review_commands::review_validate,
             review_commands::review_mark_reviewed,
             diff_commands::commit_file_blobs,

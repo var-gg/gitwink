@@ -48,6 +48,7 @@ export type ControlDelivery =
       requestId: string;
       source: ControlSource;
       target:
+        | { kind: "review"; request: import("./review/ipc").ReviewRequest }
         | {
             kind: "commit";
             repoPath: string;

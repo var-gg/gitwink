@@ -333,7 +333,7 @@ pub fn maybe_hide_panel_for_blur(app: &AppHandle) {
     if pinned {
         return;
     }
-    let child_visible = ["diff", "settings"].iter().any(|label| {
+    let child_visible = ["diff", "settings", "review"].iter().any(|label| {
         app.get_webview_window(label)
             .and_then(|w| w.is_visible().ok())
             .unwrap_or(false)
@@ -386,7 +386,7 @@ pub fn apply_panel_pinned(app: &AppHandle, pinned: bool) {
 }
 
 fn child_window_visible(app: &AppHandle) -> bool {
-    [DIFF_LABEL, SETTINGS_LABEL].iter().any(|label| {
+    [DIFF_LABEL, SETTINGS_LABEL, "review"].iter().any(|label| {
         app.get_webview_window(label)
             .and_then(|window| window.is_visible().ok())
             .unwrap_or(false)

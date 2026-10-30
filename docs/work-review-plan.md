@@ -48,3 +48,9 @@ Keep CSS local to the review surface. Preserve current read-only/privacy policy.
   baseline CAS, and read-only staged/unstaged/untracked snapshots. Five new
   regression tests pass, including concurrent edits, history rewind, unborn
   repositories, and unchanged index/HEAD/worktree after review reads.
+
+- Review window/CLI complete: three modes, explicit baseline action, grouped
+  files, bounded selection copy, native pending handoff and all three locales.
+  Validation: 207 Rust tests, 175 frontend tests, 433 translated messages and
+  Windows debug production-asset build pass. Native range/worktree rendering
+  and stale-snapshot errors observed. Final interaction checks continue.

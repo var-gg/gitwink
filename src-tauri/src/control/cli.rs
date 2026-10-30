@@ -13,6 +13,8 @@ USAGE
   gitwinkctl capabilities [--json]
   gitwinkctl show commit [--repo <path>] --rev <revision> [--no-expand] [--source <name>] [--request-id <id>] [--json]
   gitwinkctl show file-history [--repo <path>] --path <repo-relative-file> [--source <name>] [--request-id <id>] [--json]
+  gitwinkctl show range [--repo <path>] --base <revision> --head <revision> [--source <name>] [--json]
+  gitwinkctl show worktree [--repo <path>] [--source <name>] [--json]
   gitwinkctl help [agents]
   gitwinkctl version
 
@@ -141,6 +143,8 @@ fn print_capabilities(json_output: bool) -> i32 {
             "structuredAcknowledgement": false
         },
         "actions": [
+            { "name": "show_range", "command": "show range", "required": ["base", "head"], "optional": ["repo", "source", "requestId"], "exactResolution": true },
+            { "name": "show_worktree", "command": "show worktree", "required": [], "optional": ["repo", "source", "requestId"], "snapshot": true },
             {
                 "name": "show_commit",
                 "command": "show commit",
@@ -159,8 +163,6 @@ fn print_capabilities(json_output: bool) -> i32 {
         ],
         "plannedNotAvailable": [
             "inspect",
-            "show_range",
-            "show_worktree",
             "view_links",
             "portable_repo_locator",
             "render_acknowledgement"
@@ -170,7 +172,7 @@ fn print_capabilities(json_output: bool) -> i32 {
         println!("{}", serde_json::to_string_pretty(&value).unwrap());
     } else {
         println!(
-            "gitwink control {}\n\nAvailable:\n  show commit\n  show file-history\n\nRun `gitwinkctl help agents` for integration guidance.",
+            "gitwink control {}\n\nAvailable:\n  show commit\n  show file-history\n  show range\n  show worktree\n\nRun `gitwinkctl help agents` for integration guidance.",
             env!("CARGO_PKG_VERSION")
         );
     }
@@ -233,6 +235,15 @@ fn dispatch_show(tokens: Vec<String>, json_output: bool) -> i32 {
 fn request_to_app_args(request: &ControlRequest) -> Vec<OsString> {
     let mut args = vec![OsString::from("show")];
     match &request.intent {
+        ControlIntent::ShowRange { repo, base, head } => {
+            args.push("range".into());
+            push_repo(&mut args, repo);
+            args.extend(["--base".into(), base.into(), "--head".into(), head.into()]);
+        }
+        ControlIntent::ShowWorktree { repo } => {
+            args.push("worktree".into());
+            push_repo(&mut args, repo);
+        }
         ControlIntent::ShowCommit {
             repo,
             revision,
@@ -269,6 +280,8 @@ fn push_repo(args: &mut Vec<OsString>, repo: &RepoLocator) {
 
 fn target_description(request: &ControlRequest) -> String {
     match &request.intent {
+        ControlIntent::ShowRange { base, head, .. } => format!("range {base}..{head}"),
+        ControlIntent::ShowWorktree { .. } => "current changes".into(),
         ControlIntent::ShowCommit { revision, .. } => format!("commit {revision}"),
         ControlIntent::ShowFileHistory { file_path, .. } => {
             format!("file history for {file_path}")
@@ -362,6 +375,45 @@ mod tests {
                 "request-1"
             ]
         );
+    }
+
+    #[test]
+    fn range_and_worktree_forwarding_roundtrip_preserves_revisions_and_identity() {
+        for tokens in [
+            vec![
+                "show",
+                "range",
+                "--base",
+                "HEAD~2",
+                "--head",
+                "HEAD",
+                "--request-id",
+                "range-1",
+            ],
+            vec!["show", "worktree", "--request-id", "worktree-1"],
+        ] {
+            let tokens = tokens.into_iter().map(str::to_string).collect::<Vec<_>>();
+            let request = parser::parse_show_tokens(&tokens, "/repo").unwrap();
+            let forwarded = request_to_app_args(&request)
+                .into_iter()
+                .map(|s| s.to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                parser::parse_show_tokens(&forwarded, "/repo").unwrap(),
+                request
+            );
+        }
+        for tokens in [
+            vec!["show", "range", "--base", "HEAD"],
+            vec!["show", "worktree", "--rev", "HEAD"],
+            vec!["show", "commit", "--rev", "HEAD", "--base", "HEAD~1"],
+        ] {
+            assert!(parser::parse_show_tokens(
+                &tokens.into_iter().map(str::to_string).collect::<Vec<_>>(),
+                "/repo"
+            )
+            .is_err());
+        }
     }
 
     #[test]

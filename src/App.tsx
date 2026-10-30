@@ -1,3 +1,4 @@
+import { openReview } from "./lib/review/ipc";
 import {
   useCallback,
   useEffect,
@@ -1085,6 +1086,10 @@ function App() {
       return;
     }
 
+    if (delivery.target.kind === "review") {
+      void openReview(delivery.target.request).catch(error => setControlNotice({ tone: "error", source, detail: String(error) }));
+      return;
+    }
     if (delivery.target.kind === "commit") {
       const { commit, presentation } = delivery.target;
       const current = viewRef.current;

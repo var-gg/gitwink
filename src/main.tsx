@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import App from "./App";
+import { ReviewApp } from "./components/review/ReviewApp";
 import { DiffApp } from "./components/DiffApp";
 import { Settings } from "./components/Settings";
 import { LocaleBoundary } from "./i18n/LocaleBoundary";
@@ -14,7 +15,7 @@ import "./styles/panel-window.css";
 
 const label = getCurrentWindow().label;
 const Root =
-  label === "diff" ? DiffApp : label === "settings" ? Settings : App;
+  label === "review" ? ReviewApp : label === "diff" ? DiffApp : label === "settings" ? Settings : App;
 
 /** Catches render errors so a webview never goes silently blank — shows
  *  the error text instead, which we (and the user) can read directly in

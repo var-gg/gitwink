@@ -12,6 +12,7 @@ import type {
 } from "../../types";
 import { AuthorsChip } from "../AuthorsChip";
 import { BranchChip } from "../BranchChip";
+import { ReviewLauncher } from "../review/ReviewLauncher";
 import { RepoChip } from "../RepoChip";
 import { TimeRangeChip } from "../TimeRangeChip";
 import type { SearchControl } from "../TimelineWindowed";
@@ -108,6 +109,7 @@ export function PanelFilterRow(props: PanelFilterRowProps) {
             totalRepoCount={props.repos.length}
           />
 
+          {props.selectedRepoPath && <ReviewLauncher repoPath={props.selectedRepoPath} />}
           {props.fileHistory ? (
             <FileHistoryChip {...props} />
           ) : (

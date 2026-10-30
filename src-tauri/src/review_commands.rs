@@ -47,6 +47,26 @@ fn check_active(app: &AppHandle, path: &str) -> Result<()> {
 }
 
 #[tauri::command]
+pub async fn review_copy_patches(
+    app: AppHandle,
+    snapshot_id: String,
+    file_ids: Vec<String>,
+) -> Result<std::collections::HashMap<String, crate::git_diff::FilePatch>, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<_, String> {
+        (|| -> Result<_> {
+            let snapshot = app.state::<ReviewSessions>().get(&snapshot_id)?;
+            check_active(&app, &snapshot.repo_path)?;
+            let result = crate::review_copy::patches(&snapshot, &file_ids)?;
+            check_active(&app, &snapshot.repo_path)?;
+            Ok(result)
+        })()
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn review_snapshot(
     app: AppHandle,
     request: ReviewRequest,

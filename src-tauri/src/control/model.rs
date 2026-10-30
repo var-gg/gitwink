@@ -39,6 +39,14 @@ impl Default for ControlSource {
     rename_all_fields = "camelCase"
 )]
 pub enum ControlIntent {
+    ShowRange {
+        repo: RepoLocator,
+        base: String,
+        head: String,
+    },
+    ShowWorktree {
+        repo: RepoLocator,
+    },
     ShowCommit {
         repo: RepoLocator,
         revision: String,
@@ -118,6 +126,9 @@ impl ControlDelivery {
     rename_all_fields = "camelCase"
 )]
 pub enum ResolvedTarget {
+    Review {
+        request: crate::review_types::ReviewRequest,
+    },
     Commit {
         repo_path: String,
         commit: CommitSummary,

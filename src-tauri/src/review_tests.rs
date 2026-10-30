@@ -185,3 +185,27 @@ fn baseline_persistence_is_scoped_and_compare_and_swap_guarded() {
     assert!(review_store::save(&mut conn, "repo", "main", None, &next).is_err());
     review_store::save(&mut conn, "repo", "main", Some(&first), &next).unwrap();
 }
+
+#[test]
+fn clipboard_batch_is_bounded_and_rejects_files_outside_the_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = Repository::init(dir.path()).unwrap();
+    let base = commit(&repo, "large.txt", "before\n");
+    let head = commit(&repo, "large.txt", &"x".repeat(50 * 1024));
+    let snapshot = review_git::snapshot(
+        &ReviewRequest::Range {
+            repo_path: dir.path().to_string_lossy().into(),
+            base,
+            head,
+        },
+        None,
+    )
+    .unwrap();
+    let id = snapshot.files[0].id.clone();
+    let result = crate::review_copy::patches(&snapshot, &[id.clone()]).unwrap();
+    assert!(result[&id].truncated);
+    assert_eq!(result[&id].reason.as_deref(), Some("clipboard_byte_limit"));
+    assert!(result[&id].text.is_empty());
+    assert!(crate::review_copy::patches(&snapshot, &["untracked:outside".into()]).is_err());
+    assert!(crate::review_copy::patches(&snapshot, &vec![id; 33]).is_err());
+}
