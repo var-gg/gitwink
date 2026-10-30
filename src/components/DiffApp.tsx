@@ -8,15 +8,16 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   changedFiles,
   fileDiff,
-  openFileHistory,
   takePendingDiffOpen,
   WHOLE_FILE_CONTEXT,
   type DiffOpenPayload,
 } from "../lib/ipc";
-import { FILE_STATUS_BADGES } from "../lib/changedFileBadge";
+import { patchForClipboard } from "../lib/contextBudget";
+import { DiffFileList } from "./DiffFileList";
+import "./diffFeedback.css";
 import { fileMenuItems } from "../lib/commitClipboard";
 import { getDiffSelectionRange, refLineWithFile } from "../lib/smartcopy";
-import type { ChangedFile } from "../types";
+import type { ChangedFile, FilePatch } from "../types";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { ImageDiff } from "./ImageDiff";
 import { SideBySideDiff } from "./SideBySideDiff";
@@ -101,7 +102,8 @@ export function DiffApp() {
   // for vendor-bump-scale commits ("showing N of M" in the sidebar).
   const [filesTotal, setFilesTotal] = useState(0);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [diffText, setDiffText] = useState<string | null>(null);
+  const [patch, setPatch] = useState<FilePatch | null>(null);
+  const diffText = patch?.text ?? null;
   // A real diff-fetch failure, kept SEPARATE from diffText so an error never
   // gets parsed as a (zero-hunk) patch and rendered as a misleading
   // "No textual diff." When set, the main pane shows an honest error block.
@@ -260,12 +262,12 @@ export function DiffApp() {
     // fetch a (possibly Full-context) text diff for a file we don't yet know
     // is binary or oversized.
     if (filesCtx !== `${ctx.repoPath}:${ctx.hash}`) {
-      setDiffText(null);
+      setPatch(null);
       shownDiffKeyRef.current = "";
       return;
     }
     if (isImage || isBinary) {
-      setDiffText("");
+      setPatch(null);
       shownDiffKeyRef.current = "";
       return;
     }
@@ -273,7 +275,7 @@ export function DiffApp() {
     // (changedFiles failed or omitted it) — don't fire a text diff (least of
     // all a Full one) for a file we can't size-check.
     if (!selectedFileMeta) {
-      setDiffText("");
+      setPatch(null);
       shownDiffKeyRef.current = "";
       return;
     }
@@ -283,7 +285,7 @@ export function DiffApp() {
     // reading position + find state) with a small loading chip. Only a
     // different file/commit goes through the unmounting "Loading diff…" swap.
     const fetchKey = `${ctx.repoPath}:${ctx.hash}:${selectedFile}`;
-    if (shownDiffKeyRef.current !== fetchKey) setDiffText(null);
+    if (shownDiffKeyRef.current !== fetchKey) setPatch(null);
     setDiffLoading(true);
     (async () => {
       try {
@@ -294,7 +296,7 @@ export function DiffApp() {
           effectiveContext,
         );
         if (!cancelled) {
-          setDiffText(txt);
+          setPatch(txt);
           shownDiffKeyRef.current = fetchKey;
         }
       } catch (e) {
@@ -349,10 +351,10 @@ export function DiffApp() {
         items.push({
           label: i18n._(diffMessages.copyWithReference),
           onClick: () => {
-            const ref = refLineWithFile(
+            const ref = !range && patch ? `${patch.oldRevision}:${patch.oldPath} → ${patch.newRevision}:${patch.newPath}` : refLineWithFile(
               ctx.repoName,
-              ctx.shortHash,
-              file,
+              (range?.side === "left" ? patch?.oldRevision : patch?.newRevision) ?? ctx.hash,
+              (range?.side === "left" ? patch?.oldPath : patch?.newPath) ?? file,
               range?.start ?? null,
               range?.end ?? null,
             );
@@ -383,7 +385,7 @@ export function DiffApp() {
         !isImage &&
         !isBinary
       ) {
-        const patch = diffText;
+        const clipboardPatch = patch ? patchForClipboard(patch) : diffText;
         const header = refLineWithFile(
           ctx.repoName,
           ctx.shortHash,
@@ -393,7 +395,7 @@ export function DiffApp() {
         );
         items.push({
           label: i18n._(diffMessages.copyFileDiff),
-          onClick: () => void writeText(`${header}\n${patch}`),
+          onClick: () => void writeText(`${header}\n${clipboardPatch}`),
         });
       }
       items.push({ divider: true });
@@ -491,84 +493,7 @@ export function DiffApp() {
               {i18n._(diffMessages.noFileChanges)}
             </div>
           ) : (
-            files.map((f) => {
-              const isSel = f.path === selectedFile;
-              const slash = f.path.lastIndexOf("/");
-              const dir = slash >= 0 ? f.path.slice(0, slash + 1) : "";
-              const name = slash >= 0 ? f.path.slice(slash + 1) : f.path;
-              const badge =
-                FILE_STATUS_BADGES[f.status] ?? FILE_STATUS_BADGES.modified;
-              return (
-                <div
-                  key={f.path}
-                  className={"diff-file-wrap" + (isSel ? " active" : "")}
-                  data-file-path={f.path}
-                >
-                  <button
-                    className={"diff-file" + (isSel ? " active" : "")}
-                    onClick={() => setSelectedFile(f.path)}
-                    title={
-                      f.oldPath
-                        ? translate(i18n, diffMessages.renamedFrom, {
-                            path: f.oldPath,
-                          })
-                        : f.path
-                    }
-                  >
-                    <div className="diff-file-line">
-                      <span className={"changed-file-badge " + badge.cls}>
-                        {badge.label}
-                      </span>
-                      <span className="diff-file-name">{name}</span>
-                      {f.isBinary && (
-                        <span
-                          className="changed-file-bin"
-                          title={i18n._(diffMessages.binaryFile)}
-                        >
-                          bin
-                        </span>
-                      )}
-                      <span className="diff-file-stat">
-                        {f.isBinary ? (
-                          <span className="diff-file-binsize">
-                            {formatSize(f.newSize ?? f.oldSize)}
-                          </span>
-                        ) : (
-                          <>
-                            <span className="changed-file-plus">
-                              +{f.insertions}
-                            </span>
-                            <span className="changed-file-minus">
-                              −{f.deletions}
-                            </span>
-                          </>
-                        )}
-                      </span>
-                    </div>
-                    {(dir || f.oldPath) && (
-                      <div className="diff-file-dir">
-                        {f.oldPath && (
-                          <span className="changed-file-old">
-                            {f.oldPath} →{" "}
-                          </span>
-                        )}
-                        {dir}
-                      </div>
-                    )}
-                  </button>
-                  <button
-                    className="diff-file-history"
-                    title={i18n._(diffMessages.showHistoryInPanel)}
-                    aria-label={translate(i18n, diffMessages.showHistory, {
-                      file: name,
-                    })}
-                    onClick={() => void openFileHistory(ctx.repoPath, f.path)}
-                  >
-                    🕘
-                  </button>
-                </div>
-              );
-            })
+            <DiffFileList files={files} selectedPath={selectedFile} onSelect={setSelectedFile} repoPath={ctx.repoPath} />
           )}
           {filesTotal > files.length && (
             <div className="diff-sidebar-more">
@@ -633,7 +558,9 @@ export function DiffApp() {
                   {i18n._(diffMessages.loadingShort)}
                 </div>
               )}
+              {patch?.truncated && <div className="diff-limit-notice" role="status">{i18n._(diffMessages.patchTruncated)}</div>}
               <SideBySideDiff
+                key={`${ctx.repoPath}:${ctx.hash}:${selectedFile}`}
                 text={diffText}
                 filePath={selectedFile}
                 fileKey={`${ctx.repoPath}:${ctx.hash}:${selectedFile}`}

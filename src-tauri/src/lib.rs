@@ -15,6 +15,20 @@ mod discovery_sources;
 mod fetch;
 mod file_history_jobs;
 mod git;
+mod git_diff;
+mod git_blobs;
+mod review_types;
+mod review_store;
+mod review_worktree;
+mod review_git;
+mod review_commands;
+mod review_copy;
+mod review_window;
+#[cfg(test)]
+mod review_tests;
+#[cfg(test)]
+mod diff_tests;
+mod diff_commands;
 mod history_decorations;
 #[allow(dead_code)] // lazy search backfill integration follows the storage foundation
 mod history_fts;
@@ -89,7 +103,9 @@ pub fn run() {
             // GPT Pro review (newly-opened windows could otherwise read
             // stale disk while a debounced broadcast was in flight).
             app.manage(commands::LiveSettings::from_disk(app.handle()));
-            app.manage(commands::ChangedFilesCache::default());
+            app.manage(diff_commands::ChangedFilesCache::default());
+            app.manage(review_commands::ReviewSessions::default());
+            app.manage(review_window::PendingReview::default());
             app.manage(fetch::FetchCoordinator::default());
             app.manage(discovery_scheduler::ScanState::default());
             app.manage(Arc::new(file_history_jobs::FileHistoryJobs::default()));
@@ -426,10 +442,17 @@ pub fn run() {
             commands::inspect_replacement_repo,
             commands::replace_excluded_repo,
             commands::repo_commits,
-            commands::changed_files,
-            commands::changed_files_batch,
-            commands::file_diff,
-            commands::commit_file_blobs,
+            diff_commands::changed_files,
+            diff_commands::changed_files_batch,
+            diff_commands::file_diff,
+            review_window::open_review,
+            review_window::take_pending_review,
+            review_commands::review_snapshot,
+            review_commands::review_patch,
+            review_commands::review_copy_patches,
+            review_commands::review_validate,
+            review_commands::review_mark_reviewed,
+            diff_commands::commit_file_blobs,
             commands::file_history,
             commands::cancel_file_history,
             commands::open_file_history,

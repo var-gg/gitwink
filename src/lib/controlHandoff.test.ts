@@ -30,7 +30,7 @@ function commit(hash: string, timestamp: number, repoPath = "C:\\repo"): CommitS
 describe("control handoff commit injection", () => {
   it("renders an exact target before the surrounding timeline finishes loading", () => {
     const target = commit("target", 10);
-    expect(mergeAnchoredCommit(null, target, "c:\\REPO", false)).toEqual([
+    expect(mergeAnchoredCommit(null, target, target.repoPath, false)).toEqual([
       target,
     ]);
   });

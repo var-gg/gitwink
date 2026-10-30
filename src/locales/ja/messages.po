@@ -191,6 +191,11 @@ msgid "panel.fileHistory.refs"
 msgstr "{scope}; リモート追跡 ref を {count}件含む; 名前変更はまだ追跡しません"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.selected"
+msgstr "全{total}ファイル中{selected}ファイルをコピー対象に選択"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "timeline.new.count"
 msgstr "↑ 新着コミット {count} 件"
@@ -376,6 +381,11 @@ msgid "filters.search.scopeBack"
 msgstr "検索範囲に戻る"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.base"
+msgstr "比較元リビジョン"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
 msgid "diff.image.beforeAlt"
 msgstr "変更前"
@@ -389,6 +399,11 @@ msgstr "変更前"
 #: src/i18n/messages/diff.ts
 msgid "diff.binaryFile"
 msgstr "バイナリファイル"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.binary"
+msgstr "バイナリまたはサブモジュールの変更です。状態とサイズを表示し、AI用コピーでは内容を省略します。"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -461,6 +476,11 @@ msgid "filters.search.clear"
 msgstr "検索をクリア"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.none"
+msgstr "選択を解除"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
 msgid "diff.find.closeTitle"
 msgstr "閉じる（Esc）"
@@ -496,6 +516,11 @@ msgid "timeline.anchor.older"
 msgstr "コミット {hash} は、ここに読み込まれた {count} 件より古いコミットです。"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.range"
+msgstr "コミット範囲"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "timeline.search.results"
 msgstr "コミット検索結果"
@@ -509,6 +534,11 @@ msgstr "現在のリポジトリと期間範囲のコミット"
 #: src/i18n/messages/filters.ts
 msgid "filters.repos.matchingCommitCounts"
 msgstr "現在の作成者・期間フィルターに一致するコミット"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.compare"
+msgstr "比較"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -549,6 +579,11 @@ msgstr "コピーしました ✓"
 #: src/i18n/messages/panel.ts
 msgid "timeline.copy.copiedAi"
 msgstr "AI コンテキストとしてコピーしました ✓"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.copied"
+msgstr "正確な参照と省略の説明を含めてコピーしました。"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
@@ -601,6 +636,11 @@ msgid "clipboard.copyFullHash"
 msgstr "完全なハッシュをコピー"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.copy"
+msgstr "選択したファイルをAI用にコピー"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
 msgid "clipboard.copyShortHash"
 msgstr "短いハッシュをコピー"
@@ -609,6 +649,11 @@ msgstr "短いハッシュをコピー"
 #: src/i18n/messages/diff.ts
 msgid "clipboard.copyWithReference"
 msgstr "参照付きでコピー"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.failed"
+msgstr "レビューを読み込めませんでした。以下の詳細を確認して更新してください。"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
@@ -679,6 +724,11 @@ msgstr "件数"
 #: src/i18n/messages/filters.ts
 msgid "filters.branches.countUnavailableTitle"
 msgstr "{count} 回再試行しても件数を取得できませんでした。このリストを閉じて開き直すと再試行します。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.worktree"
+msgstr "現在の変更"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -841,6 +891,11 @@ msgid "panel.notices.facetsError"
 msgstr "フィルター件数を更新できませんでした。"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.filter"
+msgstr "ファイルを絞り込み…"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
 msgid "filters.repos.filterTimelineTo"
 msgstr "タイムラインを {repo} に絞り込む"
@@ -932,6 +987,11 @@ msgid "common.gotIt"
 msgstr "了解"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.head"
+msgstr "比較先リビジョン"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "panel.fileHistory.title"
 msgstr "{path} の履歴: {scope}—クリックで終了（Esc）"
@@ -940,6 +1000,16 @@ msgstr "{path} の履歴: {scope}—クリックで終了（Esc）"
 #: src/i18n/messages/panel.ts
 msgid "panel.fileHistory.unavailable"
 msgstr "履歴を利用できません"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.tooLarge"
+msgstr "画像は存在しますが、4 MiBのプレビュー上限を超えています。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.unreadable"
+msgstr "画像は存在しますが、内容を読み込めません。"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -1137,6 +1207,11 @@ msgid "settings.shortcut.modifierError"
 msgstr "修飾キー（Ctrl / Alt / Shift）を1つ以上と、通常のキーを組み合わせてください。"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.changes"
+msgstr "差分の合計"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
 msgid "diff.minimap.newViewport"
 msgstr "新しい側（変更後）の表示範囲"
@@ -1187,6 +1262,11 @@ msgid "panel.single.fileEmptyIncomplete"
 msgstr "読み取れる履歴に {file} の変更は見つかりませんでした。一部の Git オブジェクトを読み取れず、結果は不完全です。"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.noChanges"
+msgstr "この比較には変更がありません。"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "panel.single.noCommitsDays"
 msgstr "過去 {days}日間にコミットはありません。"
@@ -1215,6 +1295,11 @@ msgstr "fetch の記録はありません"
 #: src/i18n/messages/diff.ts
 msgid "diff.files.noChanges"
 msgstr "変更されたファイルはありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.noMatch"
+msgstr "一致するファイルがありません。"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -1265,6 +1350,11 @@ msgstr "このバージョンのリリースノートはありません。"
 #: src/i18n/messages/filters.ts
 msgid "filters.repos.noMatch"
 msgstr "一致するリポジトリがありません。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.missing"
+msgstr "このブランチにはレビュー基準がありません。以前の変更はコミット範囲で確認するか、現在のHEADから開始してください。"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
@@ -1368,6 +1458,11 @@ msgstr "貼り付け中…"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
+msgid "diff.patch.truncated"
+msgstr "パッチが5 MiBを超えています。上限内の完全な行のみ表示し、コピーにも省略を明記します。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
 msgid "diff.pickFile"
 msgstr "ファイルを選択してください。"
 
@@ -1447,9 +1542,19 @@ msgid "filters.branches.reachableCommits"
 msgstr "全期間の到達可能なコミット（期間フィルターとは無関係）"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.readonly"
+msgstr "読み取り専用 · Gitのファイル、インデックス、参照は変更しません"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
 msgid "filters.authors.sortRecent"
 msgstr "最近"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.refresh"
+msgstr "更新"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
@@ -1555,6 +1660,21 @@ msgstr "復元中…"
 #: src/i18n/messages/panel.ts
 msgid "common.retry"
 msgstr "再試行"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.saved"
+msgstr "レビュー基準を保存しました。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.open"
+msgstr "作業をレビュー"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.mark"
+msgstr "このHEADまでレビュー済みにする"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/repositories.ts
@@ -1702,6 +1822,16 @@ msgid "panel.search.searching"
 msgstr "検索中…"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.choose"
+msgstr "変更を確認するファイルを選択してください。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.all"
+msgstr "すべて選択"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
 msgid "filters.authors.unavailable"
 msgstr "選択済み · 現在の範囲では利用不可"
@@ -1758,6 +1888,11 @@ msgid "diff.files.showHistory"
 msgstr "{file} の履歴を表示"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.more"
+msgstr "さらに表示"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
 msgid "filters.authors.showOnly"
 msgstr "{author} のみ表示"
@@ -1788,9 +1923,19 @@ msgid "panel.single.coverageLimited"
 msgstr "この範囲の最近のコミット {limit}件を表示しています。古いコミットは読み込んでいません。"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.since"
+msgstr "前回のレビュー以降"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/updates.ts
 msgid "update.skip"
 msgstr "v{version} をスキップ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.snapshot"
+msgstr "スナップショット · {time}"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -1811,6 +1956,16 @@ msgstr "並べ替え"
 #: src/i18n/messages/filters.ts
 msgid "filters.authors.sort"
 msgstr "作成者を並べ替え"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.staged"
+msgstr "ステージ済み"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.start"
+msgstr "このHEADからレビューを開始"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
@@ -1851,6 +2006,11 @@ msgstr "確認後にリポジトリが変更されました。確定する前に
 #: src/i18n/messages/panel.ts
 msgid "panel.fetch.unavailable"
 msgstr "リポジトリまたはシステム Git を利用できません"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.diverged"
+msgstr "保存した基準が現在のリポジトリまたは履歴と一致しません。コミット範囲を指定して確認し、新しい基準を設定してください。"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/repositories.ts
@@ -1906,6 +2066,16 @@ msgstr "パネルの固定を解除"
 #: src/i18n/messages/panel.ts
 msgid "panel.chrome.unpinTitle"
 msgstr "固定解除—フォーカスを失うと自動的に隠れ、常に手前に表示するグランスモードに戻ります"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.unstaged"
+msgstr "未ステージ"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.untracked"
+msgstr "未追跡"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/updates.ts
@@ -2006,3 +2176,8 @@ msgstr "変更箇所を強調してファイル全体を表示"
 #: src/i18n/messages/settings.ts
 msgid "settings.appearance.panelWide"
 msgstr "ワイド"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.title"
+msgstr "作業レビュー"

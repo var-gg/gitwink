@@ -9,9 +9,8 @@ import {
 import { useLingui } from "@lingui/react/macro";
 import type { Highlighter } from "shiki";
 
-import { parseDiff, type DiffSide } from "../lib/diff";
+import { type DiffSide } from "../lib/diff";
 import {
-  flattenDiff,
   longestLines,
   searchDiffRows,
   type FindMatch,
@@ -24,6 +23,7 @@ import {
 } from "../lib/highlight";
 import { sbsHeaderH, sbsLineH, useUiScale } from "../lib/settings";
 import { DiffMinimap } from "./DiffMinimap";
+import { useParsedDiff } from "../lib/useParsedDiff";
 import { diffMessages } from "../i18n/messages/diff";
 
 interface Props {
@@ -95,10 +95,8 @@ export function SideBySideDiff({ text, filePath, fileKey, locked }: Props) {
 
   // Parse → flat items + overview segments. Memoized so dragging the splitter
   // (which we keep off React entirely, below) or a scroll never reparses.
-  const { items, segments } = useMemo(
-    () => flattenDiff(parseDiff(text).hunks),
-    [text],
-  );
+  const { items, segments, parseError, parsing } = useParsedDiff(text);
+  const hasRows = items.length > 0 && !parseError;
 
   // Prefix-sum of row tops: offsets[i] is the pixel top of row i, offsets[n]
   // the total height. Plain numbers, O(n) rebuild — cheap for tens of
@@ -131,7 +129,7 @@ export function SideBySideDiff({ text, filePath, fileKey, locked }: Props) {
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [hasRows]);
 
   // Each column's scroll position drives its own virtual window. Locked keeps
   // them in lockstep; unlocked lets the old/new sides roam.
@@ -241,9 +239,9 @@ export function SideBySideDiff({ text, filePath, fileKey, locked }: Props) {
     if (rightRef.current) rightRef.current.scrollTop = topR;
     setScrollTopL(topL);
     setScrollTopR(topR);
-    // items/offsets are derived from text — text is the real trigger.
+    // Worker results arrive after text changes; anchor the completed rows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text]);
+  }, [items, fileKey]);
 
   // ----- in-diff find (Ctrl+F) -----
   // The columns are virtualized, so the browser's native find can't see
@@ -267,7 +265,7 @@ export function SideBySideDiff({ text, filePath, fileKey, locked }: Props) {
   // bar — Ctrl+F must not arm invisible find state there (it would swallow
   // the next Esc meant for the window).
   const hasRowsRef = useRef(false);
-  hasRowsRef.current = items.length > 0;
+  hasRowsRef.current = !!hasRows;
 
   const findMatches = useMemo(
     () => searchDiffRows(items, findQuery),
@@ -456,7 +454,7 @@ export function SideBySideDiff({ text, filePath, fileKey, locked }: Props) {
       if (rafL) cancelAnimationFrame(rafL);
       if (rafR) cancelAnimationFrame(rafR);
     };
-  }, [locked]);
+  }, [locked, hasRows]);
 
   // Column resizer — drag the divider to rebalance old vs new, double-click
   // to reset. We update a CSS variable directly via ref during the drag so the
@@ -494,6 +492,10 @@ export function SideBySideDiff({ text, filePath, fileKey, locked }: Props) {
     setSplit(splitRef.current); // commit once, after the drag
     saveSplit(splitRef.current);
   }
+
+  if (parseError) return <div className="diff-loading" role="alert">{i18n._(diffMessages.loadFailed)}</div>;
+
+  if (parsing && items.length === 0) return <div className="diff-loading" role="status">{i18n._(diffMessages.loading)}</div>;
 
   if (items.length === 0) {
     return <div className="sbs-empty">{i18n._(diffMessages.noText)}</div>;

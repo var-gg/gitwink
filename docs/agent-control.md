@@ -56,6 +56,33 @@ not exist in the current checkout; history for a deleted file is still a valid
 question. Rename following is not available in the first protocol version and
 is reported as such by `capabilities` and the UI.
 
+## Show a work review
+
+```sh
+gitwinkctl show range --repo /path/to/repo --base <base-commit> --head <head-commit> --source Codex
+gitwinkctl show worktree --repo /path/to/repo --source Codex
+```
+
+Ranges compare the exact two resolved commits (net tree change, not concatenated
+commit patches or an implicit merge base). Current changes show staged,
+unstaged and untracked groups separately. An uncommitted snapshot is checked
+against HEAD, the index and changed file contents before reading/copying;
+concurrent edits require Refresh. Both commands open the same Work review
+window available from a selected repository in the panel.
+
+The window can save a local reviewed baseline per repository worktree and
+branch. It advances only when explicitly requested for the inspected current
+HEAD. Worktree snapshots never advance a committed baseline. A missing baseline
+starts with no implied reviewed history; changed/replaced history requires an
+explicit range. Review metadata lives in `review.sqlite` in the app data folder.
+
+Copying includes full base/head hashes, file groups, selected paths and omission
+notes within 64 KiB. Untracked files start unselected. Binary contents are
+metadata-only. Text patches are capped at 5 MiB, copied patches at 32 files and
+1,200 changed lines per file. A current-changes snapshot supports up to 10,000
+changed files and hashes up to 256 MiB of local changed file content; larger
+snapshots and conflicted indexes report a clear limit instead of a partial view.
+
 ## GUI activation fallback
 
 If `gitwinkctl` is not exposed on `PATH` but the app binary or Store alias is,
@@ -107,7 +134,5 @@ or letting the user inspect evidence without reading a long prose dump. Do not
 open gitwink for every answer, do not make it a prerequisite for correctness,
 and fall back to a concise textual summary when capability discovery fails.
 
-The first protocol intentionally stops here. Commit ranges, working-tree
-changes, portable repository identities, shareable view links, inspection
-queries, and render acknowledgements require their own explicit semantics
-before they can be added safely.
+Portable repository identities, shareable view links, inspection queries and
+render acknowledgements remain unavailable.

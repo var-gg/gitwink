@@ -1,0 +1,7 @@
+.diff-limit-notice {
+  padding: 10px 16px;
+  color: #b67516;
+  background: color-mix(in srgb, #b67516 10%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, #b67516 30%, transparent);
+  font-size: 12px;
+}

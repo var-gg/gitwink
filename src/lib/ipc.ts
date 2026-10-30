@@ -7,6 +7,7 @@ import type {
   ChangedFile,
   CommitAround,
   CommitFileBlobs,
+  FilePatch,
   CommitSummary,
   RepoCommitsResult,
   CommitWindow,
@@ -47,6 +48,7 @@ export type ControlDelivery =
       requestId: string;
       source: ControlSource;
       target:
+        | { kind: "review"; request: import("./review/ipc").ReviewRequest }
         | {
             kind: "commit";
             repoPath: string;
@@ -340,8 +342,8 @@ export async function fileDiff(
    * context; a very large value (see WHOLE_FILE_CONTEXT) yields a
    * whole-file diff. Only the default is cached by the backend. */
   contextLines = 3,
-): Promise<string> {
-  return invoke<string>("file_diff", { repoPath, hash, filePath, contextLines });
+): Promise<FilePatch> {
+  return invoke<FilePatch>("file_diff", { repoPath, hash, filePath, contextLines });
 }
 
 export async function commitFileBlobs(

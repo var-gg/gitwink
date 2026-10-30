@@ -18,9 +18,10 @@ pub fn resolve(app: &AppHandle, request: &ControlRequest) -> Result<ResolvedTarg
     }
 
     let locator = match &request.intent {
-        ControlIntent::ShowCommit { repo, .. } | ControlIntent::ShowFileHistory { repo, .. } => {
-            repo
-        }
+        ControlIntent::ShowCommit { repo, .. }
+        | ControlIntent::ShowFileHistory { repo, .. }
+        | ControlIntent::ShowRange { repo, .. }
+        | ControlIntent::ShowWorktree { repo } => repo,
     };
     let candidate = local_candidate(locator, &request.invocation_cwd)?;
     let canonical =
@@ -50,6 +51,28 @@ pub fn resolve(app: &AppHandle, request: &ControlRequest) -> Result<ResolvedTarg
     drop(conn);
 
     let target = match &request.intent {
+        ControlIntent::ShowRange { base, head, .. } => {
+            let repo =
+                git2::Repository::open(&repo_path).map_err(|e| internal("Open repository", e))?;
+            let base = crate::review_git::resolve(&repo, base).map_err(|e| {
+                ControlError::new(ControlErrorCode::RevisionNotFound, e.to_string())
+            })?;
+            let head = crate::review_git::resolve(&repo, head).map_err(|e| {
+                ControlError::new(ControlErrorCode::RevisionNotFound, e.to_string())
+            })?;
+            ResolvedTarget::Review {
+                request: crate::review_types::ReviewRequest::Range {
+                    repo_path: repo_path.clone(),
+                    base,
+                    head,
+                },
+            }
+        }
+        ControlIntent::ShowWorktree { .. } => ResolvedTarget::Review {
+            request: crate::review_types::ReviewRequest::Worktree {
+                repo_path: repo_path.clone(),
+            },
+        },
         ControlIntent::ShowCommit {
             revision,
             presentation,

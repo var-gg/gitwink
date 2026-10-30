@@ -45,7 +45,7 @@ export function getDiffSelectionRange(): {
 
   const startEl = lineEl(range.startContainer);
   const endEl = lineEl(range.endContainer);
-  if (!startEl || !endEl) return null;
+  if (!startEl || !endEl || startEl.dataset.side !== endEl.dataset.side) return null;
   const s = parseInt(startEl.dataset.lineNum ?? "0", 10);
   const e = parseInt(endEl.dataset.lineNum ?? "0", 10);
   return {

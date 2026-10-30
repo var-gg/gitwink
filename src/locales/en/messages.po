@@ -191,6 +191,11 @@ msgid "panel.fileHistory.refs"
 msgstr "{scope}; {count} remote-tracking refs included; renames are not followed yet"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.selected"
+msgstr "{selected} of {total} files selected for copying"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "timeline.new.count"
 msgstr "↑ {count, plural, one {# new commit} other {# new commits}}"
@@ -376,6 +381,11 @@ msgid "filters.search.scopeBack"
 msgstr "Back to search scope"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.base"
+msgstr "Base revision"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
 msgid "diff.image.beforeAlt"
 msgstr "before"
@@ -389,6 +399,11 @@ msgstr "Before"
 #: src/i18n/messages/diff.ts
 msgid "diff.binaryFile"
 msgstr "Binary file"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.binary"
+msgstr "Binary or submodule change. This review includes its status and size; content is omitted from AI context."
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -461,6 +476,11 @@ msgid "filters.search.clear"
 msgstr "Clear search"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.none"
+msgstr "Clear selection"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
 msgid "diff.find.closeTitle"
 msgstr "Close (Esc)"
@@ -496,6 +516,11 @@ msgid "timeline.anchor.older"
 msgstr "Commit {hash} is older than the {count} commits loaded here."
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.range"
+msgstr "Commit range"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "timeline.search.results"
 msgstr "Commit search results"
@@ -509,6 +534,11 @@ msgstr "Commits in the current repository and time scope"
 #: src/i18n/messages/filters.ts
 msgid "filters.repos.matchingCommitCounts"
 msgstr "Commits matching the current author and time filters"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.compare"
+msgstr "Compare"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -549,6 +579,11 @@ msgstr "Copied ✓"
 #: src/i18n/messages/panel.ts
 msgid "timeline.copy.copiedAi"
 msgstr "Copied as AI context ✓"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.copied"
+msgstr "Copied with exact references and omission notes."
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
@@ -601,6 +636,11 @@ msgid "clipboard.copyFullHash"
 msgstr "Copy full hash"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.copy"
+msgstr "Copy selected as AI context"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
 msgid "clipboard.copyShortHash"
 msgstr "Copy short hash"
@@ -609,6 +649,11 @@ msgstr "Copy short hash"
 #: src/i18n/messages/diff.ts
 msgid "clipboard.copyWithReference"
 msgstr "Copy with reference"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.failed"
+msgstr "Could not load this review. Refresh after checking the details below."
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
@@ -679,6 +724,11 @@ msgstr "Count"
 #: src/i18n/messages/filters.ts
 msgid "filters.branches.countUnavailableTitle"
 msgstr "Count unavailable after {count} retries. Close and reopen this list to retry."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.worktree"
+msgstr "Current changes"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -841,6 +891,11 @@ msgid "panel.notices.facetsError"
 msgstr "Filter counts couldn't be refreshed."
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.filter"
+msgstr "Filter files…"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
 msgid "filters.repos.filterTimelineTo"
 msgstr "Filter timeline to {repo}"
@@ -932,6 +987,11 @@ msgid "common.gotIt"
 msgstr "Got it"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.head"
+msgstr "Head revision"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "panel.fileHistory.title"
 msgstr "History of {path}: {scope}—click to exit (Esc)"
@@ -940,6 +1000,16 @@ msgstr "History of {path}: {scope}—click to exit (Esc)"
 #: src/i18n/messages/panel.ts
 msgid "panel.fileHistory.unavailable"
 msgstr "history unavailable"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.tooLarge"
+msgstr "Image exists, but exceeds the 4 MiB preview limit."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.unreadable"
+msgstr "Image exists, but its content could not be read."
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -1137,6 +1207,11 @@ msgid "settings.shortcut.modifierError"
 msgstr "Need at least one modifier (Ctrl / Alt / Shift) + a key."
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.changes"
+msgstr "Net changes"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
 msgid "diff.minimap.newViewport"
 msgstr "New (after) viewport"
@@ -1187,6 +1262,11 @@ msgid "panel.single.fileEmptyIncomplete"
 msgstr "No change found for {file} in readable history. Some Git objects couldn't be read, so the result is incomplete."
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.noChanges"
+msgstr "No changes in this comparison."
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "panel.single.noCommitsDays"
 msgstr "No commits in the last {days} days."
@@ -1215,6 +1295,11 @@ msgstr "No fetch recorded yet"
 #: src/i18n/messages/diff.ts
 msgid "diff.files.noChanges"
 msgstr "No file changes."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.noMatch"
+msgstr "No files match this filter."
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -1265,6 +1350,11 @@ msgstr "No release notes were provided for this version."
 #: src/i18n/messages/filters.ts
 msgid "filters.repos.noMatch"
 msgstr "No repositories match."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.missing"
+msgstr "No review baseline for this branch yet. Choose a commit range to inspect earlier changes, or start from the current HEAD."
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
@@ -1368,6 +1458,11 @@ msgstr "Pasting…"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
+msgid "diff.patch.truncated"
+msgstr "Patch exceeds 5 MiB. Only complete lines within the limit are shown; copied patches also identify omissions."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
 msgid "diff.pickFile"
 msgstr "Pick a file."
 
@@ -1447,9 +1542,19 @@ msgid "filters.branches.reachableCommits"
 msgstr "Reachable commits across all time (independent of the time filter)"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.readonly"
+msgstr "Read only · Git files, index and refs are never modified"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
 msgid "filters.authors.sortRecent"
 msgstr "Recent"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.refresh"
+msgstr "Refresh"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
@@ -1555,6 +1660,21 @@ msgstr "Restoring…"
 #: src/i18n/messages/panel.ts
 msgid "common.retry"
 msgstr "Retry"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.saved"
+msgstr "Review baseline saved."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.open"
+msgstr "Review work"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.mark"
+msgstr "Reviewed through this HEAD"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/repositories.ts
@@ -1702,6 +1822,16 @@ msgid "panel.search.searching"
 msgstr "Searching…"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.choose"
+msgstr "Select a file to inspect its changes."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.all"
+msgstr "Select all"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
 msgid "filters.authors.unavailable"
 msgstr "Selected · unavailable in this scope"
@@ -1758,6 +1888,11 @@ msgid "diff.files.showHistory"
 msgstr "Show history of {file}"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.more"
+msgstr "Show more"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/filters.ts
 msgid "filters.authors.showOnly"
 msgstr "Show only {author}"
@@ -1788,9 +1923,19 @@ msgid "panel.single.coverageLimited"
 msgstr "Showing the latest {limit} commits in this scope. Older commits haven't been loaded."
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.since"
+msgstr "Since last review"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/updates.ts
 msgid "update.skip"
 msgstr "Skip v{version}"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.snapshot"
+msgstr "Snapshot · {time}"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
@@ -1811,6 +1956,16 @@ msgstr "Sort"
 #: src/i18n/messages/filters.ts
 msgid "filters.authors.sort"
 msgstr "Sort authors"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.staged"
+msgstr "Staged"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.start"
+msgstr "Start reviewing from this HEAD"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts
@@ -1851,6 +2006,11 @@ msgstr "The repository changed after you reviewed it. Review the current reposit
 #: src/i18n/messages/panel.ts
 msgid "panel.fetch.unavailable"
 msgstr "The repository or system Git is unavailable"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.diverged"
+msgstr "The saved baseline no longer matches this repository or history. Choose an explicit commit range to review and set a new baseline."
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/repositories.ts
@@ -1906,6 +2066,16 @@ msgstr "Unpin panel"
 #: src/i18n/messages/panel.ts
 msgid "panel.chrome.unpinTitle"
 msgstr "Unpin—return to glance mode (auto-hides on blur, always-on-top)"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.unstaged"
+msgstr "Unstaged"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.untracked"
+msgstr "Untracked"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/updates.ts
@@ -2006,3 +2176,8 @@ msgstr "Whole file, with changes highlighted"
 #: src/i18n/messages/settings.ts
 msgid "settings.appearance.panelWide"
 msgstr "Wide"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/review.ts
+msgid "review.title"
+msgstr "Work review"

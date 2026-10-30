@@ -3,6 +3,22 @@ import { describe, expect, it } from "vitest";
 import { parseDiff } from "./diff";
 
 describe("parseDiff", () => {
+  it("does not invent a context row for the final newline", () => {
+    const rows = parseDiff("@@ -1,2 +1,2 @@\n-old\n+new\n \n").hunks[0].rows;
+    expect(rows).toHaveLength(2);
+    expect(rows[1].left.text).toBe("");
+  });
+
+  it("pairs a large replacement block in order", () => {
+    const n = 120_000;
+    const text = `@@ -1,${n} +1,${n} @@\n`
+      + Array.from({ length: n }, (_, i) => `-old ${i}\n`).join("")
+      + Array.from({ length: n }, (_, i) => `+new ${i}\n`).join("");
+    const rows = parseDiff(text).hunks[0].rows;
+    expect(rows).toHaveLength(n);
+    expect(rows[n - 1].left.lineNum).toBe(n);
+    expect(rows[n - 1].right.text).toBe(`new ${n - 1}`);
+  });
   it("keeps deleted lines whose content starts with '-- ' (SQL comment) and doesn't shift line numbers", () => {
     // Deleting "-- init schema" arrives as "--- init schema" — it must parse
     // as a delete, not be skipped as a +++/--- preamble header.

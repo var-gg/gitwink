@@ -141,8 +141,15 @@ agent commits  →  tray click  →  inline expand  →  "Copy as AI context"
 - Copy as AI context — `c` key or button — produces a markdown block
   with the commit, file list, and (if small enough) full diff, ready
   to paste into Claude / Codex / Cursor.
-- Agent control surface — `gitwinkctl capabilities --json`, exact commit
-  landing, and single-file history landing. It is read-only and works without
+- Work review — compare two exact commits, see net changes since a saved
+  reviewed baseline, or inspect staged/unstaged/untracked changes separately.
+  Select a repository, then **Review work**. Baselines advance only when you
+  explicitly mark the inspected HEAD reviewed; concurrent changes require a
+  refresh. Untracked files require explicit selection before viewing/copying.
+- Bounded AI context for selected review files includes full revisions, paths,
+  snapshot identity and omission notes within 64 KiB. No automatic AI upload.
+- Agent control surface — `gitwinkctl capabilities --json`, exact commit,
+  single-file history, commit range and worktree landing. It is read-only and works without
   MCP or a vendor-specific skill. See [Agent control](docs/agent-control.md).
 
 ## Diff window
