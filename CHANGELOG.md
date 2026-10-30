@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-10-31
+
+Review an entire task from the tray: compare exact commits, pick up where you
+last reviewed, or inspect the changes that have not been committed yet.
+
+### Added
+
+- **Work review.** Select a repository and choose **Review work** for an exact
+  commit-range comparison, net changes since your saved reviewed baseline,
+  or separate staged, unstaged and untracked changes. Baselines are local to
+  each worktree and branch and advance only when explicitly marked reviewed.
+- **Selected review context for AI.** Copy full revision hashes, file paths,
+  snapshot identity, patches and clear omission notes within a 64 KiB budget.
+  Untracked files require explicit selection; nothing is uploaded to an AI
+  service automatically.
+- **Range and worktree handoff.** `gitwinkctl show range --base ... --head ...`
+  and `gitwinkctl show worktree` open the same review window from an agent or
+  script. English, Korean and Japanese UI and documentation are included.
+
+### Fixed
+
+- Renamed files now compare the correct old and new paths and preserve exact
+  provenance when copied. Literal filenames and missing final newlines are
+  handled correctly.
+- Large deletion patches use linear parsing and run off the UI thread.
+  Scrolling and overview navigation attach correctly after asynchronous
+  parsing, including when jumping to the end of a large file.
+- Oversized, absent, unreadable and missing-LFS image previews have distinct
+  states. Preview limits are checked before loading oversized content, and
+  patch or clipboard truncation is disclosed.
+- Review reads and copying detect changed HEAD, index and working-tree
+  contents. Changed history and repository replacements require a fresh,
+  explicit review rather than silently advancing the saved baseline.
+
+Work review is read-only. Binary files are listed as metadata, conflicted
+indexes require resolution outside gitwink, and large snapshots report their
+limits explicitly.
+
 ## [0.12.1] — 2026-08-01
 
 A lifecycle reliability patch for long-lived tray sessions. Origin refreshes
