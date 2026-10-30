@@ -43,3 +43,8 @@ Keep CSS local to the review surface. Preserve current read-only/privacy policy.
 - Diff foundation complete: exact rename provenance, explicit patch/image limits,
   bounded copy, linear worker parsing, and CI frontend gates. Verified 200 Rust
   tests, 171 frontend tests, three complete locales and production build.
+
+- Native review foundation complete: exact net ranges, branch/worktree-scoped
+  baseline CAS, and read-only staged/unstaged/untracked snapshots. Five new
+  regression tests pass, including concurrent edits, history rewind, unborn
+  repositories, and unchanged index/HEAD/worktree after review reads.

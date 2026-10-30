@@ -146,7 +146,7 @@ pub(crate) fn describe_diff(repo: &Repository, diff: &git2::Diff<'_>) -> Result<
             .map(|p| p.to_string_lossy().into_owned());
 
         let status = match delta.status() {
-            git2::Delta::Added => "new",
+            git2::Delta::Added | git2::Delta::Untracked => "new",
             git2::Delta::Deleted => "deleted",
             git2::Delta::Renamed => "renamed",
             git2::Delta::Copied => "copied",
@@ -180,12 +180,12 @@ pub(crate) fn describe_diff(repo: &Repository, diff: &git2::Diff<'_>) -> Result<
                 .ok()
         };
         let new_size = if delta.new_file().exists() {
-            blob_size(delta.new_file().id())
+            blob_size(delta.new_file().id()).or(Some(delta.new_file().size()))
         } else {
             None
         };
         let old_size = if delta.old_file().exists() {
-            blob_size(delta.old_file().id())
+            blob_size(delta.old_file().id()).or(Some(delta.old_file().size()))
         } else {
             None
         };
