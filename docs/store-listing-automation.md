@@ -140,6 +140,28 @@ finished; those remain asynchronous Store states. The gitwink-msix Actions
 artifact is uploaded before submission and remains the exact manual package
 fallback if the API path fails.
 
+## Read-only release follow-up
+
+Use Python 3 to inspect the current published and pending submissions, plus an
+exact release submission after it leaves the pending slot:
+
+```powershell
+python tools/store-submission-status.py --submission-id <id>
+```
+
+The probe reads the same three Azure environment variables as the publisher.
+An optional `--secrets-file <path>` supplies missing values from a local env
+file; credentials never need to appear on the command line. `--output <path>`
+saves sanitized JSON. The product ID comes from the listing manifest.
+
+The probe performs OAuth authentication and GET requests only. It never creates,
+updates, deletes, uploads, or commits a Store submission. It omits upload URLs,
+tokens, and unrelated listing data from its output. A successful probe means
+the status was read, not that the release is public: verify the exact submission
+is `Published`, is the product's published submission, and contains the intended
+package version. Keep the original submission ID while processing continues;
+do not repeat the upload or commit just because certification is pending.
+
 ## Official references
 
 - [Manage app submissions](https://learn.microsoft.com/en-us/windows/uwp/monetize/manage-app-submissions)

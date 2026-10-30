@@ -155,16 +155,86 @@
       "checkedAt": "2026-10-30T19:56:10.885854+00:00"
     },
     "store": {
-      "state": "building",
+      "state": "processing",
       "previousPublishedVersion": "0.12.1.0",
       "previousPublishedSubmission": "1152921505701556914",
-      "pendingAtPreflight": null
+      "pendingAtPreflight": null,
+      "submissionId": "1152921505702281113",
+      "status": "PreProcessing",
+      "productId": "9P0S21GJD53F",
+      "checkedAt": "2026-10-30T20:03:09.640708+00:00",
+      "packages": [
+        {
+          "version": "0.13.0.0",
+          "fileName": "gitwink_0.13.0.0.msixbundle",
+          "status": "Uploaded"
+        }
+      ],
+      "errors": [],
+      "workflowConclusion": "success",
+      "packageVerification": {
+        "checkedAt": "2026-10-30T20:00:32.956762+00:00",
+        "artifactId": 13008365947,
+        "workflowRun": 41117219838,
+        "file": "gitwink_0.13.0.0.msixbundle",
+        "sha256": "c558ad2ed188ff0a40f3053426e47b944530b7bb01fbfdd2ad99aabe1d58a538",
+        "size": 19441525,
+        "packages": [
+          {
+            "architecture": "x64",
+            "version": "0.13.0.0",
+            "applications": [
+              {
+                "Id": "App",
+                "Executable": "gitwink.exe",
+                "EntryPoint": "Windows.FullTrustApplication"
+              }
+            ],
+            "aliases": [
+              {},
+              {
+                "Alias": "gitwink.exe"
+              }
+            ],
+            "entries": 9
+          },
+          {
+            "architecture": "arm64",
+            "version": "0.13.0.0",
+            "applications": [
+              {
+                "Id": "App",
+                "Executable": "gitwink.exe",
+                "EntryPoint": "Windows.FullTrustApplication"
+              }
+            ],
+            "aliases": [
+              {},
+              {
+                "Alias": "gitwink.exe"
+              }
+            ],
+            "entries": 9
+          }
+        ],
+        "identity": {
+          "Name": "var-gg.gitwink",
+          "Publisher": "CN=327A9DCD-418C-44BC-86AF-641282E81095",
+          "Version": "0.13.0.0"
+        }
+      }
     },
     "winget": {
-      "state": "submission_workflow_retry",
+      "state": "awaiting_upstream_review",
       "recovery": "Connected GitHub API fast-forwarded the existing fork without changing token scopes; reran only failed winget job.",
       "forkBefore": "f42506e796442af7dce16a039328194d4c858872",
-      "forkAfter": "af8adc69715946cf612af23e7cdbc26bf84ee44f"
+      "forkAfter": "af8adc69715946cf612af23e7cdbc26bf84ee44f",
+      "pullRequest": 466522,
+      "url": "https://github.com/microsoft/winget-pkgs/pull/466522",
+      "headSha": "f020b0077efe28f04596b59ed09ad0af67a869ef",
+      "manifestVersionVerified": "0.13.0",
+      "installerSha256Verified": "5c0a3b976aa8eef21c8dfad33425f8cd2e4967a0c0ce7a8f35afdb2891271313",
+      "workflowConclusion": "success"
     },
     "scoop": {
       "state": "published_verified",
@@ -176,5 +246,30 @@
       "checkedAt": "2026-10-30T19:59:01.311522+00:00"
     }
   },
-  "updatedAt": "2026-10-30T19:59:01.311522+00:00"
+  "updatedAt": "2026-10-30T20:05:49.715558+00:00",
+  "workflowConclusions": {
+    "ci": "success",
+    "release": "success (second attempt; only failed winget submission rerun)",
+    "store": "success",
+    "scoop": "success"
+  },
+  "completion": {
+    "github": true,
+    "scoop": true,
+    "store": false,
+    "winget": false
+  },
+  "remaining": [
+    "Store submission 1152921505702281113 must become the published submission with package version 0.13.0.0.",
+    "WinGet PR 466522 must merge and version 0.13.0 must become available in the public catalog."
+  ],
+  "followUp": {
+    "reason": "External Store processing and WinGet review/catalog propagation are asynchronous.",
+    "nextAction": "Read the exact Store submission and WinGet PR/catalog via CLI/API; do not repeat upload or commit.",
+    "intervalMinutes": 15,
+    "maxChecks": 288,
+    "deadline": "2026-11-02T20:15:00Z",
+    "automationId": "gitwink-v0-13-0",
+    "automationStatus": "ACTIVE"
+  }
 }
