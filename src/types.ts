@@ -216,11 +216,26 @@ export interface ChangedFile {
   newSize: number | null;
 }
 
+export interface BlobPreview {
+  status: "ready" | "absent" | "too_large" | "lfs_missing" | "unreadable";
+  base64: string | null;
+  size: number | null;
+}
+
 export interface CommitFileBlobs {
-  oldBase64: string | null;
-  newBase64: string | null;
+  old: BlobPreview;
+  new: BlobPreview;
   extension: string;
-  isLfs: boolean;
+}
+
+export interface FilePatch {
+  text: string;
+  truncated: boolean;
+  reason: string | null;
+  oldPath: string;
+  newPath: string;
+  oldRevision: string;
+  newRevision: string;
 }
 
 /** Installed artifact's update-ownership class. WinGet and direct downloads

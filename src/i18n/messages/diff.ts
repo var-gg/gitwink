@@ -1,6 +1,9 @@
 import { msg } from "@lingui/core/macro";
 
 export const diffMessages = {
+  patchTruncated: msg({ id: "diff.patch.truncated", message: "Patch exceeds 5 MiB. Only complete lines within the limit are shown; copied patches also identify omissions." }),
+  imageTooLarge: msg({ id: "diff.image.tooLarge", message: "Image exists, but exceeds the 4 MiB preview limit." }),
+  imageUnreadable: msg({ id: "diff.image.unreadable", message: "Image exists, but its content could not be read." }),
   error: msg({ id: "diff.error", message: "Error: {error}" }),
   loadingFiles: msg({ id: "diff.files.loading", message: "Loading files…" }),
   noFileChanges: msg({

@@ -942,6 +942,16 @@ msgid "panel.fileHistory.unavailable"
 msgstr "履歴を利用できません"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.tooLarge"
+msgstr "画像は存在しますが、4 MiBのプレビュー上限を超えています。"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.unreadable"
+msgstr "画像は存在しますが、内容を読み込めません。"
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "panel.upstream.syncedAria"
 msgstr "{upstream} と同期済み"
@@ -1365,6 +1375,11 @@ msgstr "クリップボードからリポジトリのパスを貼り付け（{sh
 #: src/i18n/messages/panel.ts
 msgid "panel.footer.pasteBusy"
 msgstr "貼り付け中…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.patch.truncated"
+msgstr "パッチが5 MiBを超えています。上限内の完全な行のみ表示し、コピーにも省略を明記します。"
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts

@@ -9,9 +9,8 @@ import {
 import { useLingui } from "@lingui/react/macro";
 import type { Highlighter } from "shiki";
 
-import { parseDiff, type DiffSide } from "../lib/diff";
+import { type DiffSide } from "../lib/diff";
 import {
-  flattenDiff,
   longestLines,
   searchDiffRows,
   type FindMatch,
@@ -24,6 +23,7 @@ import {
 } from "../lib/highlight";
 import { sbsHeaderH, sbsLineH, useUiScale } from "../lib/settings";
 import { DiffMinimap } from "./DiffMinimap";
+import { useParsedDiff } from "../lib/useParsedDiff";
 import { diffMessages } from "../i18n/messages/diff";
 
 interface Props {
@@ -95,10 +95,7 @@ export function SideBySideDiff({ text, filePath, fileKey, locked }: Props) {
 
   // Parse → flat items + overview segments. Memoized so dragging the splitter
   // (which we keep off React entirely, below) or a scroll never reparses.
-  const { items, segments } = useMemo(
-    () => flattenDiff(parseDiff(text).hunks),
-    [text],
-  );
+  const { items, segments, parseError, parsing } = useParsedDiff(text);
 
   // Prefix-sum of row tops: offsets[i] is the pixel top of row i, offsets[n]
   // the total height. Plain numbers, O(n) rebuild — cheap for tens of
@@ -494,6 +491,10 @@ export function SideBySideDiff({ text, filePath, fileKey, locked }: Props) {
     setSplit(splitRef.current); // commit once, after the drag
     saveSplit(splitRef.current);
   }
+
+  if (parseError) return <div className="diff-loading" role="alert">{i18n._(diffMessages.loadFailed)}</div>;
+
+  if (parsing && items.length === 0) return <div className="diff-loading" role="status">{i18n._(diffMessages.loading)}</div>;
 
   if (items.length === 0) {
     return <div className="sbs-empty">{i18n._(diffMessages.noText)}</div>;

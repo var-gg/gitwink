@@ -39,3 +39,7 @@ Keep CSS local to the review surface. Preserve current read-only/privacy policy.
 - 2026-10-31: baseline HEAD `7622099`; tracked worktree clean. Existing `.agents/`
   is untracked and outside this change. Baseline review receipts are retained in
   the local review report. Implementation begins on `codex/work-review`.
+
+- Diff foundation complete: exact rename provenance, explicit patch/image limits,
+  bounded copy, linear worker parsing, and CI frontend gates. Verified 200 Rust
+  tests, 171 frontend tests, three complete locales and production build.

@@ -942,6 +942,16 @@ msgid "panel.fileHistory.unavailable"
 msgstr "히스토리 사용 불가"
 
 #. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.tooLarge"
+msgstr "이미지는 존재하지만 4 MiB 미리보기 제한을 초과합니다."
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.image.unreadable"
+msgstr "이미지는 존재하지만 내용을 읽을 수 없습니다."
+
+#. js-lingui-explicit-id
 #: src/i18n/messages/panel.ts
 msgid "panel.upstream.syncedAria"
 msgstr "{upstream}과(와) 동기화됨"
@@ -1365,6 +1375,11 @@ msgstr "클립보드에서 저장소 경로 붙여넣기({shortcut})"
 #: src/i18n/messages/panel.ts
 msgid "panel.footer.pasteBusy"
 msgstr "붙여넣는 중…"
+
+#. js-lingui-explicit-id
+#: src/i18n/messages/diff.ts
+msgid "diff.patch.truncated"
+msgstr "패치가 5 MiB를 초과했습니다. 제한 안의 완전한 줄만 표시하며, 복사한 패치에도 생략 여부를 표시합니다."
 
 #. js-lingui-explicit-id
 #: src/i18n/messages/diff.ts

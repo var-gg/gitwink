@@ -35,15 +35,19 @@ export function parseDiff(unified: string): { hunks: DiffHunk[] } {
   let newLine = 0;
   let pendingDeletes: { lineNum: number; text: string }[] = [];
 
+  let deleteCursor = 0;
+
   function flushDeletes() {
     if (!cur) return;
-    while (pendingDeletes.length) {
-      const d = pendingDeletes.shift()!;
+    while (deleteCursor < pendingDeletes.length) {
+      const d = pendingDeletes[deleteCursor++];
       cur.rows.push({
         left: { lineNum: d.lineNum, text: d.text, type: "delete" },
         right: BLANK,
       });
     }
+    pendingDeletes = [];
+    deleteCursor = 0;
   }
 
   for (const raw of lines) {
@@ -82,8 +86,8 @@ export function parseDiff(unified: string): { hunks: DiffHunk[] } {
       pendingDeletes.push({ lineNum: oldLine, text });
       oldLine++;
     } else if (origin === "+") {
-      if (pendingDeletes.length > 0) {
-        const d = pendingDeletes.shift()!;
+      if (deleteCursor < pendingDeletes.length) {
+        const d = pendingDeletes[deleteCursor++];
         cur.rows.push({
           left: { lineNum: d.lineNum, text: d.text, type: "delete" },
           right: { lineNum: newLine, text, type: "add" },
@@ -95,7 +99,7 @@ export function parseDiff(unified: string): { hunks: DiffHunk[] } {
         });
       }
       newLine++;
-    } else if (origin === " " || origin === "") {
+    } else if (origin === " ") {
       flushDeletes();
       cur.rows.push({
         left: { lineNum: oldLine, text, type: "context" },

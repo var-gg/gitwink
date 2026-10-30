@@ -6,6 +6,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import type { MenuItem } from "../components/ContextMenu";
 import type { CommitSummary } from "../types";
+import { boundedContext, patchForClipboard, utf8Bytes, CONTEXT_BYTE_BUDGET } from "./contextBudget";
 import { buildAiContext } from "./copy";
 import { changedFiles, fileDiff, openFileHistory } from "./ipc";
 import { refLine, refLineWithFile } from "./smartcopy";
@@ -52,25 +53,34 @@ export async function copyCommitAiContext(
       (acc, f) => acc + (f.isBinary ? 0 : f.insertions + f.deletions),
       0,
     );
-    if (!files.some((f) => f.isBinary) && totalLines <= AI_CONTEXT_DIFF_LINE_BUDGET) {
+    if (totalLines <= AI_CONTEXT_DIFF_LINE_BUDGET) {
       try {
         const parts: string[] = [];
+        let used = 0;
         for (const f of files) {
+          if (f.isBinary) { parts.push(`[OMITTED: binary content ${f.path}]`); continue; }
           const t = await fileDiff(commit.repoPath, commit.hash, f.path);
-          parts.push(`--- ${f.path}\n${t}`);
+          const part = patchForClipboard(t);
+          if (used + utf8Bytes(part) > CONTEXT_BYTE_BUDGET / 2) {
+            parts.push(`[OMITTED: ${f.path} and remaining patches exceed byte budget]`);
+            break;
+          }
+          parts.push(part);
+          used += utf8Bytes(part);
         }
         diffText = parts.join("\n");
       } catch {
-        diffText = null;
+        diffText = "[OMITTED: patch could not be loaded]";
       }
     }
+    if (diffText == null) diffText = "[OMITTED: patches exceed changed-line budget]";
     let text = buildAiContext(commit, files, diffText);
     // The backend caps huge file lists (vendor-bump commits) — an AI-context
     // copy must SAY so, never silently pretend the list is complete.
     if (total > files.length) {
       text += `\n(file list truncated: showing ${files.length} of ${total} changed files)\n`;
     }
-    await writeText(text);
+    await writeText(boundedContext(text));
     return "copied";
   } catch {
     return "error";

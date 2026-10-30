@@ -44,6 +44,12 @@ jobs:
       - name: Frontend type-check
         run: pnpm tsc --noEmit
 
+      - name: Frontend tests
+        run: pnpm test
+
+      - name: Frontend production build
+        run: pnpm build
+
       - name: Store publishing policy tests
         if: matrix.os == 'windows-latest'
         shell: pwsh

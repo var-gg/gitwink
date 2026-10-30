@@ -77,58 +77,24 @@ export function ImageDiff({
     );
   }
 
-  if (blobs.isLfs) {
-    return (
-      <div className="binary-info">
-        <div className="binary-info-title">{i18n._(diffMessages.lfsFile)}</div>
-        <div className="binary-info-meta">
-          {formatSize(oldSize)} → {formatSize(newSize)}
-        </div>
-        <div className="binary-info-hint">
-          {i18n._(diffMessages.lfsHint)}
-        </div>
-      </div>
-    );
-  }
-
   const mime = MIME[blobs.extension] ?? "application/octet-stream";
-  const oldSrc = blobs.oldBase64
-    ? `data:${mime};base64,${blobs.oldBase64}`
-    : null;
-  const newSrc = blobs.newBase64
-    ? `data:${mime};base64,${blobs.newBase64}`
-    : null;
-
-  return (
-    <div className="image-diff">
-      <div className="image-diff-side">
-        <div className="image-diff-label">
-          {i18n._(diffMessages.before)} · {formatSize(oldSize)}
-        </div>
-        <div className="image-diff-frame image-diff-frame-old">
-          {oldSrc ? (
-            <img src={oldSrc} alt={i18n._(diffMessages.beforeAlt)} />
-          ) : (
-            <div className="image-diff-empty">
-              {i18n._(diffMessages.fileDidNotExist)}
-            </div>
-          )}
-        </div>
+  const emptyLabel = (side: "old" | "new") => {
+    switch (blobs[side].status) {
+      case "absent": return i18n._(side === "old" ? diffMessages.fileDidNotExist : diffMessages.deleted);
+      case "too_large": return i18n._(diffMessages.imageTooLarge);
+      case "lfs_missing": return i18n._(diffMessages.lfsHint);
+      default: return i18n._(diffMessages.imageUnreadable);
+    }
+  };
+  return <div className="image-diff">
+    {(["old", "new"] as const).map(side => <div className="image-diff-side" key={side}>
+      <div className="image-diff-label">
+        {i18n._(side === "old" ? diffMessages.before : diffMessages.after)} · {formatSize(blobs[side].size ?? (side === "old" ? oldSize : newSize))}
       </div>
-      <div className="image-diff-side">
-        <div className="image-diff-label">
-          {i18n._(diffMessages.after)} · {formatSize(newSize)}
-        </div>
-        <div className="image-diff-frame image-diff-frame-new">
-          {newSrc ? (
-            <img src={newSrc} alt={i18n._(diffMessages.afterAlt)} />
-          ) : (
-            <div className="image-diff-empty">
-              {i18n._(diffMessages.deleted)}
-            </div>
-          )}
-        </div>
+      <div className={`image-diff-frame image-diff-frame-${side}`}>
+        {blobs[side].status === "ready" ? <img src={`data:${mime};base64,${blobs[side].base64}`} alt={i18n._(side === "old" ? diffMessages.beforeAlt : diffMessages.afterAlt)} />
+          : <div className="image-diff-empty">{emptyLabel(side)}</div>}
       </div>
-    </div>
-  );
+    </div>)}
+  </div>;
 }

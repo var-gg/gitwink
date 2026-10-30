@@ -40,7 +40,7 @@ export function buildAiContext(
   lines.push("");
   lines.push(`**Repo:** ${commit.repoName}  `);
   lines.push(`**Author:** ${commit.author}  `);
-  lines.push(`**Hash:** ${commit.shortHash}  `);
+  lines.push(`**Hash:** ${commit.hash}  `);
   lines.push(`**Time:** ${relTime(commit.timestamp)}`);
   lines.push("");
 
