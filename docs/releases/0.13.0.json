@@ -1,0 +1,173 @@
+{
+  "schema": 1,
+  "version": "0.13.0",
+  "releaseCommit": "37c14f8d354cbf51ccbabe013e3674987d9217e5",
+  "tag": "v0.13.0",
+  "execution": "CLI/API only; no computer use",
+  "pullRequest": {
+    "number": 12,
+    "url": "https://github.com/var-gg/gitwink/pull/12",
+    "mergeCommit": "fb0e8423d1790eb17d5ea77d85bd4ceda9254ec6",
+    "merged": true
+  },
+  "workflows": {
+    "ci": 41117213290,
+    "release": 41117219765,
+    "store": 41117219838
+  },
+  "validation": {
+    "frontendTests": 148,
+    "rustTests": 207,
+    "rustExecution": "--test-threads=1; first parallel run had 3 timing-sensitive failures",
+    "storeScreenshots": 4,
+    "ci": {
+      "runId": 41117213290,
+      "sourceCommit": "37c14f8d354cbf51ccbabe013e3674987d9217e5",
+      "windows": "success",
+      "macos": "success"
+    },
+    "windowsPackage": {
+      "version": "0.13.0",
+      "formats": [
+        "MSI",
+        "NSIS"
+      ],
+      "cliVersion": "0.13.0",
+      "cliActions": [
+        "show_range",
+        "show_worktree",
+        "show_commit",
+        "show_file_history"
+      ],
+      "updaterSignaturesVerified": [
+        "MSI",
+        "NSIS"
+      ]
+    },
+    "publicArtifacts": [
+      {
+        "name": "gitwink_0.13.0_universal.dmg",
+        "size": 23262991,
+        "sha256": "02a945a160defcfedc94d73432c368a106343ed435379021b8e535253454fbe2",
+        "publicUrl": "https://github.com/var-gg/gitwink/releases/download/v0.13.0/gitwink_0.13.0_universal.dmg"
+      },
+      {
+        "name": "gitwink_0.13.0_x64-setup.exe",
+        "size": 9164606,
+        "sha256": "5c0a3b976aa8eef21c8dfad33425f8cd2e4967a0c0ce7a8f35afdb2891271313",
+        "publicUrl": "https://github.com/var-gg/gitwink/releases/download/v0.13.0/gitwink_0.13.0_x64-setup.exe"
+      },
+      {
+        "name": "gitwink_0.13.0_x64-setup.exe.sig",
+        "size": 420,
+        "sha256": "141995ec761fc2fb81e353bb0cd980deca2bac0b9e6da19d9d8b147db3c19dd5",
+        "publicUrl": "https://github.com/var-gg/gitwink/releases/download/v0.13.0/gitwink_0.13.0_x64-setup.exe.sig"
+      },
+      {
+        "name": "gitwink_0.13.0_x64_en-US.msi",
+        "size": 12087296,
+        "sha256": "b0914af6a1b73d7a655e4674df8488a8920daf13d53724beeccd446536eaf2c9",
+        "publicUrl": "https://github.com/var-gg/gitwink/releases/download/v0.13.0/gitwink_0.13.0_x64_en-US.msi"
+      },
+      {
+        "name": "gitwink_0.13.0_x64_en-US.msi.sig",
+        "size": 420,
+        "sha256": "32f02c6ef6f1d38ebeb8728905bbadd7595e539f381bd259d2f39fc1d82a6d2a",
+        "publicUrl": "https://github.com/var-gg/gitwink/releases/download/v0.13.0/gitwink_0.13.0_x64_en-US.msi.sig"
+      },
+      {
+        "name": "gitwink_universal.app.tar.gz",
+        "size": 22392526,
+        "sha256": "475ba4ac0e0d804f0c76c32b90f1f151f600c3564fa9987db6abaf9f215cda3e",
+        "publicUrl": "https://github.com/var-gg/gitwink/releases/download/v0.13.0/gitwink_universal.app.tar.gz"
+      },
+      {
+        "name": "gitwink_universal.app.tar.gz.sig",
+        "size": 404,
+        "sha256": "9f5e5c1bfd9365af2a743e3714e05350bdef006bf8d54800dbfb0d741cbd7a1a",
+        "publicUrl": "https://github.com/var-gg/gitwink/releases/download/v0.13.0/gitwink_universal.app.tar.gz.sig"
+      },
+      {
+        "name": "latest.json",
+        "size": 6062,
+        "sha256": "ce10c8ab85cf0166026b5552f8c0306d4452828cec9765adf26a6921eaa01619",
+        "publicUrl": "https://github.com/var-gg/gitwink/releases/download/v0.13.0/latest.json"
+      }
+    ],
+    "updaterRoutes": [
+      {
+        "target": "windows-x86_64",
+        "asset": "gitwink_0.13.0_x64_en-US.msi",
+        "signatureVerified": true
+      },
+      {
+        "target": "windows-x86_64-msi",
+        "asset": "gitwink_0.13.0_x64_en-US.msi",
+        "signatureVerified": true
+      },
+      {
+        "target": "windows-x86_64-nsis",
+        "asset": "gitwink_0.13.0_x64-setup.exe",
+        "signatureVerified": true
+      },
+      {
+        "target": "darwin-aarch64",
+        "asset": "gitwink_universal.app.tar.gz",
+        "signatureVerified": true
+      },
+      {
+        "target": "darwin-x86_64",
+        "asset": "gitwink_universal.app.tar.gz",
+        "signatureVerified": true
+      },
+      {
+        "target": "darwin-aarch64-app",
+        "asset": "gitwink_universal.app.tar.gz",
+        "signatureVerified": true
+      },
+      {
+        "target": "darwin-x86_64-app",
+        "asset": "gitwink_universal.app.tar.gz",
+        "signatureVerified": true
+      }
+    ],
+    "macBundle": {
+      "version": "0.13.0",
+      "binaries": {
+        "gitwink": [
+          "x86_64",
+          "arm64"
+        ],
+        "gitwinkctl": [
+          "x86_64",
+          "arm64"
+        ]
+      }
+    },
+    "publicLatestEndpoint": "https://github.com/var-gg/gitwink/releases/latest/download/latest.json"
+  },
+  "channels": {
+    "github": {
+      "state": "published_verified",
+      "url": "https://github.com/var-gg/gitwink/releases/tag/v0.13.0",
+      "publishedAt": "2026-10-30T19:55:58Z",
+      "releaseId": 429430613,
+      "checkedAt": "2026-10-30T19:56:10.885854+00:00"
+    },
+    "store": {
+      "state": "building",
+      "previousPublishedVersion": "0.12.1.0",
+      "previousPublishedSubmission": "1152921505701556914",
+      "pendingAtPreflight": null
+    },
+    "winget": {
+      "state": "submission_workflow_running"
+    },
+    "scoop": {
+      "state": "updating",
+      "workflowRun": 41119295773,
+      "workflowUrl": "https://github.com/var-gg/scoop-bucket/actions/runs/41119295773"
+    }
+  },
+  "updatedAt": "2026-10-30T19:56:42.810016+00:00"
+}
