@@ -161,13 +161,20 @@
       "pendingAtPreflight": null
     },
     "winget": {
-      "state": "submission_workflow_running"
+      "state": "submission_workflow_retry",
+      "recovery": "Connected GitHub API fast-forwarded the existing fork without changing token scopes; reran only failed winget job.",
+      "forkBefore": "f42506e796442af7dce16a039328194d4c858872",
+      "forkAfter": "af8adc69715946cf612af23e7cdbc26bf84ee44f"
     },
     "scoop": {
-      "state": "updating",
+      "state": "published_verified",
       "workflowRun": 41119295773,
-      "workflowUrl": "https://github.com/var-gg/scoop-bucket/actions/runs/41119295773"
+      "workflowUrl": "https://github.com/var-gg/scoop-bucket/actions/runs/41119295773",
+      "manifestUrl": "https://raw.githubusercontent.com/var-gg/scoop-bucket/master/bucket/gitwink.json",
+      "version": "0.13.0",
+      "sha256": "b0914af6a1b73d7a655e4674df8488a8920daf13d53724beeccd446536eaf2c9",
+      "checkedAt": "2026-10-30T19:59:01.311522+00:00"
     }
   },
-  "updatedAt": "2026-10-30T19:56:42.810016+00:00"
+  "updatedAt": "2026-10-30T19:59:01.311522+00:00"
 }
