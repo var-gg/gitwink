@@ -1,12 +1,16 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { lingui } from "@lingui/vite-plugin";
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
+  // Ignore nested agent worktrees and local review artifacts; CI and local
+  // verification must execute the same owning source suites.
+  test: {
+    include: ["src/**/*.{test,spec}.{ts,tsx}", "tools/**/*.{test,spec}.{js,mjs,ts}"],
+  },
   plugins: [
     react({
       babel: {

@@ -54,3 +54,8 @@ Keep CSS local to the review surface. Preserve current read-only/privacy policy.
   Validation: 207 Rust tests, 175 frontend tests, 433 translated messages and
   Windows debug production-asset build pass. Native range/worktree rendering
   and stale-snapshot errors observed. Final interaction checks continue.
+
+- First macOS CI exposed a pre-existing Windows-only case assumption in a
+  handoff test. Corrected the test fixture and scoped Vitest to src/tools;
+  the earlier local 175 total included 28 tests in an unrelated nested
+  worktree. The owning frontend suite is now 147 tests, all passing locally.
