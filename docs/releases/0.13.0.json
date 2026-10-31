@@ -228,7 +228,7 @@
       "publicUrl": "https://apps.microsoft.com/detail/9P0S21GJD53F"
     },
     "winget": {
-      "state": "merged_awaiting_catalog",
+      "state": "published_verified",
       "recovery": "Connected GitHub API fast-forwarded the existing fork without changing token scopes; reran only failed winget job.",
       "forkBefore": "f42506e796442af7dce16a039328194d4c858872",
       "forkAfter": "af8adc69715946cf612af23e7cdbc26bf84ee44f",
@@ -244,13 +244,20 @@
       "upstreamManifestVerifiedAt": "2026-10-30T21:50:42.580904+00:00",
       "validationChecks": "all 10 passed",
       "catalogProbe": {
-        "checkedAt": "2026-10-30T21:51:15.067827+00:00",
+        "checkedAt": "2026-10-31T00:21:22.901530+00:00",
         "source": "winget",
+        "sourceEndpoint": "https://cdn.winget.microsoft.com/cache",
         "sourceRefresh": "success",
+        "command": "winget show --id var-gg.gitwink --exact --source winget --version 0.13.0 --disable-interactivity",
         "requestedVersion": "0.13.0",
-        "result": "version_not_found",
-        "exitCode": 1
-      }
+        "result": "found",
+        "version": "0.13.0",
+        "installerType": "nullsoft",
+        "installerUrl": "https://github.com/var-gg/gitwink/releases/download/v0.13.0/gitwink_0.13.0_x64-setup.exe",
+        "installerSha256": "5c0a3b976aa8eef21c8dfad33425f8cd2e4967a0c0ce7a8f35afdb2891271313",
+        "exitCode": 0
+      },
+      "checkedAt": "2026-10-31T00:21:22.901530+00:00"
     },
     "scoop": {
       "state": "published_verified",
@@ -262,7 +269,7 @@
       "checkedAt": "2026-10-30T19:59:01.311522+00:00"
     }
   },
-  "updatedAt": "2026-10-30T21:51:15.067827+00:00",
+  "updatedAt": "2026-10-31T00:21:22.901530+00:00",
   "workflowConclusions": {
     "ci": "success",
     "release": "success (second attempt; only failed winget submission rerun)",
@@ -273,18 +280,19 @@
     "github": true,
     "scoop": true,
     "store": true,
-    "winget": false
+    "winget": true
   },
-  "remaining": [
-    "WinGet public catalog must expose var-gg.gitwink version 0.13.0; upstream PR and manifest are already merged and verified."
-  ],
+  "remaining": [],
   "followUp": {
-    "reason": "WinGet upstream submission is merged; public catalog propagation is pending.",
-    "nextAction": "Refresh only the winget source and query var-gg.gitwink version 0.13.0 via CLI. When visible, verify installer URL/SHA-256, complete the receipt and delete the heartbeat.",
+    "reason": "All four distribution channels are published and verified.",
+    "nextAction": "None; release complete.",
     "intervalMinutes": 15,
     "maxChecks": 288,
     "deadline": "2026-11-02T20:15:00Z",
     "automationId": "gitwink-v0-13-0",
-    "automationStatus": "ACTIVE"
-  }
+    "automationStatus": "DELETED",
+    "endedAt": "2026-10-31T00:21:22.901530+00:00",
+    "endReason": "WinGet public catalog verified; deployment complete."
+  },
+  "completedAt": "2026-10-31T00:21:22.901530+00:00"
 }
